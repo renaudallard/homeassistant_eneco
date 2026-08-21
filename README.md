@@ -1,3 +1,5 @@
+![Eneco Belgium for Home Assistant](images/header.png)
+
 # Eneco Belgium meter readings for Home Assistant
 
 Sends your electricity meter readings to the Eneco Belgium customer portal once
@@ -126,11 +128,12 @@ python3 tools/check-translations.py
 `ruff` and `mypy` are configured with the same rule set and error codes Home
 Assistant core uses, so anything that would fail a core review fails here too.
 
-`tools/license-header.py` adds the licence header to any new source file,
-`tools/check-translations.py` keeps `strings.json`, the translations, `icons.json`
-and the code in step, and `tools/make-icon.py` redraws the brand images. The icon
-is a placeholder: replace `custom_components/eneco_be/brand/icon.png` with
-your own if you prefer.
+`tools/license-header.py` adds the licence header to any new source file, and
+`tools/check-translations.py` keeps `strings.json`, the translations,
+`icons.json` and the code in step.
+
+The brand images in `custom_components/eneco_be/brand` are what HACS validates
+and what Home Assistant serves for the integration.
 
 ## Licence
 
