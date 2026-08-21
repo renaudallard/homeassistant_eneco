@@ -1,6 +1,38 @@
-![Eneco Belgium for Home Assistant](images/header.png)
+<p align="center">
+  <img src="images/header.png" alt="Eneco Belgium meter readings for Home Assistant" width="720"/>
+</p>
 
-# Eneco Belgium meter readings for Home Assistant
+<p align="center">
+  <a href="https://github.com/renaudallard/homeassistant_eneco/releases/latest">
+    <img src="https://img.shields.io/github/v/release/renaudallard/homeassistant_eneco?label=version&style=flat-square&sort=semver" alt="Latest release"/>
+  </a>
+  <a href="https://github.com/renaudallard/homeassistant_eneco/releases">
+    <img src="https://img.shields.io/github/downloads/renaudallard/homeassistant_eneco/total?style=flat-square&label=downloads" alt="GitHub release downloads"/>
+  </a>
+  <a href="https://github.com/renaudallard/homeassistant_eneco/actions/workflows/checks.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/renaudallard/homeassistant_eneco/checks.yml?style=flat-square&label=tests" alt="Tests"/>
+  </a>
+  <a href="https://github.com/renaudallard/homeassistant_eneco/actions/workflows/hassfest.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/renaudallard/homeassistant_eneco/hassfest.yml?style=flat-square&label=hassfest" alt="hassfest"/>
+  </a>
+  <a href="https://github.com/renaudallard/homeassistant_eneco/actions/workflows/hacs.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/renaudallard/homeassistant_eneco/hacs.yml?style=flat-square&label=hacs" alt="HACS validation"/>
+  </a>
+  <a href="https://www.home-assistant.io/">
+    <img src="https://img.shields.io/badge/Home%20Assistant-2026.8%2B-41BDF5?logo=home-assistant&logoColor=white&style=flat-square" alt="Home Assistant"/>
+  </a>
+  <a href="https://hacs.xyz">
+    <img src="https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=flat-square" alt="HACS custom repository"/>
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/github/license/renaudallard/homeassistant_eneco?style=flat-square" alt="License"/>
+  </a>
+  <a href="https://www.paypal.me/RenaudAllard">
+    <img src="https://img.shields.io/badge/PayPal-Donate-blue.svg?logo=paypal&style=flat-square" alt="PayPal"/>
+  </a>
+</p>
+
+---
 
 Sends your electricity and gas meter readings to the Eneco Belgium customer
 portal once a day, taking the values from sensors Home Assistant already has.
@@ -17,9 +49,9 @@ Requires Home Assistant **2026.8** or newer.
 
 At the configured local time, once a day, it:
 
-1. reads the current value of one sensor per meter register,
-2. converts it to whole kWh,
-3. posts the whole set to Eneco, dated today.
+1. reads the current value of the sensor you chose for each register,
+2. rounds it to whole kWh for electricity, or whole m³ for gas,
+3. posts the set to Eneco, dated today.
 
 Which registers exist is decided by Eneco, not by this integration: it asks the
 portal which ones your meter accepts and only offers those. A dual tariff
@@ -77,7 +109,13 @@ Every entry creates one device, named after the meter's EAN, with:
 | `sensor.*_next_submission` | When the next submission is due, shown as a countdown |
 | `button.*_submit_readings` | Submit the readings now |
 | `sensor.*_last_submission` | When the last submission succeeded |
-| `sensor.*_status` | `pending`, `success` or `failed`, with the reason as an attribute |
+| `sensor.*_status` | How the last attempt went, with the reason as an attribute |
+
+`sensor.*_status` reads `pending` before the first attempt, then `success`,
+`already_submitted` when the date was already done, `nothing_to_submit` when no
+register has a sensor, or `failed` with the reason in its `last_error`
+attribute. Three failures in a row also raise a repair on the dashboard, which
+clears itself once a submission lands.
 
 Press the button from an automation if you want a different schedule than the
 built-in daily one.
@@ -179,4 +217,7 @@ Assistant picks the one matching your profile.
 
 ## Licence
 
-BSD 2-Clause. See `LICENSE`.
+BSD 2-Clause. See [LICENSE](./LICENSE).
+
+If this saved you the daily trip to the Eneco website, the PayPal badge at the
+top is there.
