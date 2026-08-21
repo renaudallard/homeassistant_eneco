@@ -62,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
         raise ConfigEntryNotReady(str(err)) from err
 
     coordinator = EnecoCoordinator(hass, entry, client)
+    await coordinator.async_load()
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -74,3 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
 async def async_unload_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> bool:
     """Unload the entry and everything registered with it."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
+    """Drop the stored submission history along with the entry."""
+    await EnecoCoordinator.async_remove_store_for(hass, entry)

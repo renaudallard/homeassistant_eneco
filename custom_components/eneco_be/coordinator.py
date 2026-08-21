@@ -27,7 +27,7 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 import logging
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
@@ -38,6 +38,7 @@ from homeassistant.const import (
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 ENERGY_TYPE = "Electricity"
+STORAGE_VERSION = 1
 
 
 class ReadingUnavailableError(EnecoError):
@@ -73,6 +75,39 @@ class EnecoState:
     submitted_date: date | None = None
     values: dict[str, int] = field(default_factory=dict)
     error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON friendly form for the store."""
+        return {
+            "attempted": self.attempted.isoformat() if self.attempted else None,
+            "succeeded": self.succeeded.isoformat() if self.succeeded else None,
+            "submitted_date": (
+                self.submitted_date.isoformat() if self.submitted_date else None
+            ),
+            "values": self.values,
+            "error": self.error,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EnecoState:
+        """Rebuild a stored state, ignoring anything that no longer parses."""
+
+        def moment(key: str) -> datetime | None:
+            raw = data.get(key)
+            return dt_util.parse_datetime(raw) if isinstance(raw, str) else None
+
+        raw_date = data.get("submitted_date")
+        submitted = dt_util.parse_date(raw_date) if isinstance(raw_date, str) else None
+        values = data.get("values")
+        return cls(
+            attempted=moment("attempted"),
+            succeeded=moment("succeeded"),
+            submitted_date=submitted,
+            values={str(k): int(v) for k, v in values.items()}
+            if isinstance(values, dict)
+            else {},
+            error=data.get("error"),
+        )
 
 
 class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
@@ -102,6 +137,29 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         self.client = client
         self.data = EnecoState()
         self._unsub: CALLBACK_TYPE | None = None
+        self._store = Store[dict[str, Any]](
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
+        )
+
+    async def async_load(self) -> None:
+        """Restore what the last run of Home Assistant knew.
+
+        Without this a restart looks exactly like a fresh install, and the guard
+        against submitting a date twice would be gone with it.
+        """
+        stored = await self._store.async_load()
+        if stored:
+            self.data = EnecoState.from_dict(stored)
+            _LOGGER.debug("Restored %s", self.data)
+
+    @staticmethod
+    async def async_remove_store_for(
+        hass: HomeAssistant, entry: EnecoConfigEntry
+    ) -> None:
+        """Forget the stored state of an entry that is being removed."""
+        await Store[dict[str, Any]](
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
+        ).async_remove()
 
     @property
     def submit_time(self) -> time:
@@ -159,6 +217,12 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
     @override
     async def _async_update_data(self) -> EnecoState:
+        """Submit, then remember the outcome across restarts."""
+        state = await self._async_submit()
+        await self._store.async_save(state.as_dict())
+        return state
+
+    async def _async_submit(self) -> EnecoState:
         """Submit today's readings and report what happened.
 
         Never raises: everything that can go wrong is recorded in the state, so

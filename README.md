@@ -74,6 +74,10 @@ built-in daily one.
 
 Use *Download diagnostics* on the device to see exactly what was last sent.
 
+What the last attempt did is remembered across restarts, so the sensors carry on
+reporting the real last submission rather than resetting, and a day that was
+already submitted is not sent again after a restart.
+
 ## Changing the configuration
 
 To move the **submission time**, set the `time.*_submit_at` entity on the device
@@ -104,8 +108,8 @@ prompt by itself.
   other cloud integration.
 - **A restart across the submission time skips that day.** The schedule is a
   wall clock trigger, so if Home Assistant is down at the configured moment
-  nothing is sent until the next day. Meter readings are cumulative, so the
-  following day's reading still accounts for the gap.
+  nothing is sent until the next day, and there is no catch up. Meter readings
+  are cumulative, so the following day's reading still accounts for the gap.
 - **A submission time between 02:00 and 03:00 is affected by daylight saving.**
   On the spring forward night that hour does not exist and the day is skipped;
   on the autumn night it happens twice, and the second run is a no op because

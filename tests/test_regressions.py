@@ -362,3 +362,106 @@ async def test_submit_time_option_is_read_back(
     assert config_entry.runtime_data.submit_time == time(23, 50)
     assert state_of(hass, NEXT).state != "unknown"
     assert DOMAIN in hass.config.components
+
+
+async def test_state_survives_a_reload(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A restart or a reload must not look like a fresh install."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    submitted = state_of(hass, LAST).state
+    assert state_of(hass, STATUS).state == "success"
+
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert state_of(hass, LAST).state == submitted
+    assert state_of(hass, STATUS).state == "success"
+
+
+async def test_the_same_date_guard_survives_a_reload(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Restarting on a day already submitted must not post it again."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+    assert len(submissions(mock_portal)) == 1
+
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    await press(hass)
+    assert len(submissions(mock_portal)) == 1
+
+
+async def test_stored_state_is_written(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    hass_storage: dict[str, Any],
+) -> None:
+    """The outcome of every attempt reaches the store."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
+    assert stored["submitted_date"] == dt_util.now().date().isoformat()
+    assert stored["values"]["offtake_day"] == 1235
+    assert stored["error"] is None
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {},
+        {"submitted_date": "not a date", "values": "not a mapping"},
+        {"attempted": None, "succeeded": "nonsense", "values": {"offtake_day": 1}},
+    ],
+)
+async def test_unreadable_stored_state_is_ignored(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    hass_storage: dict[str, Any],
+    stored: dict[str, Any],
+) -> None:
+    """A store written by another version must not stop the entry loading."""
+    hass_storage[f"{DOMAIN}.{config_entry.entry_id}"] = {
+        "version": 1,
+        "data": stored,
+    }
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+
+    assert config_entry.state is ConfigEntryState.LOADED
+    # Nothing trustworthy was restored, so today is still submittable.
+    await press(hass)
+    assert len(submissions(mock_portal)) == 1
+
+
+async def test_removing_the_entry_forgets_the_store(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Nothing of the account should be left behind after a removal."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+    key = f"{DOMAIN}.{config_entry.entry_id}"
+    assert key in hass_storage
+
+    assert await hass.config_entries.async_remove(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert key not in hass_storage
