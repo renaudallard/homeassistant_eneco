@@ -31,6 +31,7 @@ DOMAIN: Final = "eneco_be"
 CONF_ACCOUNT: Final = "account"
 CONF_ADDRESS: Final = "address"
 CONF_EAN: Final = "ean"
+CONF_ENERGY_TYPE: Final = "energy_type"
 # entry.data: the register keys the meter exposes, discovered at setup time.
 CONF_REGISTERS: Final = "registers"
 # entry.options: register key -> source entity id, and when to submit.

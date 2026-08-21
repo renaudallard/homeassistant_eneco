@@ -34,6 +34,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
     UnitOfEnergy,
+    UnitOfVolume,
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -42,12 +43,13 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
-from homeassistant.util.unit_conversion import EnergyConverter
+from homeassistant.util.unit_conversion import EnergyConverter, VolumeConverter
 
 from .api import EnecoAuthError, EnecoClient, EnecoError, EnecoValidationError, Register
 from .const import (
     CONF_ACCOUNT,
     CONF_EAN,
+    CONF_ENERGY_TYPE,
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
     DEFAULT_SUBMIT_TIME,
@@ -59,7 +61,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-ENERGY_TYPE = "Electricity"
+ELECTRICITY = "Electricity"
 STORAGE_VERSION = 1
 
 # How many consecutive failures before the user is told out loud.
@@ -68,6 +70,10 @@ REPAIR_AFTER_FAILURES = 3
 
 class ReadingUnavailableError(EnecoError):
     """A configured source entity did not offer a usable value."""
+
+
+class NothingMappedError(EnecoError):
+    """No register has a source entity, so there is nothing to send."""
 
 
 @dataclass(slots=True)
@@ -80,6 +86,7 @@ class EnecoState:
     values: dict[str, int] = field(default_factory=dict)
     error: str | None = None
     skipped: bool = False
+    nothing_mapped: bool = False
     failures: int = 0
 
     def as_dict(self) -> dict[str, Any]:
@@ -93,6 +100,7 @@ class EnecoState:
             "values": self.values,
             "error": self.error,
             "skipped": self.skipped,
+            "nothing_mapped": self.nothing_mapped,
             "failures": self.failures,
         }
 
@@ -116,6 +124,7 @@ class EnecoState:
             else {},
             error=data.get("error"),
             skipped=bool(data.get("skipped")),
+            nothing_mapped=bool(data.get("nothing_mapped")),
             failures=int(data.get("failures") or 0),
         )
 
@@ -170,6 +179,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         await Store[dict[str, Any]](
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         ).async_remove()
+
+    @property
+    def energy_type(self) -> str:
+        """Return the kind of meter this entry submits for."""
+        return str(self.config_entry.data.get(CONF_ENERGY_TYPE, ELECTRICITY))
 
     @property
     def submit_time(self) -> time:
@@ -286,6 +300,10 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
         try:
             values = self._collect_values()
+        except NothingMappedError:
+            _LOGGER.debug("No source entity is mapped, nothing to submit")
+            state.nothing_mapped = True
+            return state
         except EnecoError as err:
             _LOGGER.warning("Skipping submission: %s", err)
             state.error = str(err)
@@ -295,7 +313,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             await self.client.async_submit_readings(
                 self.config_entry.data[CONF_ACCOUNT],
                 self.config_entry.data[CONF_EAN],
-                ENERGY_TYPE,
+                self.energy_type,
                 today,
                 values,
             )
@@ -318,18 +336,26 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         return state
 
     def _collect_values(self) -> dict[Register, int]:
-        """Return one whole kWh value per configured register.
+        """Return one whole unit value per mapped register.
 
-        A submission is all or nothing: if any source entity cannot be read the
-        portal is left alone, because a partial set would record an incoherent
-        moment across the registers.
+        A register with no source entity is not part of the submission at all:
+        a mechanical meter has no sensor, and a meter can be readable for some
+        registers and not others.
+
+        Among the registers that *are* mapped it is all or nothing, because a
+        partial set would record an incoherent moment across them and the date
+        cannot be submitted again to correct it.
         """
-        mapping: dict[str, str] = self.config_entry.options[CONF_SOURCES]
+        mapping: dict[str, str] = self.config_entry.options.get(CONF_SOURCES, {})
+        mapped = {key: entity for key, entity in mapping.items() if entity}
+        if not mapped:
+            raise NothingMappedError("no register has a source entity")
+
         values: dict[Register, int] = {}
         unusable: list[str] = []
 
-        for key, entity_id in mapping.items():
-            value = self._read_kwh(entity_id)
+        for key, entity_id in mapped.items():
+            value = self._read_value(entity_id)
             if value is None:
                 unusable.append(entity_id)
                 continue
@@ -339,8 +365,12 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             raise ReadingUnavailableError(f"no usable value from {', '.join(unusable)}")
         return values
 
-    def _read_kwh(self, entity_id: str) -> int | None:
-        """Return the state of an entity as whole kWh, or None if unusable."""
+    def _read_value(self, entity_id: str) -> int | None:
+        """Return an entity's state in the meter's own unit, or None.
+
+        Electricity meters are read in whole kWh and gas meters in whole cubic
+        metres, which is what the portal stores for each.
+        """
         state = self.hass.states.get(entity_id)
         if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             return None
@@ -349,15 +379,17 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         except ValueError:
             return None
 
+        gas = self.energy_type != ELECTRICITY
+        wanted = UnitOfVolume.CUBIC_METERS if gas else UnitOfEnergy.KILO_WATT_HOUR
+        converter = VolumeConverter if gas else EnergyConverter
+
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
-        if unit == UnitOfEnergy.KILO_WATT_HOUR:
+        if unit == wanted:
             return round(raw)
         try:
-            return round(
-                EnergyConverter.convert(raw, unit, UnitOfEnergy.KILO_WATT_HOUR)
-            )
+            return round(converter.convert(raw, unit, wanted))
         except HomeAssistantError, TypeError:
             _LOGGER.warning(
-                "%s reports %s, which is not an energy unit", entity_id, unit
+                "%s reports %s, which cannot be read as %s", entity_id, unit, wanted
             )
             return None

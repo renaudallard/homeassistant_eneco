@@ -2,8 +2,8 @@
 
 # Eneco Belgium meter readings for Home Assistant
 
-Sends your electricity meter readings to the Eneco Belgium customer portal once
-a day, taking the values from sensors Home Assistant already has.
+Sends your electricity and gas meter readings to the Eneco Belgium customer
+portal once a day, taking the values from sensors Home Assistant already has.
 
 Eneco lets you enter meter readings by hand at
 *My Eneco > Consommation > Encoder un relevé*. If your smart meter is already in
@@ -22,13 +22,21 @@ At the configured local time, once a day, it:
 3. posts the whole set to Eneco, dated today.
 
 Which registers exist is decided by Eneco, not by this integration: it asks the
-portal which ones your meter accepts and only offers those. A dual tariff meter
-with solar panels typically has four (import day, import night, export day,
-export night); a single tariff meter without injection has one.
+portal which ones your meter accepts and only offers those. A dual tariff
+electricity meter with solar panels typically has four (consumption day,
+consumption night, injection day, injection night); a gas meter has one.
 
-A submission is all or nothing. If any of the chosen sensors is unavailable or
-does not report a usable number, nothing is sent and the reason is recorded,
-because a partial set would record an incoherent moment across the registers.
+**Every register is optional.** Leave one without a sensor and it is simply not
+part of the submission, which is what you want when a meter is still read by
+hand, or when only some of its registers reach Home Assistant. Set up one entry
+per meter: an electricity meter and a gas meter are two entries, and you can add
+either without the other.
+
+Among the registers you *did* map, a submission is all or nothing. If one of
+those sensors is unavailable or does not report a usable number, nothing is sent
+and the reason is recorded, because a partial set would record an incoherent
+moment across the registers and the date cannot be submitted again to correct
+it.
 
 ## Installation
 
@@ -49,13 +57,15 @@ restart.
 1. **Credentials.** The email and password of your My Eneco account.
 2. **Account, address, meter.** Only asked when you have more than one; the
    integration skips straight past any step with a single answer.
-3. **Meter readings.** One sensor per register, and the time of day to submit.
+3. **Meter readings.** A sensor per register, each optional, and the time of day
+   to submit.
 
-The sensor for a register must be a *total* index in an energy unit, the same
-number you would read off the meter, not a power or a daily delta. On a Belgian
-digital meter these are the sensors your P1 or DSMR integration exposes as
-"total consumption tariff 1", "total production tariff 2", and so on. Units
-other than kWh are converted automatically.
+The sensor for a register must be a *total* index, the same number you would
+read off the meter, not a rate or a daily delta. For electricity that is an
+energy sensor in kWh; on a Belgian digital meter these are the ones your P1 or
+DSMR integration exposes as "total consumption tariff 1", "total production
+tariff 2", and so on. For gas it is a volume sensor in m³. Other units of the
+same kind are converted automatically.
 
 ## Entities
 
@@ -95,12 +105,11 @@ prompt by itself.
 
 ## Limitations
 
-- **Electricity only.** Gas readings use the same API but are not offered.
 - **No two-factor authentication.** The login is a plain Okta username and
   password exchange. An account that requires MFA cannot be used headlessly, and
   setup will say so rather than fail obscurely.
 - **Whole units.** Eneco stores the index as a 32 bit integer, so values are
-  rounded.
+  rounded: whole kWh for electricity, whole m³ for gas.
 - **One reading per day.** Eneco rejects a second reading for a date that
   already has one, and rejects any value below the previous reading. Both show up
   on the status sensor.

@@ -100,12 +100,17 @@ def state_of(hass: HomeAssistant, entity_id: str) -> State:
     return state
 
 
-async def press(hass: HomeAssistant) -> None:
-    """Press the submit button."""
+async def press_entity(hass: HomeAssistant, entity_id: str) -> None:
+    """Press a submit button."""
     await hass.services.async_call(
-        BUTTON_DOMAIN, SERVICE_PRESS, {ATTR_ENTITY_ID: BUTTON}, blocking=True
+        BUTTON_DOMAIN, SERVICE_PRESS, {ATTR_ENTITY_ID: entity_id}, blocking=True
     )
     await hass.async_block_till_done()
+
+
+async def press(hass: HomeAssistant) -> None:
+    """Press the submit button of the meter used across the tests."""
+    await press_entity(hass, BUTTON)
 
 
 async def test_setup_creates_entities(

@@ -29,14 +29,14 @@
       },
       "meter": {
         "title": "Meter",
-        "description": "Kies de elektriciteitsmeter waarvoor je meterstanden wilt doorgeven.",
+        "description": "Kies de meter waarvoor je meterstanden wilt doorgeven.",
         "data": {
           "ean": "EAN"
         }
       },
       "sources": {
         "title": "Meterstanden",
-        "description": "Kies de sensor met de meterstand voor elk register van EAN {ean}. Elke sensor moet een totaal in een energie-eenheid geven, geen vermogen.",
+        "description": "Kies de sensor met de meterstand voor elk register van EAN {ean}. Elke sensor moet een totaal in een energie-eenheid geven, geen vermogen. Laat een register leeg en het wordt gewoon niet doorgegeven, wat nodig is voor een meter die je nog met de hand afleest.",
         "data": {
           "offtake_single": "Afname",
           "offtake_day": "Afname, dag",
@@ -68,7 +68,7 @@
       "already_configured": "Deze meter is al ingesteld.",
       "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
       "no_addresses": "Dit account heeft geen adres met een actief contract.",
-      "no_electricity_meter": "Op dit adres staat geen elektriciteitsmeter.",
+      "no_meters": "Op dit adres staat geen elektriciteits- of gasmeter.",
       "no_registers": "Eneco aanvaardt geen meterstanden voor deze meter.",
       "reauth_successful": "Opnieuw aangemeld.",
       "reconfigure_successful": "Configuratie bijgewerkt.",
@@ -79,7 +79,7 @@
     "step": {
       "init": {
         "title": "Meterstanden",
-        "description": "Kies de sensor met de meterstand voor elk register, en wanneer ze worden doorgegeven.",
+        "description": "Kies de sensor met de meterstand voor elk register, en wanneer ze worden doorgegeven. Laat een register leeg en het wordt gewoon niet doorgegeven, wat nodig is voor een meter die je nog met de hand afleest.",
         "data": {
           "offtake_single": "Afname",
           "offtake_day": "Afname, dag",
@@ -113,6 +113,7 @@
           "pending": "In afwachting",
           "success": "Gelukt",
           "already_submitted": "Al doorgegeven",
+          "nothing_to_submit": "Niets door te geven",
           "failed": "Mislukt"
         }
       },

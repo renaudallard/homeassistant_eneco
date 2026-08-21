@@ -29,23 +29,23 @@
       },
       "meter": {
         "title": "Meter",
-        "description": "Choose the electricity meter to submit readings for.",
+        "description": "Choose the meter to submit readings for.",
         "data": {
           "ean": "EAN"
         }
       },
       "sources": {
         "title": "Meter readings",
-        "description": "Choose the sensor that holds the meter index for each register of EAN {ean}. Every sensor must report a total in an energy unit, not a rate.",
+        "description": "Choose the sensor that holds the meter index for each register of EAN {ean}. Every sensor must report a total in an energy unit, not a rate. Leave a register empty and it is simply not submitted, which is what a meter you still read by hand needs.",
         "data": {
-          "offtake_single": "Import",
-          "offtake_day": "Import, day",
-          "offtake_night": "Import, night",
-          "offtake_exclusive_night": "Import, exclusive night",
-          "injection_single": "Export",
-          "injection_day": "Export, day",
-          "injection_night": "Export, night",
-          "injection_exclusive_night": "Export, exclusive night",
+          "offtake_single": "Consumption",
+          "offtake_day": "Consumption, day",
+          "offtake_night": "Consumption, night",
+          "offtake_exclusive_night": "Consumption, exclusive night",
+          "injection_single": "Injection",
+          "injection_day": "Injection, day",
+          "injection_night": "Injection, night",
+          "injection_exclusive_night": "Injection, exclusive night",
           "submit_time": "Submit at"
         },
         "data_description": {
@@ -68,7 +68,7 @@
       "already_configured": "This meter is already set up.",
       "cannot_connect": "Could not reach the Eneco portal: {error}",
       "no_addresses": "This account has no address with an active contract.",
-      "no_electricity_meter": "There is no electricity meter at this address.",
+      "no_meters": "There is no electricity or gas meter at this address.",
       "no_registers": "Eneco does not accept meter readings for this meter.",
       "reauth_successful": "Signed in again.",
       "reconfigure_successful": "Configuration updated.",
@@ -79,16 +79,16 @@
     "step": {
       "init": {
         "title": "Meter readings",
-        "description": "Choose the sensor that holds the meter index for each register, and when to submit.",
+        "description": "Choose the sensor that holds the meter index for each register, and when to submit. Leave a register empty and it is simply not submitted, which is what a meter you still read by hand needs.",
         "data": {
-          "offtake_single": "Import",
-          "offtake_day": "Import, day",
-          "offtake_night": "Import, night",
-          "offtake_exclusive_night": "Import, exclusive night",
-          "injection_single": "Export",
-          "injection_day": "Export, day",
-          "injection_night": "Export, night",
-          "injection_exclusive_night": "Export, exclusive night",
+          "offtake_single": "Consumption",
+          "offtake_day": "Consumption, day",
+          "offtake_night": "Consumption, night",
+          "offtake_exclusive_night": "Consumption, exclusive night",
+          "injection_single": "Injection",
+          "injection_day": "Injection, day",
+          "injection_night": "Injection, night",
+          "injection_exclusive_night": "Injection, exclusive night",
           "submit_time": "Submit at"
         },
         "data_description": {
@@ -113,6 +113,7 @@
           "pending": "Pending",
           "success": "Success",
           "already_submitted": "Already submitted",
+          "nothing_to_submit": "Nothing to submit",
           "failed": "Failed"
         }
       },

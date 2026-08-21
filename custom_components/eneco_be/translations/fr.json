@@ -29,14 +29,14 @@
       },
       "meter": {
         "title": "Compteur",
-        "description": "Choisissez le compteur électrique dont vous voulez transmettre les relevés.",
+        "description": "Choisissez le compteur dont vous voulez transmettre les relevés.",
         "data": {
           "ean": "EAN"
         }
       },
       "sources": {
         "title": "Relevés de compteur",
-        "description": "Choisissez le capteur qui contient l'index de chaque registre de l'EAN {ean}. Chaque capteur doit indiquer un total dans une unité d'énergie, pas une puissance.",
+        "description": "Choisissez le capteur qui contient l'index de chaque registre de l'EAN {ean}. Chaque capteur doit indiquer un total dans une unité d'énergie, pas une puissance. Laissez un registre vide et il n'est tout simplement pas transmis, ce qu'il faut pour un compteur que vous relevez encore à la main.",
         "data": {
           "offtake_single": "Prélèvement",
           "offtake_day": "Prélèvement, jour",
@@ -68,7 +68,7 @@
       "already_configured": "Ce compteur est déjà configuré.",
       "cannot_connect": "Impossible de joindre le portail Eneco : {error}",
       "no_addresses": "Ce compte n'a aucune adresse avec un contrat actif.",
-      "no_electricity_meter": "Il n'y a pas de compteur électrique à cette adresse.",
+      "no_meters": "Il n'y a pas de compteur électrique ou gaz à cette adresse.",
       "no_registers": "Eneco n'accepte pas de relevés pour ce compteur.",
       "reauth_successful": "Reconnexion réussie.",
       "reconfigure_successful": "Configuration mise à jour.",
@@ -79,7 +79,7 @@
     "step": {
       "init": {
         "title": "Relevés de compteur",
-        "description": "Choisissez le capteur qui contient l'index de chaque registre, et l'heure de transmission.",
+        "description": "Choisissez le capteur qui contient l'index de chaque registre, et l'heure de transmission. Laissez un registre vide et il n'est tout simplement pas transmis, ce qu'il faut pour un compteur que vous relevez encore à la main.",
         "data": {
           "offtake_single": "Prélèvement",
           "offtake_day": "Prélèvement, jour",
@@ -113,6 +113,7 @@
           "pending": "En attente",
           "success": "Réussie",
           "already_submitted": "Déjà transmise",
+          "nothing_to_submit": "Rien à transmettre",
           "failed": "Échouée"
         }
       },

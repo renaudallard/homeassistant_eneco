@@ -38,6 +38,7 @@ from custom_components.eneco_be.const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
     CONF_EAN,
+    CONF_ENERGY_TYPE,
     CONF_REGISTERS,
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
@@ -89,6 +90,7 @@ async def test_full_flow(hass: HomeAssistant, mock_portal: AiohttpClientMocker) 
         CONF_ACCOUNT: ACCOUNT,
         CONF_ADDRESS: ADDRESS,
         CONF_EAN: EAN,
+        CONF_ENERGY_TYPE: "Electricity",
         CONF_REGISTERS: REGISTERS,
     }
     assert result["options"] == {
@@ -236,15 +238,15 @@ async def test_already_configured(
     assert result["reason"] == "already_configured"
 
 
-async def test_no_electricity_meter(
+async def test_no_meters(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    """An address with only gas cannot be configured."""
+    """An address with nothing metered cannot be configured."""
     mock_login(
         aioclient_mock,
         accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
     )
-    mock_discovery(aioclient_mock, points=[{"ean": "5414", "type": "Gas"}])
+    mock_discovery(aioclient_mock, points=[{"ean": "5414", "type": "Unknown"}])
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
@@ -253,7 +255,7 @@ async def test_no_electricity_meter(
         result["flow_id"], CREDENTIALS
     )
     assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "no_electricity_meter"
+    assert result["reason"] == "no_meters"
 
 
 async def test_reauth(

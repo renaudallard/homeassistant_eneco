@@ -50,11 +50,13 @@ from .api import (
     EnecoConnectionError,
     EnecoError,
     Meter,
+    ServiceDeliveryPoint,
 )
 from .const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
     CONF_EAN,
+    CONF_ENERGY_TYPE,
     CONF_REGISTERS,
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
@@ -65,6 +67,11 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 ELECTRICITY = "Electricity"
+GAS = "Gas"
+METERED = (ELECTRICITY, GAS)
+
+# Which sensors are worth offering for each kind of meter.
+SOURCE_DEVICE_CLASS = {ELECTRICITY: "energy", GAS: "gas"}
 
 
 def _new_session(hass: HomeAssistant) -> ClientSession:
@@ -84,16 +91,23 @@ CREDENTIALS_SCHEMA = vol.Schema(
 )
 
 
-def _sources_schema(registers: list[str], defaults: Mapping[str, Any]) -> vol.Schema:
-    """Build the schema that maps every register to a source entity."""
+def _sources_schema(
+    registers: list[str], defaults: Mapping[str, Any], energy_type: str
+) -> vol.Schema:
+    """Build the schema that maps registers to source entities.
+
+    Every register is optional: a meter can be read by hand for some registers
+    and not others, and a mechanical meter has no sensor at all.
+    """
     sources: Mapping[str, str] = defaults.get(CONF_SOURCES, {})
     fields: dict[Any, Any] = {
-        vol.Required(
+        vol.Optional(
             key, description={"suggested_value": sources.get(key)}
         ): selector.EntitySelector(
             selector.EntitySelectorConfig(
                 filter=selector.EntityWithDeviceFilterSelectorConfig(
-                    domain="sensor", device_class="energy"
+                    domain="sensor",
+                    device_class=SOURCE_DEVICE_CLASS.get(energy_type, "energy"),
                 )
             )
         )
@@ -118,7 +132,7 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
         self._client: EnecoClient | None = None
         self._accounts: list[Account] = []
         self._addresses: list[Address] = []
-        self._eans: list[str] = []
+        self._points: list[ServiceDeliveryPoint] = []
         self._account: str | None = None
         self._address: str | None = None
         self._meter: Meter | None = None
@@ -253,20 +267,20 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._client is not None
         assert self._account is not None and self._address is not None
         try:
-            self._eans = [
-                point.ean
+            self._points = [
+                point
                 for point in await self._client.async_get_delivery_points(
                     self._account, self._address
                 )
-                if point.energy_type == ELECTRICITY
+                if point.energy_type in METERED
             ]
         except EnecoError as err:
             return self.async_abort(
                 reason="cannot_connect", description_placeholders={"error": str(err)}
             )
 
-        if not self._eans:
-            return self.async_abort(reason="no_electricity_meter")
+        if not self._points:
+            return self.async_abort(reason="no_meters")
         return await self.async_step_meter()
 
     async def async_step_meter(
@@ -275,8 +289,8 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
         """Pick the meter, unless the address has only one."""
         if user_input is not None:
             ean = user_input[CONF_EAN]
-        elif len(self._eans) == 1:
-            ean = self._eans[0]
+        elif len(self._points) == 1:
+            ean = self._points[0].ean
         else:
             return self.async_show_form(
                 step_id="meter",
@@ -284,7 +298,13 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
                     {
                         vol.Required(CONF_EAN): selector.SelectSelector(
                             selector.SelectSelectorConfig(
-                                options=self._eans,
+                                options=[
+                                    selector.SelectOptionDict(
+                                        value=point.ean,
+                                        label=f"{point.energy_type} {point.ean}",
+                                    )
+                                    for point in self._points
+                                ],
                                 mode=selector.SelectSelectorMode.LIST,
                             )
                         )
@@ -323,10 +343,13 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_ACCOUNT: self._account,
                 CONF_ADDRESS: self._address,
                 CONF_EAN: self._meter.ean,
+                CONF_ENERGY_TYPE: self._meter.energy_type,
                 CONF_REGISTERS: registers,
             }
             options = {
-                CONF_SOURCES: {key: user_input[key] for key in registers},
+                CONF_SOURCES: {
+                    key: user_input[key] for key in registers if user_input.get(key)
+                },
                 CONF_SUBMIT_TIME: user_input[CONF_SUBMIT_TIME],
             }
             if self.source == "reconfigure":
@@ -343,7 +366,7 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="sources",
-            data_schema=_sources_schema(registers, defaults),
+            data_schema=_sources_schema(registers, defaults, self._meter.energy_type),
             description_placeholders={"ean": self._meter.ean},
         )
 
@@ -435,12 +458,18 @@ class EnecoOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             return self.async_create_entry(
                 data={
-                    CONF_SOURCES: {key: user_input[key] for key in registers},
+                    CONF_SOURCES: {
+                        key: user_input[key] for key in registers if user_input.get(key)
+                    },
                     CONF_SUBMIT_TIME: user_input[CONF_SUBMIT_TIME],
                 }
             )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=_sources_schema(registers, self.config_entry.options),
+            data_schema=_sources_schema(
+                registers,
+                self.config_entry.options,
+                self.config_entry.data[CONF_ENERGY_TYPE],
+            ),
         )

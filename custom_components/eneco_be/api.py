@@ -155,6 +155,7 @@ class Meter:
     """The registers a meter accepts readings for."""
 
     ean: str
+    energy_type: str
     registers: tuple[Register, ...]
 
 
@@ -445,7 +446,11 @@ class EnecoClient:
             and entry.get("direction")
             and entry.get("meterTimeFrameType")
         )
-        return Meter(ean=str(payload.get("ean") or ean), registers=registers)
+        return Meter(
+            ean=str(payload.get("ean") or ean),
+            energy_type=str(payload.get("energyType") or "Electricity"),
+            registers=registers,
+        )
 
     async def async_get_readings(self, account: str, ean: str) -> list[Reading]:
         """Return the readings the portal holds for a meter, newest first.

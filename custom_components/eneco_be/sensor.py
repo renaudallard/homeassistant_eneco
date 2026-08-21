@@ -47,6 +47,7 @@ STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
 STATUS_ALREADY_SUBMITTED = "already_submitted"
+STATUS_NOTHING_TO_SUBMIT = "nothing_to_submit"
 
 
 def _status(state: EnecoState) -> str:
@@ -55,6 +56,8 @@ def _status(state: EnecoState) -> str:
         return STATUS_PENDING
     if state.error:
         return STATUS_FAILED
+    if state.nothing_mapped:
+        return STATUS_NOTHING_TO_SUBMIT
     if state.skipped:
         return STATUS_ALREADY_SUBMITTED
     return STATUS_SUCCESS
@@ -84,6 +87,7 @@ SENSORS: tuple[EnecoSensorDescription, ...] = (
             STATUS_PENDING,
             STATUS_SUCCESS,
             STATUS_ALREADY_SUBMITTED,
+            STATUS_NOTHING_TO_SUBMIT,
             STATUS_FAILED,
         ],
         value_fn=lambda coordinator: _status(coordinator.data),

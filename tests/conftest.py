@@ -36,6 +36,7 @@ from custom_components.eneco_be.const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
     CONF_EAN,
+    CONF_ENERGY_TYPE,
     CONF_REGISTERS,
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
@@ -104,6 +105,7 @@ def mock_discovery(
     points: list[dict[str, Any]] | None = None,
     registers: list[dict[str, str]] | None = None,
     ean: str = EAN,
+    energy_type: str = "Electricity",
 ) -> None:
     """Register the account, address and meter lookups."""
     mocker.get(
@@ -138,7 +140,7 @@ def mock_discovery(
             "data": {
                 "ean": ean,
                 "meterNumber": "1SAG1100000000",
-                "energyType": "Electricity",
+                "energyType": energy_type,
                 "meterType": "Digital",
                 "meterRegime": "Smr3",
                 "hasInjection": True,
@@ -180,6 +182,7 @@ def config_entry() -> MockConfigEntry:
             CONF_ACCOUNT: ACCOUNT,
             CONF_ADDRESS: ADDRESS,
             CONF_EAN: EAN,
+            CONF_ENERGY_TYPE: "Electricity",
             CONF_REGISTERS: REGISTERS,
         },
         options={CONF_SOURCES: SOURCES, CONF_SUBMIT_TIME: "23:50:00"},
