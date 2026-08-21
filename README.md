@@ -168,6 +168,11 @@ ENECO_EMAIL=you@example.com .venv/bin/python tools/check-portal.py
 The brand images in `custom_components/eneco_be/brand` are what HACS validates
 and what Home Assistant serves for the integration.
 
+## Languages
+
+The interface is translated into English, French, Dutch and German. Home
+Assistant picks the one matching your profile.
+
 ## Licence
 
 BSD 2-Clause. See `LICENSE`.

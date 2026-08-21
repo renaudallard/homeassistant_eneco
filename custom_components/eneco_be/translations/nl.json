@@ -36,7 +36,7 @@
       },
       "sources": {
         "title": "Meterstanden",
-        "description": "Kies de sensor met de meterstand voor elk register van EAN {ean}. Elke sensor moet een totaal in een energie-eenheid geven, geen vermogen. Laat een register leeg en het wordt gewoon niet doorgegeven, wat nodig is voor een meter die je nog met de hand afleest.",
+        "description": "Kies de sensor met de meterstand voor elk register van EAN {ean}. Elke sensor moet een totale meterstand geven, geen debiet. Laat een register leeg en het wordt gewoon niet doorgegeven, wat nodig is voor een meter die je nog met de hand afleest.",
         "data": {
           "offtake_single": "Afname",
           "offtake_day": "Afname, dag",

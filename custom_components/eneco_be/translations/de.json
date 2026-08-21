@@ -1,0 +1,136 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eneco Belgien",
+        "description": "Melde dich mit dem Konto an, das du auf eneco.be verwendest.",
+        "data": {
+          "email": "E-Mail-Adresse",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "email": "Die E-Mail-Adresse deines My Eneco Kontos.",
+          "password": "Konten mit Zwei-Faktor-Authentifizierung können nicht verwendet werden."
+        }
+      },
+      "account": {
+        "title": "Konto",
+        "description": "Wähle das Konto, dessen Zählerstände du übermitteln willst.",
+        "data": {
+          "account": "Konto"
+        }
+      },
+      "address": {
+        "title": "Adresse",
+        "description": "Wähle die Lieferadresse des Zählers.",
+        "data": {
+          "address": "Adresse"
+        }
+      },
+      "meter": {
+        "title": "Zähler",
+        "description": "Wähle den Zähler, dessen Stände übermittelt werden sollen.",
+        "data": {
+          "ean": "EAN"
+        }
+      },
+      "sources": {
+        "title": "Zählerstände",
+        "description": "Wähle den Sensor mit dem Zählerstand für jedes Register der EAN {ean}. Jeder Sensor muss einen Gesamtstand liefern, keinen Momentanwert. Lässt du ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den du noch von Hand abliest.",
+        "data": {
+          "offtake_single": "Bezug",
+          "offtake_day": "Bezug, Tag",
+          "offtake_night": "Bezug, Nacht",
+          "offtake_exclusive_night": "Bezug, ausschließlich Nacht",
+          "injection_single": "Einspeisung",
+          "injection_day": "Einspeisung, Tag",
+          "injection_night": "Einspeisung, Nacht",
+          "injection_exclusive_night": "Einspeisung, ausschließlich Nacht",
+          "submit_time": "Übermitteln um"
+        },
+        "data_description": {
+          "submit_time": "Ortszeit, zu der die Zählerstände einmal täglich gesendet werden."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut anmelden",
+        "description": "Eneco akzeptiert das gespeicherte Passwort für {email} nicht mehr.",
+        "data": {
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Eneco hat diese Zugangsdaten abgelehnt.",
+      "cannot_connect": "Das Eneco Portal war nicht erreichbar."
+    },
+    "abort": {
+      "already_configured": "Dieser Zähler ist bereits eingerichtet.",
+      "cannot_connect": "Das Eneco Portal war nicht erreichbar: {error}",
+      "no_addresses": "Dieses Konto hat keine Adresse mit einem laufenden Vertrag.",
+      "no_meters": "An dieser Adresse gibt es weder einen Strom- noch einen Gaszähler.",
+      "no_registers": "Eneco nimmt für diesen Zähler keine Zählerstände entgegen.",
+      "reauth_successful": "Erneut angemeldet.",
+      "reconfigure_successful": "Konfiguration aktualisiert.",
+      "unique_id_mismatch": "Das ist ein anderer Zähler als der, für den dieser Eintrag eingerichtet wurde."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zählerstände",
+        "description": "Wähle den Sensor mit dem Zählerstand für jedes Register und die Uhrzeit der Übermittlung. Lässt du ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den du noch von Hand abliest.",
+        "data": {
+          "offtake_single": "Bezug",
+          "offtake_day": "Bezug, Tag",
+          "offtake_night": "Bezug, Nacht",
+          "offtake_exclusive_night": "Bezug, ausschließlich Nacht",
+          "injection_single": "Einspeisung",
+          "injection_day": "Einspeisung, Tag",
+          "injection_night": "Einspeisung, Nacht",
+          "injection_exclusive_night": "Einspeisung, ausschließlich Nacht",
+          "submit_time": "Übermitteln um"
+        },
+        "data_description": {
+          "submit_time": "Ortszeit, zu der die Zählerstände einmal täglich gesendet werden."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "submit": {
+        "name": "Zählerstände übermitteln"
+      }
+    },
+    "sensor": {
+      "last_submission": {
+        "name": "Letzte Übermittlung"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "pending": "Ausstehend",
+          "success": "Erfolgreich",
+          "already_submitted": "Bereits übermittelt",
+          "nothing_to_submit": "Nichts zu übermitteln",
+          "failed": "Fehlgeschlagen"
+        }
+      },
+      "next_submission": {
+        "name": "Nächste Übermittlung"
+      }
+    },
+    "time": {
+      "submit_time": {
+        "name": "Übermitteln um"
+      }
+    }
+  },
+  "issues": {
+    "submission_failed": {
+      "title": "Zählerstände erreichen Eneco nicht",
+      "description": "{name} konnte die Zählerstände {count} Mal hintereinander nicht übermitteln. Letzter Grund: {error}\n\nÖffne die Integration und prüfe den Status-Sensor, die als Quelle gewählten Sensoren und ob Eneco deine Anmeldung noch akzeptiert."
+    }
+  }
+}

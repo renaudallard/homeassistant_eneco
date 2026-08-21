@@ -36,7 +36,7 @@
       },
       "sources": {
         "title": "Meter readings",
-        "description": "Choose the sensor that holds the meter index for each register of EAN {ean}. Every sensor must report a total in an energy unit, not a rate. Leave a register empty and it is simply not submitted, which is what a meter you still read by hand needs.",
+        "description": "Choose the sensor that holds the meter index for each register of EAN {ean}. Every sensor must report a total index, not a rate. Leave a register empty and it is simply not submitted, which is what a meter you still read by hand needs.",
         "data": {
           "offtake_single": "Consumption",
           "offtake_day": "Consumption, day",
