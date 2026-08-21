@@ -112,6 +112,7 @@
         "state": {
           "pending": "Pending",
           "success": "Success",
+          "already_submitted": "Already submitted",
           "failed": "Failed"
         }
       },
@@ -123,6 +124,12 @@
       "submit_time": {
         "name": "Submit at"
       }
+    }
+  },
+  "issues": {
+    "submission_failed": {
+      "title": "Meter readings are not reaching Eneco",
+      "description": "{name} has failed to submit its meter readings {count} times in a row. The last reason was: {error}\n\nOpen the integration and check the status sensor, the sensors you chose as sources, and whether Eneco still accepts your sign in."
     }
   }
 }

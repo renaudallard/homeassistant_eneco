@@ -37,6 +37,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -61,6 +62,9 @@ _LOGGER = logging.getLogger(__name__)
 ENERGY_TYPE = "Electricity"
 STORAGE_VERSION = 1
 
+# How many consecutive failures before the user is told out loud.
+REPAIR_AFTER_FAILURES = 3
+
 
 class ReadingUnavailableError(EnecoError):
     """A configured source entity did not offer a usable value."""
@@ -75,6 +79,8 @@ class EnecoState:
     submitted_date: date | None = None
     values: dict[str, int] = field(default_factory=dict)
     error: str | None = None
+    skipped: bool = False
+    failures: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON friendly form for the store."""
@@ -86,6 +92,8 @@ class EnecoState:
             ),
             "values": self.values,
             "error": self.error,
+            "skipped": self.skipped,
+            "failures": self.failures,
         }
 
     @classmethod
@@ -107,6 +115,8 @@ class EnecoState:
             if isinstance(values, dict)
             else {},
             error=data.get("error"),
+            skipped=bool(data.get("skipped")),
+            failures=int(data.get("failures") or 0),
         )
 
 
@@ -219,8 +229,35 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
     async def _async_update_data(self) -> EnecoState:
         """Submit, then remember the outcome across restarts."""
         state = await self._async_submit()
+        state.failures = self.data.failures + 1 if state.error else 0
+        self._async_review_repair(state)
         await self._store.async_save(state.as_dict())
         return state
+
+    @callback
+    def _async_review_repair(self, state: EnecoState) -> None:
+        """Raise a repair once failures stop looking like a blip.
+
+        A failed status sensor is easy to never look at, and a household can go
+        weeks without noticing that nothing is reaching Eneco.
+        """
+        issue_id = f"submission_failed_{self.config_entry.entry_id}"
+        if state.failures < REPAIR_AFTER_FAILURES:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="submission_failed",
+            translation_placeholders={
+                "name": self.config_entry.title,
+                "count": str(state.failures),
+                "error": state.error or "",
+            },
+        )
 
     async def _async_submit(self) -> EnecoState:
         """Submit today's readings and report what happened.
@@ -244,6 +281,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
         if previous.submitted_date == today:
             _LOGGER.debug("Readings for %s already submitted, skipping", today)
+            state.skipped = True
             return state
 
         try:

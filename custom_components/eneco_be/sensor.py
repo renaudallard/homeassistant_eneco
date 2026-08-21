@@ -46,13 +46,18 @@ from .entity import EnecoEntity
 STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
+STATUS_ALREADY_SUBMITTED = "already_submitted"
 
 
 def _status(state: EnecoState) -> str:
     """Return the outcome of the last attempt as an enum value."""
     if state.attempted is None:
         return STATUS_PENDING
-    return STATUS_FAILED if state.error else STATUS_SUCCESS
+    if state.error:
+        return STATUS_FAILED
+    if state.skipped:
+        return STATUS_ALREADY_SUBMITTED
+    return STATUS_SUCCESS
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -75,7 +80,12 @@ SENSORS: tuple[EnecoSensorDescription, ...] = (
         translation_key="status",
         device_class=SensorDeviceClass.ENUM,
         entity_category=EntityCategory.DIAGNOSTIC,
-        options=[STATUS_PENDING, STATUS_SUCCESS, STATUS_FAILED],
+        options=[
+            STATUS_PENDING,
+            STATUS_SUCCESS,
+            STATUS_ALREADY_SUBMITTED,
+            STATUS_FAILED,
+        ],
         value_fn=lambda coordinator: _status(coordinator.data),
     ),
     EnecoSensorDescription(

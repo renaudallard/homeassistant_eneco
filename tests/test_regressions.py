@@ -51,11 +51,12 @@ from custom_components.eneco_be.api import (
     Register,
 )
 from custom_components.eneco_be.const import ATTR_LAST_ERROR, CONF_SUBMIT_TIME, DOMAIN
-from custom_components.eneco_be.coordinator import EnecoState
+from custom_components.eneco_be.coordinator import REPAIR_AFTER_FAILURES, EnecoState
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eneco_be.sensor import EnecoSensor
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
 from .conftest import ACCOUNT, API, EMAIL, PASSWORD, mock_discovery, mock_login
@@ -232,7 +233,7 @@ async def test_the_same_date_is_not_submitted_twice(
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
 ) -> None:
-    """A second run on a date already done is a no op, not a rejected POST."""
+    """A second run on a date already done is a no op, and says so."""
     set_sources(hass)
     await setup_entry(hass, config_entry)
 
@@ -242,7 +243,8 @@ async def test_the_same_date_is_not_submitted_twice(
 
     await press(hass)
     assert len(submissions(mock_portal)) == 1
-    assert state_of(hass, STATUS).state == "success"
+    # Reporting success would claim something was sent when nothing was.
+    assert state_of(hass, STATUS).state == "already_submitted"
 
 
 async def test_next_submission_is_never_in_the_past(
@@ -465,3 +467,75 @@ async def test_removing_the_entry_forgets_the_store(
     await hass.async_block_till_done()
 
     assert key not in hass_storage
+
+
+async def test_a_repair_is_raised_once_failures_persist(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """A failed status sensor is easy to miss, a repair card is not."""
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    issue_id = f"submission_failed_{config_entry.entry_id}"
+
+    for _ in range(REPAIR_AFTER_FAILURES - 1):
+        await press(hass)
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+    await press(hass)
+    issue = issue_registry.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_placeholders is not None
+    assert issue.translation_placeholders["count"] == str(REPAIR_AFTER_FAILURES)
+
+
+async def test_the_repair_clears_once_a_submission_lands(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """Fixing the cause must take the card away again."""
+    failing = True
+
+    async def answer(method: str, url: Any, data: Any) -> Any:
+        if failing:
+            return AiohttpClientMockResponse(
+                method, url, status=HTTPStatus.INTERNAL_SERVER_ERROR, json={}
+            )
+        return AiohttpClientMockResponse(method, url, json={"data": None})
+
+    aioclient_mock.post(f"{API}/accounts/{ACCOUNT}/meter-readings", side_effect=answer)
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    issue_id = f"submission_failed_{config_entry.entry_id}"
+
+    for _ in range(REPAIR_AFTER_FAILURES):
+        await press(hass)
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    failing = False
+    await press(hass)
+
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+    assert state_of(hass, STATUS).state == "success"

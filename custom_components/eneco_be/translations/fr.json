@@ -112,6 +112,7 @@
         "state": {
           "pending": "En attente",
           "success": "Réussie",
+          "already_submitted": "Déjà transmise",
           "failed": "Échouée"
         }
       },
@@ -123,6 +124,12 @@
       "submit_time": {
         "name": "Transmettre à"
       }
+    }
+  },
+  "issues": {
+    "submission_failed": {
+      "title": "Les relevés n'arrivent pas chez Eneco",
+      "description": "{name} n'a pas réussi à transmettre ses relevés {count} fois de suite. Dernière raison : {error}\n\nOuvrez l'intégration et vérifiez le capteur d'état, les capteurs choisis comme sources, et si Eneco accepte toujours votre connexion."
     }
   }
 }
