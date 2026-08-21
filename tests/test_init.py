@@ -423,3 +423,59 @@ async def test_next_submission_sensor(
     moved = dt_util.parse_datetime(state_of(hass, NEXT).state)
     assert moved is not None
     assert dt_util.as_local(moved).strftime("%H:%M:%S") == "04:05:00"
+
+
+async def setup_with_submit_time(
+    hass: HomeAssistant, config_entry: MockConfigEntry, at: str
+) -> None:
+    """Set up the entry with a given submission time."""
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: at}
+    )
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_a_missed_day_is_caught_up_at_startup(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A wall clock trigger cannot fire while Home Assistant is down."""
+    set_sources(hass)
+    # The clock is pinned at midday, so 06:00 today has already gone by.
+    await setup_with_submit_time(hass, config_entry, "06:00:00")
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "success"
+
+
+async def test_nothing_is_caught_up_before_the_time(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Today's moment has not passed yet, so there is nothing to catch up."""
+    set_sources(hass)
+    await setup_with_submit_time(hass, config_entry, "23:50:00")
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).state == "pending"
+
+
+async def test_a_day_already_done_is_not_caught_up(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Restarting after a successful submission must not send it again."""
+    set_sources(hass)
+    await setup_with_submit_time(hass, config_entry, "06:00:00")
+    assert len(submissions(mock_portal)) == 1
+
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "success"

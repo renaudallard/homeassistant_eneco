@@ -221,6 +221,25 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         _LOGGER.debug("Next submission due %s", self.next_submission)
 
     @callback
+    def async_catch_up(self) -> None:
+        """Submit straight away if today's moment has already gone by.
+
+        A wall clock trigger cannot fire while Home Assistant is down, so
+        without this a restart across the configured time costs a whole day.
+        The reading is dated today either way, and a date that has already been
+        submitted is skipped, so the worst this can do is nothing.
+        """
+        now = dt_util.now()
+        if now.time() < self.submit_time:
+            return
+        if self.data.submitted_date == now.date():
+            return
+        _LOGGER.debug("Today's submission was missed, catching up")
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_refresh(), f"{DOMAIN} catch up"
+        )
+
+    @callback
     def async_cancel_schedule(self) -> None:
         """Cancel the daily trigger if one is armed."""
         if self._unsub is not None:

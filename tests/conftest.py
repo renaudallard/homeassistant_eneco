@@ -28,6 +28,7 @@ import json
 import re
 from typing import Any
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -67,6 +68,17 @@ SOURCES = {
 def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let Home Assistant load this custom integration."""
     return
+
+
+@pytest.fixture(autouse=True)
+def _fixed_clock(freezer: FrozenDateTimeFactory) -> None:
+    """Pin the clock so the tests do not depend on when they run.
+
+    The integration compares the wall clock against the submission time to
+    decide whether it missed today, so a suite run late in the evening would
+    otherwise behave differently from one run at lunchtime.
+    """
+    freezer.move_to("2026-08-21T19:00:00+00:00")
 
 
 def dashboard_page(accounts: list[dict[str, str]]) -> str:

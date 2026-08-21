@@ -88,6 +88,12 @@ What the last attempt did is remembered across restarts, so the sensors carry on
 reporting the real last submission rather than resetting, and a day that was
 already submitted is not sent again after a restart.
 
+A wall clock trigger cannot fire while Home Assistant is down, so if the
+configured time has already gone by when it starts and today has not been
+submitted yet, the readings are sent straight away rather than the day being
+lost. That also means a freshly configured meter submits as soon as you finish
+setting it up, if you chose a time earlier in the day.
+
 ## Changing the configuration
 
 To move the **submission time**, set the `time.*_submit_at` entity on the device
@@ -115,14 +121,12 @@ prompt by itself.
   on the status sensor.
 - Your credentials are stored in the Home Assistant configuration, like every
   other cloud integration.
-- **A restart across the submission time skips that day.** The schedule is a
-  wall clock trigger, so if Home Assistant is down at the configured moment
-  nothing is sent until the next day, and there is no catch up. Meter readings
-  are cumulative, so the following day's reading still accounts for the gap.
 - **A submission time between 02:00 and 03:00 is affected by daylight saving.**
-  On the spring forward night that hour does not exist and the day is skipped;
-  on the autumn night it happens twice, and the second run is a no op because
-  the date has already been submitted. Any other time of day is unaffected.
+  On the spring forward night that hour does not exist, so the trigger does not
+  fire; the reading is caught up the next time Home Assistant starts, and
+  otherwise that day is skipped. On the autumn night the hour happens twice, and
+  the second run is a no op because the date has already been submitted. Any
+  other time of day is unaffected.
 
 ## How it works
 

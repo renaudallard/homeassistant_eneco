@@ -69,6 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
 
     coordinator.async_schedule()
     entry.async_on_unload(coordinator.async_cancel_schedule)
+    coordinator.async_catch_up()
     return True
 
 
