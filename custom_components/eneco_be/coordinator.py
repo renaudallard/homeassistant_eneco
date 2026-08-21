@@ -170,7 +170,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             return round(
                 EnergyConverter.convert(raw, unit, UnitOfEnergy.KILO_WATT_HOUR)
             )
-        except HomeAssistantError, TypeError:
+        except (HomeAssistantError, TypeError):
             _LOGGER.warning(
                 "%s reports %s, which is not an energy unit", entity_id, unit
             )
