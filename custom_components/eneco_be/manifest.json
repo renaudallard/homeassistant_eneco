@@ -1,0 +1,16 @@
+{
+  "domain": "eneco_be",
+  "name": "Eneco Belgium",
+  "codeowners": [
+    "@renaudallard"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/renaudallard/homeassistant_eneco",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/renaudallard/homeassistant_eneco/issues",
+  "loggers": [
+    "custom_components.eneco_be"
+  ],
+  "version": "0.1.0"
+}

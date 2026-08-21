@@ -1,0 +1,17 @@
+name: hassfest
+
+on:
+  push:
+  pull_request:
+  # Home Assistant tightens hassfest between releases, so check without a push.
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: Validate the integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: home-assistant/actions/hassfest@master

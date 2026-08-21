@@ -1,0 +1,120 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eneco België",
+        "description": "Meld je aan met het account dat je op eneco.be gebruikt.",
+        "data": {
+          "email": "E-mailadres",
+          "password": "Wachtwoord"
+        },
+        "data_description": {
+          "email": "Het e-mailadres van je My Eneco account.",
+          "password": "Accounts met tweestapsverificatie kunnen niet worden gebruikt."
+        }
+      },
+      "account": {
+        "title": "Account",
+        "description": "Kies het account waarvan je de meterstanden wilt doorgeven.",
+        "data": {
+          "account": "Account"
+        }
+      },
+      "address": {
+        "title": "Adres",
+        "description": "Kies het leveringsadres van de meter.",
+        "data": {
+          "address": "Adres"
+        }
+      },
+      "meter": {
+        "title": "Meter",
+        "description": "Kies de elektriciteitsmeter waarvoor je meterstanden wilt doorgeven.",
+        "data": {
+          "ean": "EAN"
+        }
+      },
+      "sources": {
+        "title": "Meterstanden",
+        "description": "Kies de sensor met de meterstand voor elk register van EAN {ean}. Elke sensor moet een totaal in een energie-eenheid geven, geen vermogen.",
+        "data": {
+          "offtake_single": "Afname",
+          "offtake_day": "Afname, dag",
+          "offtake_night": "Afname, nacht",
+          "offtake_exclusive_night": "Afname, exclusief nacht",
+          "injection_single": "Injectie",
+          "injection_day": "Injectie, dag",
+          "injection_night": "Injectie, nacht",
+          "injection_exclusive_night": "Injectie, exclusief nacht",
+          "submit_time": "Doorgeven om"
+        },
+        "data_description": {
+          "submit_time": "Lokale tijd waarop de meterstanden eenmaal per dag worden doorgegeven."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Opnieuw aanmelden",
+        "description": "Eneco aanvaardt het bewaarde wachtwoord voor {email} niet meer.",
+        "data": {
+          "password": "Wachtwoord"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Eneco heeft deze gegevens geweigerd.",
+      "cannot_connect": "Kan het Eneco-portaal niet bereiken."
+    },
+    "abort": {
+      "already_configured": "Deze meter is al ingesteld.",
+      "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
+      "no_addresses": "Dit account heeft geen adres met een actief contract.",
+      "no_electricity_meter": "Op dit adres staat geen elektriciteitsmeter.",
+      "no_registers": "Eneco aanvaardt geen meterstanden voor deze meter.",
+      "reauth_successful": "Opnieuw aangemeld.",
+      "reconfigure_successful": "Configuratie bijgewerkt.",
+      "unique_id_mismatch": "Dit is een andere meter dan die waarvoor deze invoer is ingesteld."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Meterstanden",
+        "description": "Kies de sensor met de meterstand voor elk register, en wanneer ze worden doorgegeven.",
+        "data": {
+          "offtake_single": "Afname",
+          "offtake_day": "Afname, dag",
+          "offtake_night": "Afname, nacht",
+          "offtake_exclusive_night": "Afname, exclusief nacht",
+          "injection_single": "Injectie",
+          "injection_day": "Injectie, dag",
+          "injection_night": "Injectie, nacht",
+          "injection_exclusive_night": "Injectie, exclusief nacht",
+          "submit_time": "Doorgeven om"
+        },
+        "data_description": {
+          "submit_time": "Lokale tijd waarop de meterstanden eenmaal per dag worden doorgegeven."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "submit": {
+        "name": "Meterstanden doorgeven"
+      }
+    },
+    "sensor": {
+      "last_submission": {
+        "name": "Laatste doorgave"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "pending": "In afwachting",
+          "success": "Gelukt",
+          "failed": "Mislukt"
+        }
+      }
+    }
+  }
+}

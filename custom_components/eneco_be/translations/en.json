@@ -1,0 +1,120 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eneco Belgium",
+        "description": "Sign in with the account you use on eneco.be.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The email address of your My Eneco account.",
+          "password": "Accounts protected by two-factor authentication cannot be used."
+        }
+      },
+      "account": {
+        "title": "Account",
+        "description": "Choose the account whose meter readings you want to submit.",
+        "data": {
+          "account": "Account"
+        }
+      },
+      "address": {
+        "title": "Address",
+        "description": "Choose the delivery address of the meter.",
+        "data": {
+          "address": "Address"
+        }
+      },
+      "meter": {
+        "title": "Meter",
+        "description": "Choose the electricity meter to submit readings for.",
+        "data": {
+          "ean": "EAN"
+        }
+      },
+      "sources": {
+        "title": "Meter readings",
+        "description": "Choose the sensor that holds the meter index for each register of EAN {ean}. Every sensor must report a total in an energy unit, not a rate.",
+        "data": {
+          "offtake_single": "Import",
+          "offtake_day": "Import, day",
+          "offtake_night": "Import, night",
+          "offtake_exclusive_night": "Import, exclusive night",
+          "injection_single": "Export",
+          "injection_day": "Export, day",
+          "injection_night": "Export, night",
+          "injection_exclusive_night": "Export, exclusive night",
+          "submit_time": "Submit at"
+        },
+        "data_description": {
+          "submit_time": "Local time of day at which the readings are sent, once a day."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "Eneco no longer accepts the stored password for {email}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Eneco rejected these credentials.",
+      "cannot_connect": "Could not reach the Eneco portal."
+    },
+    "abort": {
+      "already_configured": "This meter is already set up.",
+      "cannot_connect": "Could not reach the Eneco portal: {error}",
+      "no_addresses": "This account has no address with an active contract.",
+      "no_electricity_meter": "There is no electricity meter at this address.",
+      "no_registers": "Eneco does not accept meter readings for this meter.",
+      "reauth_successful": "Signed in again.",
+      "reconfigure_successful": "Configuration updated.",
+      "unique_id_mismatch": "That is a different meter than the one this entry was set up for."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Meter readings",
+        "description": "Choose the sensor that holds the meter index for each register, and when to submit.",
+        "data": {
+          "offtake_single": "Import",
+          "offtake_day": "Import, day",
+          "offtake_night": "Import, night",
+          "offtake_exclusive_night": "Import, exclusive night",
+          "injection_single": "Export",
+          "injection_day": "Export, day",
+          "injection_night": "Export, night",
+          "injection_exclusive_night": "Export, exclusive night",
+          "submit_time": "Submit at"
+        },
+        "data_description": {
+          "submit_time": "Local time of day at which the readings are sent, once a day."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "submit": {
+        "name": "Submit readings"
+      }
+    },
+    "sensor": {
+      "last_submission": {
+        "name": "Last submission"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "pending": "Pending",
+          "success": "Success",
+          "failed": "Failed"
+        }
+      }
+    }
+  }
+}

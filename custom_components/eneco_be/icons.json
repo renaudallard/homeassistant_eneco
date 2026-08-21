@@ -1,0 +1,17 @@
+{
+  "entity": {
+    "button": {
+      "submit": {
+        "default": "mdi:upload"
+      }
+    },
+    "sensor": {
+      "last_submission": {
+        "default": "mdi:clock-check-outline"
+      },
+      "status": {
+        "default": "mdi:list-status"
+      }
+    }
+  }
+}

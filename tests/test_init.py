@@ -1,0 +1,352 @@
+# Copyright (c) 2026 Renaud Allard <renaud@allard.it>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+"""Tests for the setup and the daily submission."""
+
+from datetime import timedelta
+from http import HTTPStatus
+from typing import Any
+
+import pytest
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
+
+from custom_components.eneco_be.const import CONF_SOURCES, DOMAIN
+from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN, SERVICE_PRESS
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    ATTR_UNIT_OF_MEASUREMENT,
+    STATE_UNAVAILABLE,
+    UnitOfEnergy,
+)
+from homeassistant.core import HomeAssistant, State
+from homeassistant.util import dt as dt_util
+
+from .conftest import ACCOUNT, API, EAN, SOURCES, mock_discovery, mock_login
+
+BUTTON = "button.eneco_541449000000000001_submit_readings"
+STATUS = "sensor.eneco_541449000000000001_status"
+LAST = "sensor.eneco_541449000000000001_last_submission"
+
+READINGS = {
+    "sensor.import_day": "1234.6",
+    "sensor.import_night": "987.4",
+    "sensor.export_day": "55.2",
+    "sensor.export_night": "10.9",
+}
+
+
+def set_sources(
+    hass: HomeAssistant,
+    readings: dict[str, str] | None = None,
+    unit: str = UnitOfEnergy.KILO_WATT_HOUR,
+) -> None:
+    """Give every configured source entity a value."""
+    for entity_id, value in (readings or READINGS).items():
+        hass.states.async_set(entity_id, value, {ATTR_UNIT_OF_MEASUREMENT: unit})
+
+
+def submissions(mocker: AiohttpClientMocker) -> list[Any]:
+    """Return the bodies posted to the meter readings endpoint."""
+    return [
+        data
+        for method, url, data, _ in mocker.mock_calls
+        if method.lower() == "post" and str(url).endswith("/meter-readings")
+    ]
+
+
+async def setup_entry(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> MockConfigEntry:
+    """Add and set up the entry."""
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    return config_entry
+
+
+def state_of(hass: HomeAssistant, entity_id: str) -> State:
+    """Return an entity state, failing the test when it does not exist."""
+    state = hass.states.get(entity_id)
+    assert state is not None, f"{entity_id} does not exist"
+    return state
+
+
+async def press(hass: HomeAssistant) -> None:
+    """Press the submit button."""
+    await hass.services.async_call(
+        BUTTON_DOMAIN, SERVICE_PRESS, {ATTR_ENTITY_ID: BUTTON}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+
+async def test_setup_creates_entities(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A loaded entry exposes the button and both diagnostic sensors."""
+    await setup_entry(hass, config_entry)
+
+    assert config_entry.state is ConfigEntryState.LOADED
+    assert hass.states.get(BUTTON) is not None
+    assert state_of(hass, STATUS).state == "pending"
+    assert state_of(hass, LAST).state == "unknown"
+
+
+async def test_submit_posts_every_register(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Pressing the button posts one whole kWh value per register."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    posted = submissions(mock_portal)
+    assert len(posted) == 1
+
+    today = dt_util.now().date().isoformat()
+    assert sorted(
+        posted[0], key=lambda r: (r["direction"], r["meterTimeFrameType"])
+    ) == [
+        {
+            "accountNumber": ACCOUNT,
+            "readingValue": 55,
+            "ean": EAN,
+            "meterTimeFrameType": "HI",
+            "registeredDate": today,
+            "utilityType": "Electricity",
+            "direction": "Injection",
+        },
+        {
+            "accountNumber": ACCOUNT,
+            "readingValue": 11,
+            "ean": EAN,
+            "meterTimeFrameType": "LO",
+            "registeredDate": today,
+            "utilityType": "Electricity",
+            "direction": "Injection",
+        },
+        {
+            "accountNumber": ACCOUNT,
+            "readingValue": 1235,
+            "ean": EAN,
+            "meterTimeFrameType": "HI",
+            "registeredDate": today,
+            "utilityType": "Electricity",
+            "direction": "OffTake",
+        },
+        {
+            "accountNumber": ACCOUNT,
+            "readingValue": 987,
+            "ean": EAN,
+            "meterTimeFrameType": "LO",
+            "registeredDate": today,
+            "utilityType": "Electricity",
+            "direction": "OffTake",
+        },
+    ]
+
+    assert state_of(hass, STATUS).state == "success"
+    assert state_of(hass, LAST).state != "unknown"
+
+
+async def test_units_are_converted(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A source reporting watt hours is converted to whole kWh."""
+    set_sources(
+        hass,
+        dict.fromkeys(SOURCES.values(), "1500000"),
+        unit=UnitOfEnergy.WATT_HOUR,
+    )
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    assert {r["readingValue"] for r in submissions(mock_portal)[0]} == {1500}
+
+
+@pytest.mark.parametrize(
+    ("state", "attributes"),
+    [
+        (STATE_UNAVAILABLE, {}),
+        ("not a number", {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR}),
+        ("42", {ATTR_UNIT_OF_MEASUREMENT: "°C"}),
+    ],
+)
+async def test_unusable_source_blocks_the_whole_submission(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    state: str,
+    attributes: dict[str, Any],
+) -> None:
+    """Nothing is sent when one register cannot be read."""
+    set_sources(hass)
+    hass.states.async_set("sensor.import_night", state, attributes)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).state == "failed"
+    assert "sensor.import_night" in state_of(hass, STATUS).attributes["last_error"]
+
+
+async def test_missing_source_entity(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A source entity that does not exist is reported, not crashed on."""
+    set_sources(hass)
+    hass.states.async_remove("sensor.export_day")
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).state == "failed"
+
+
+async def test_portal_rejection_is_reported(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Eneco's validation codes end up on the status sensor."""
+    mock_portal.clear_requests()
+    mock_login(
+        mock_portal,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(mock_portal)
+    mock_portal.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.BAD_REQUEST,
+        json={"errors": {"errors": {"Validation": ["MeterReading.AlreadyExists"]}}},
+    )
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    status = state_of(hass, STATUS)
+    assert status.state == "failed"
+    assert status.attributes["last_error"] == "MeterReading.AlreadyExists"
+
+
+async def test_daily_schedule(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The submission runs by itself at the configured local time."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    assert submissions(mock_portal) == []
+
+    now = dt_util.now()
+    target = now.replace(hour=23, minute=50, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+
+    async_fire_time_changed(hass, dt_util.as_utc(target))
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
+
+
+async def test_auth_failure_triggers_reauth(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Credentials the portal refuses put the entry into reauth."""
+    aioclient_mock.post(
+        "https://login.eneco.be/api/v1/authn",
+        status=HTTPStatus.UNAUTHORIZED,
+        json={"errorSummary": "Authentication failed"},
+    )
+    config_entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.SETUP_ERROR
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [flow["context"]["source"] for flow in flows] == ["reauth"]
+
+
+async def test_unload(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Unloading removes the entities and the daily timer."""
+    await setup_entry(hass, config_entry)
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.NOT_LOADED
+    # Home Assistant leaves a restored placeholder behind rather than the entity.
+    assert state_of(hass, BUTTON).state == STATE_UNAVAILABLE
+
+
+async def test_options_are_used(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The register mapping in the options decides which sensor is read."""
+    hass.states.async_set(
+        "sensor.somewhere_else",
+        "77",
+        {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    set_sources(hass)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry,
+        options={
+            **config_entry.options,
+            CONF_SOURCES: {**SOURCES, "offtake_day": "sensor.somewhere_else"},
+        },
+    )
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    await press(hass)
+
+    posted = submissions(mock_portal)[0]
+    offtake_day = next(
+        r
+        for r in posted
+        if r["direction"] == "OffTake" and r["meterTimeFrameType"] == "HI"
+    )
+    assert offtake_day["readingValue"] == 77

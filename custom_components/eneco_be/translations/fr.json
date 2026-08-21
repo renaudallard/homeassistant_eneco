@@ -1,0 +1,120 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eneco Belgique",
+        "description": "Connectez-vous avec le compte que vous utilisez sur eneco.be.",
+        "data": {
+          "email": "Adresse e-mail",
+          "password": "Mot de passe"
+        },
+        "data_description": {
+          "email": "L'adresse e-mail de votre compte My Eneco.",
+          "password": "Les comptes protégés par une authentification à deux facteurs ne peuvent pas être utilisés."
+        }
+      },
+      "account": {
+        "title": "Compte",
+        "description": "Choisissez le compte dont vous voulez transmettre les relevés.",
+        "data": {
+          "account": "Compte"
+        }
+      },
+      "address": {
+        "title": "Adresse",
+        "description": "Choisissez l'adresse de fourniture du compteur.",
+        "data": {
+          "address": "Adresse"
+        }
+      },
+      "meter": {
+        "title": "Compteur",
+        "description": "Choisissez le compteur électrique dont vous voulez transmettre les relevés.",
+        "data": {
+          "ean": "EAN"
+        }
+      },
+      "sources": {
+        "title": "Relevés de compteur",
+        "description": "Choisissez le capteur qui contient l'index de chaque registre de l'EAN {ean}. Chaque capteur doit indiquer un total dans une unité d'énergie, pas une puissance.",
+        "data": {
+          "offtake_single": "Prélèvement",
+          "offtake_day": "Prélèvement, jour",
+          "offtake_night": "Prélèvement, nuit",
+          "offtake_exclusive_night": "Prélèvement, nuit exclusive",
+          "injection_single": "Injection",
+          "injection_day": "Injection, jour",
+          "injection_night": "Injection, nuit",
+          "injection_exclusive_night": "Injection, nuit exclusive",
+          "submit_time": "Transmettre à"
+        },
+        "data_description": {
+          "submit_time": "Heure locale à laquelle les relevés sont transmis, une fois par jour."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Se reconnecter",
+        "description": "Eneco n'accepte plus le mot de passe enregistré pour {email}.",
+        "data": {
+          "password": "Mot de passe"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Eneco a refusé ces identifiants.",
+      "cannot_connect": "Impossible de joindre le portail Eneco."
+    },
+    "abort": {
+      "already_configured": "Ce compteur est déjà configuré.",
+      "cannot_connect": "Impossible de joindre le portail Eneco : {error}",
+      "no_addresses": "Ce compte n'a aucune adresse avec un contrat actif.",
+      "no_electricity_meter": "Il n'y a pas de compteur électrique à cette adresse.",
+      "no_registers": "Eneco n'accepte pas de relevés pour ce compteur.",
+      "reauth_successful": "Reconnexion réussie.",
+      "reconfigure_successful": "Configuration mise à jour.",
+      "unique_id_mismatch": "Ce compteur n'est pas celui pour lequel cette entrée a été configurée."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Relevés de compteur",
+        "description": "Choisissez le capteur qui contient l'index de chaque registre, et l'heure de transmission.",
+        "data": {
+          "offtake_single": "Prélèvement",
+          "offtake_day": "Prélèvement, jour",
+          "offtake_night": "Prélèvement, nuit",
+          "offtake_exclusive_night": "Prélèvement, nuit exclusive",
+          "injection_single": "Injection",
+          "injection_day": "Injection, jour",
+          "injection_night": "Injection, nuit",
+          "injection_exclusive_night": "Injection, nuit exclusive",
+          "submit_time": "Transmettre à"
+        },
+        "data_description": {
+          "submit_time": "Heure locale à laquelle les relevés sont transmis, une fois par jour."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "submit": {
+        "name": "Transmettre les relevés"
+      }
+    },
+    "sensor": {
+      "last_submission": {
+        "name": "Dernière transmission"
+      },
+      "status": {
+        "name": "État",
+        "state": {
+          "pending": "En attente",
+          "success": "Réussie",
+          "failed": "Échouée"
+        }
+      }
+    }
+  }
+}
