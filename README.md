@@ -61,6 +61,8 @@ Every entry creates one device, named after the meter's EAN, with:
 
 | Entity | Purpose |
 | --- | --- |
+| `time.*_submit_at` | The time of day readings are sent; change it here and the schedule moves immediately |
+| `sensor.*_next_submission` | When the next submission is due, shown as a countdown |
 | `button.*_submit_readings` | Submit the readings now |
 | `sensor.*_last_submission` | When the last submission succeeded |
 | `sensor.*_status` | `pending`, `success` or `failed`, with the reason as an attribute |
@@ -72,10 +74,18 @@ Use *Download diagnostics* on the device to see exactly what was last sent.
 
 ## Changing the configuration
 
-*Configure* on the entry changes the sensors and the submission time and takes
-effect immediately. *Reconfigure* walks the whole flow again, which is what you
-want after a meter change. If Eneco stops accepting the stored password, Home
-Assistant raises a reauthentication prompt.
+To move the **submission time**, set the `time.*_submit_at` entity on the device
+page. The schedule is rearmed as soon as you change it, and
+`sensor.*_next_submission` updates to match.
+
+To change **which sensor feeds which register**, open the integration page,
+click the three dots on the entry and choose *Configure*. The form comes up
+prefilled with your current mapping.
+
+*Reconfigure*, in the same menu, walks the whole flow again including the
+credentials, which is what you want after a meter change. If Eneco stops
+accepting the stored password, Home Assistant raises a reauthentication
+prompt by itself.
 
 ## Limitations
 

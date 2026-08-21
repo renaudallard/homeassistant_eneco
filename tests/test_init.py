@@ -35,8 +35,9 @@ from pytest_homeassistant_custom_component.common import (
 )
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.eneco_be.const import CONF_SOURCES, DOMAIN
+from custom_components.eneco_be.const import CONF_SOURCES, CONF_SUBMIT_TIME, DOMAIN
 from homeassistant.components.button.const import DOMAIN as BUTTON_DOMAIN, SERVICE_PRESS
+from homeassistant.components.time.const import DOMAIN as TIME_DOMAIN, SERVICE_SET_VALUE
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -52,6 +53,8 @@ from .conftest import ACCOUNT, API, EAN, SOURCES, mock_discovery, mock_login
 BUTTON = "button.eneco_541449000000000001_submit_readings"
 STATUS = "sensor.eneco_541449000000000001_status"
 LAST = "sensor.eneco_541449000000000001_last_submission"
+NEXT = "sensor.eneco_541449000000000001_next_submission"
+SUBMIT_TIME = "time.eneco_541449000000000001_submit_at"
 
 READINGS = {
     "sensor.import_day": "1234.6",
@@ -350,3 +353,68 @@ async def test_options_are_used(
         if r["direction"] == "OffTake" and r["meterTimeFrameType"] == "HI"
     )
     assert offtake_day["readingValue"] == 77
+
+
+async def test_submission_time_is_adjustable_from_the_device(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The time entity shows the schedule and moving it rearms the trigger."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+
+    assert state_of(hass, SUBMIT_TIME).state == "23:50:00"
+
+    await hass.services.async_call(
+        TIME_DOMAIN,
+        SERVICE_SET_VALUE,
+        {ATTR_ENTITY_ID: SUBMIT_TIME, "time": "06:30:00"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert state_of(hass, SUBMIT_TIME).state == "06:30:00"
+    assert config_entry.options[CONF_SUBMIT_TIME] == "06:30:00"
+
+    # The old moment must no longer fire, the new one must.
+    now = dt_util.now()
+    old = now.replace(hour=23, minute=50, second=0, microsecond=0)
+    if old <= now:
+        old += timedelta(days=1)
+    async_fire_time_changed(hass, dt_util.as_utc(old))
+    await hass.async_block_till_done()
+    assert submissions(mock_portal) == []
+
+    new = now.replace(hour=6, minute=30, second=0, microsecond=0)
+    while new <= dt_util.now():
+        new += timedelta(days=1)
+    async_fire_time_changed(hass, dt_util.as_utc(new))
+    await hass.async_block_till_done()
+    assert len(submissions(mock_portal)) == 1
+
+
+async def test_next_submission_sensor(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The countdown sensor points at the next occurrence of the set time."""
+    await setup_entry(hass, config_entry)
+
+    expected = dt_util.parse_datetime(state_of(hass, NEXT).state)
+    assert expected is not None
+    assert dt_util.as_local(expected).strftime("%H:%M:%S") == "23:50:00"
+    assert expected > dt_util.utcnow()
+
+    await hass.services.async_call(
+        TIME_DOMAIN,
+        SERVICE_SET_VALUE,
+        {ATTR_ENTITY_ID: SUBMIT_TIME, "time": "04:05:00"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    moved = dt_util.parse_datetime(state_of(hass, NEXT).state)
+    assert moved is not None
+    assert dt_util.as_local(moved).strftime("%H:%M:%S") == "04:05:00"

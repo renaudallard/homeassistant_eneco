@@ -11,6 +11,14 @@
       },
       "status": {
         "default": "mdi:list-status"
+      },
+      "next_submission": {
+        "default": "mdi:clock-outline"
+      }
+    },
+    "time": {
+      "submit_time": {
+        "default": "mdi:clock-edit-outline"
       }
     }
   }

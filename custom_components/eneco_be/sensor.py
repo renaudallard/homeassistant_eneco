@@ -59,7 +59,7 @@ def _status(state: EnecoState) -> str:
 class EnecoSensorDescription(SensorEntityDescription):
     """Describes an Eneco sensor and how to read it off the state."""
 
-    value_fn: Callable[[EnecoState], datetime | str | None]
+    value_fn: Callable[[EnecoCoordinator], datetime | str | None]
 
 
 SENSORS: tuple[EnecoSensorDescription, ...] = (
@@ -68,7 +68,7 @@ SENSORS: tuple[EnecoSensorDescription, ...] = (
         translation_key="last_submission",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda state: state.succeeded,
+        value_fn=lambda coordinator: coordinator.data.succeeded,
     ),
     EnecoSensorDescription(
         key="status",
@@ -76,7 +76,13 @@ SENSORS: tuple[EnecoSensorDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         entity_category=EntityCategory.DIAGNOSTIC,
         options=[STATUS_PENDING, STATUS_SUCCESS, STATUS_FAILED],
-        value_fn=_status,
+        value_fn=lambda coordinator: _status(coordinator.data),
+    ),
+    EnecoSensorDescription(
+        key="next_submission",
+        translation_key="next_submission",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda coordinator: coordinator.next_submission,
     ),
 )
 
@@ -110,7 +116,7 @@ class EnecoSensor(EnecoEntity, SensorEntity):
     @override
     def native_value(self) -> datetime | str | None:
         """Return the value this sensor reports."""
-        return self.entity_description.value_fn(self.coordinator.data)
+        return self.entity_description.value_fn(self.coordinator)
 
     @property
     @override

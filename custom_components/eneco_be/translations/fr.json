@@ -114,6 +114,14 @@
           "success": "Réussie",
           "failed": "Échouée"
         }
+      },
+      "next_submission": {
+        "name": "Prochaine transmission"
+      }
+    },
+    "time": {
+      "submit_time": {
+        "name": "Transmettre à"
       }
     }
   }

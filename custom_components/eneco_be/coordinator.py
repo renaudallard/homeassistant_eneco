@@ -25,7 +25,7 @@
 """Collect meter readings from Home Assistant and submit them to Eneco."""
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 import logging
 from typing import TYPE_CHECKING, override
 
@@ -35,14 +35,22 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfEnergy,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
 
 from .api import EnecoAuthError, EnecoClient, EnecoError, EnecoValidationError, Register
-from .const import CONF_ACCOUNT, CONF_EAN, CONF_SOURCES, DOMAIN
+from .const import (
+    CONF_ACCOUNT,
+    CONF_EAN,
+    CONF_SOURCES,
+    CONF_SUBMIT_TIME,
+    DEFAULT_SUBMIT_TIME,
+    DOMAIN,
+)
 
 if TYPE_CHECKING:
     from . import EnecoConfigEntry
@@ -93,6 +101,57 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         )
         self.client = client
         self.data = EnecoState()
+        self._unsub: CALLBACK_TYPE | None = None
+
+    @property
+    def submit_time(self) -> time:
+        """Return the local time of day readings are sent."""
+        configured = self.config_entry.options.get(
+            CONF_SUBMIT_TIME, DEFAULT_SUBMIT_TIME
+        )
+        return dt_util.parse_time(configured) or time.fromisoformat(DEFAULT_SUBMIT_TIME)
+
+    @property
+    def next_submission(self) -> datetime:
+        """Return when the next submission is due, in local time."""
+        at = self.submit_time
+        return dt_util.find_next_time_expression_time(
+            dt_util.now(), [at.second], [at.minute], [at.hour]
+        )
+
+    @callback
+    def async_schedule(self) -> None:
+        """Arm the daily trigger, replacing any previous one."""
+        self.async_cancel_schedule()
+        at = self.submit_time
+
+        async def _submit(now: datetime) -> None:
+            _LOGGER.debug("Daily submission triggered at %s", now)
+            await self.async_refresh()
+
+        self._unsub = async_track_time_change(
+            self.hass, _submit, hour=at.hour, minute=at.minute, second=at.second
+        )
+        _LOGGER.debug("Next submission due %s", self.next_submission)
+
+    @callback
+    def async_cancel_schedule(self) -> None:
+        """Cancel the daily trigger if one is armed."""
+        if self._unsub is not None:
+            self._unsub()
+            self._unsub = None
+
+    async def async_set_submit_time(self, value: time) -> None:
+        """Change the time of day readings are sent and re-arm the trigger."""
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={
+                **self.config_entry.options,
+                CONF_SUBMIT_TIME: value.isoformat(),
+            },
+        )
+        self.async_schedule()
+        self.async_update_listeners()
 
     @override
     async def _async_update_data(self) -> EnecoState:
@@ -170,7 +229,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             return round(
                 EnergyConverter.convert(raw, unit, UnitOfEnergy.KILO_WATT_HOUR)
             )
-        except (HomeAssistantError, TypeError):
+        except HomeAssistantError, TypeError:
             _LOGGER.warning(
                 "%s reports %s, which is not an energy unit", entity_id, unit
             )

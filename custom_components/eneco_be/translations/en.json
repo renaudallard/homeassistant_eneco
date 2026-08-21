@@ -114,6 +114,14 @@
           "success": "Success",
           "failed": "Failed"
         }
+      },
+      "next_submission": {
+        "name": "Next submission"
+      }
+    },
+    "time": {
+      "submit_time": {
+        "name": "Submit at"
       }
     }
   }

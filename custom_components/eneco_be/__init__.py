@@ -24,20 +24,17 @@
 
 """Submit electricity meter readings to the Eneco Belgium portal."""
 
-from datetime import datetime, time
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.util import dt as dt_util
 
 from .api import EnecoAuthError, EnecoClient, EnecoConnectionError
-from .const import CONF_SUBMIT_TIME, DEFAULT_SUBMIT_TIME, DOMAIN
+from .const import DOMAIN
 from .coordinator import EnecoCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 # There is no YAML form of this integration; entries come from the config flow.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.SENSOR, Platform.TIME]
 
 type EnecoConfigEntry = ConfigEntry[EnecoCoordinator]
 
@@ -69,28 +66,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    entry.async_on_unload(_async_schedule_daily(hass, entry, coordinator))
+    coordinator.async_schedule()
+    entry.async_on_unload(coordinator.async_cancel_schedule)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> bool:
     """Unload the entry and everything registered with it."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-
-
-@callback
-def _async_schedule_daily(
-    hass: HomeAssistant, entry: EnecoConfigEntry, coordinator: EnecoCoordinator
-) -> CALLBACK_TYPE:
-    """Submit the readings once a day at the configured local time."""
-    at = dt_util.parse_time(
-        entry.options.get(CONF_SUBMIT_TIME, DEFAULT_SUBMIT_TIME)
-    ) or time.fromisoformat(DEFAULT_SUBMIT_TIME)
-
-    async def _submit(now: datetime) -> None:
-        _LOGGER.debug("Daily submission triggered at %s", now)
-        await coordinator.async_refresh()
-
-    return async_track_time_change(
-        hass, _submit, hour=at.hour, minute=at.minute, second=at.second
-    )

@@ -114,6 +114,14 @@
           "success": "Gelukt",
           "failed": "Mislukt"
         }
+      },
+      "next_submission": {
+        "name": "Volgende doorgave"
+      }
+    },
+    "time": {
+      "submit_time": {
+        "name": "Doorgeven om"
       }
     }
   }
