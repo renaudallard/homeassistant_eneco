@@ -102,6 +102,14 @@ prompt by itself.
   on the status sensor.
 - Your credentials are stored in the Home Assistant configuration, like every
   other cloud integration.
+- **A restart across the submission time skips that day.** The schedule is a
+  wall clock trigger, so if Home Assistant is down at the configured moment
+  nothing is sent until the next day. Meter readings are cumulative, so the
+  following day's reading still accounts for the gap.
+- **A submission time between 02:00 and 03:00 is affected by daylight saving.**
+  On the spring forward night that hour does not exist and the day is skipped;
+  on the autumn night it happens twice, and the second run is a no op because
+  the date has already been submitted. Any other time of day is unaffected.
 
 ## How it works
 

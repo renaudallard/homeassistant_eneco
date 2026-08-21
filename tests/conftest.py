@@ -103,6 +103,7 @@ def mock_discovery(
     addresses: list[dict[str, Any]] | None = None,
     points: list[dict[str, Any]] | None = None,
     registers: list[dict[str, str]] | None = None,
+    ean: str = EAN,
 ) -> None:
     """Register the account, address and meter lookups."""
     mocker.get(
@@ -135,7 +136,7 @@ def mock_discovery(
         re.compile(rf"{re.escape(API)}/accounts/{ACCOUNT}/meter-readings/registers.*"),
         json={
             "data": {
-                "ean": EAN,
+                "ean": ean,
                 "meterNumber": "1SAG1100000000",
                 "energyType": "Electricity",
                 "meterType": "Digital",

@@ -124,11 +124,18 @@ class Register:
 
     @property
     def key(self) -> str:
-        """Return a stable identifier such as ``offtake_day``."""
-        return (
-            f"{DIRECTION_KEYS.get(self.direction, self.direction.lower())}"
-            f"_{TIMEFRAME_KEYS.get(self.timeframe, self.timeframe.lower())}"
-        )
+        """Return a stable identifier such as ``offtake_day``.
+
+        Raises EnecoError for a wire value outside the documented enums, so an
+        unknown register is refused at discovery instead of being stored in the
+        options and only failing later when from_key cannot read it back.
+        """
+        try:
+            return f"{DIRECTION_KEYS[self.direction]}_{TIMEFRAME_KEYS[self.timeframe]}"
+        except KeyError as err:
+            raise EnecoError(
+                f"unknown register {self.direction}/{self.timeframe}"
+            ) from err
 
     @classmethod
     def from_key(cls, key: str) -> Register:
@@ -238,7 +245,7 @@ class EnecoClient:
                         else "credentials rejected"
                     )
                 response.raise_for_status()
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise EnecoConnectionError(f"Okta sign in failed: {err}") from err
         except ValueError as err:
             raise EnecoConnectionError("Okta did not answer with JSON") from err
@@ -273,7 +280,7 @@ class EnecoClient:
             ) as response:
                 response.raise_for_status()
                 payload = await response.json(content_type=None)
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise EnecoConnectionError(f"could not start the sign in: {err}") from err
         except ValueError as err:
             raise EnecoConnectionError("the portal did not answer with JSON") from err
@@ -301,10 +308,13 @@ class EnecoClient:
                 response.raise_for_status()
                 if "/api/auth/error" in str(response.url):
                     raise EnecoAuthError("the portal rejected the Okta session")
-        except aiohttp.ClientError as err:
+        except aiohttp.ClientResponseError as err:
+            # Never interpolate this URL: the one shot token is a query parameter.
             raise EnecoConnectionError(
-                f"could not complete the sign in: {err}"
-            ) from err
+                f"could not complete the sign in: HTTP {err.status}"
+            ) from None
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise EnecoConnectionError("could not complete the sign in") from err
 
     async def _async_read_access_token(self) -> str:
         """Read the bearer token out of the NextAuth session."""
@@ -320,7 +330,7 @@ class EnecoClient:
             async with self._session.get(url, timeout=REQUEST_TIMEOUT) as response:
                 response.raise_for_status()
                 return await response.json(content_type=None)
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise EnecoConnectionError(f"{url} failed: {err}") from err
         except ValueError as err:
             raise EnecoConnectionError(f"{url} did not answer with JSON") from err
@@ -337,7 +347,7 @@ class EnecoClient:
             ) as response:
                 response.raise_for_status()
                 body = await response.text()
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             raise EnecoConnectionError(f"could not load the dashboard: {err}") from err
 
         match = _NEXT_DATA_RE.search(body)
@@ -473,7 +483,8 @@ class EnecoClient:
         if status >= HTTPStatus.BAD_REQUEST:
             if codes := _validation_codes(payload):
                 raise EnecoValidationError(codes)
-            raise EnecoConnectionError(f"{method} {path} returned HTTP {status}")
+            _LOGGER.debug("%s %s returned HTTP %s", method, path, status)
+            raise EnecoConnectionError(f"the portal returned HTTP {status}")
         return _unwrap(payload)
 
     async def _async_api_once(
@@ -494,7 +505,9 @@ class EnecoClient:
                 if response.status == HTTPStatus.NO_CONTENT:
                     return None, response.status
                 return await response.json(content_type=None), response.status
-        except aiohttp.ClientError as err:
-            raise EnecoConnectionError(f"{method} {path} failed: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            _LOGGER.debug("%s %s failed: %s", method, path, err)
+            raise EnecoConnectionError(f"could not reach the portal: {err}") from err
         except ValueError as err:
-            raise EnecoConnectionError(f"{method} {path} returned no JSON") from err
+            _LOGGER.debug("%s %s returned no JSON", method, path)
+            raise EnecoConnectionError("the portal returned no JSON") from err

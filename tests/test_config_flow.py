@@ -306,3 +306,60 @@ async def test_options_flow(
         CONF_SOURCES: changed,
         CONF_SUBMIT_TIME: "06:00:00",
     }
+
+
+async def test_reconfigure(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Reconfigure walks the whole flow and rewrites the existing entry."""
+    config_entry.add_to_hass(hass)
+    result = await config_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], CREDENTIALS
+    )
+    assert result["step_id"] == "sources"
+
+    changed = {**SOURCES, "offtake_day": "sensor.new_import_day"}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**changed, CONF_SUBMIT_TIME: "05:00:00"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert config_entry.options[CONF_SOURCES] == changed
+    assert config_entry.data[CONF_EAN] == EAN
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+
+
+async def test_reconfigure_onto_a_different_meter_is_refused(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """An entry is pinned to its meter, so a different EAN must abort."""
+    other = "541449000000000002"
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock, points=[{"ean": other, "type": "Electricity"}], ean=other
+    )
+
+    config_entry.add_to_hass(hass)
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], CREDENTIALS
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unique_id_mismatch"
+    assert config_entry.data[CONF_EAN] == EAN

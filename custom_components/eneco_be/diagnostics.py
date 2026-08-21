@@ -27,6 +27,7 @@
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
@@ -39,6 +40,18 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: EnecoConfigEntry
 ) -> dict[str, Any]:
     """Return what the entry is configured to do and how it last went."""
+    if entry.state is not ConfigEntryState.LOADED:
+        # runtime_data only exists while the entry is loaded, and the half that
+        # matters when setup failed is the configuration itself.
+        return {
+            "entry": {
+                "data": async_redact_data(dict(entry.data), TO_REDACT),
+                "options": dict(entry.options),
+            },
+            "state": entry.state.value,
+            "last_attempt": None,
+        }
+
     state = entry.runtime_data.data
     return {
         "entry": {
@@ -48,8 +61,8 @@ async def async_get_config_entry_diagnostics(
         "last_attempt": {
             "attempted": state.attempted.isoformat() if state.attempted else None,
             "succeeded": state.succeeded.isoformat() if state.succeeded else None,
-            "reading_date": (
-                state.reading_date.isoformat() if state.reading_date else None
+            "submitted_date": (
+                state.submitted_date.isoformat() if state.submitted_date else None
             ),
             "values": state.values,
             "error": state.error,

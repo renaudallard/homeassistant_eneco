@@ -151,6 +151,9 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.debug("Portal unreachable: %s", err)
                 errors["base"] = "cannot_connect"
                 session.detach()
+            except Exception:
+                session.detach()
+                raise
             else:
                 self._replace_session(session)
                 self._client = client
@@ -160,7 +163,8 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
-                CREDENTIALS_SCHEMA, user_input
+                CREDENTIALS_SCHEMA,
+                {CONF_EMAIL: user_input[CONF_EMAIL]} if user_input else None,
             ),
             errors=errors,
         )

@@ -24,8 +24,6 @@
 
 """Shared entity base for the Eneco Belgium integration."""
 
-from typing import override
-
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -56,13 +54,3 @@ class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
                 f"?ean={ean}&address={entry.data[CONF_ADDRESS]}"
             ),
         )
-
-    @property
-    @override
-    def available(self) -> bool:
-        """Report availability.
-
-        The coordinator records submission failures in its state instead of
-        raising, so these entities stay available to show what went wrong.
-        """
-        return True

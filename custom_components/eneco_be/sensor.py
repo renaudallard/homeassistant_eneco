@@ -101,6 +101,8 @@ async def async_setup_entry(
 class EnecoSensor(EnecoEntity, SensorEntity):
     """Report one aspect of the last submission attempt."""
 
+    _unrecorded_attributes = frozenset({ATTR_LAST_ERROR})
+
     entity_description: EnecoSensorDescription
 
     def __init__(

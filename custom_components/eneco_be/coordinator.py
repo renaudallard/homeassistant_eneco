@@ -25,7 +25,7 @@
 """Collect meter readings from Home Assistant and submit them to Eneco."""
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import logging
 from typing import TYPE_CHECKING, override
 
@@ -36,7 +36,7 @@ from homeassistant.const import (
     UnitOfEnergy,
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -70,7 +70,7 @@ class EnecoState:
 
     attempted: datetime | None = None
     succeeded: datetime | None = None
-    reading_date: date | None = None
+    submitted_date: date | None = None
     values: dict[str, int] = field(default_factory=dict)
     error: str | None = None
 
@@ -115,8 +115,12 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
     def next_submission(self) -> datetime:
         """Return when the next submission is due, in local time."""
         at = self.submit_time
+        # The helper works to whole seconds and is inclusive of the moment it is
+        # given, so asking from the current second hands back the trigger that
+        # has just fired. Start from the next second and the answer is always ahead.
+        probe = dt_util.now().replace(microsecond=0) + timedelta(seconds=1)
         return dt_util.find_next_time_expression_time(
-            dt_util.now(), [at.second], [at.minute], [at.hour]
+            probe, [at.second], [at.minute], [at.hour]
         )
 
     @callback
@@ -155,14 +159,32 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
     @override
     async def _async_update_data(self) -> EnecoState:
-        """Submit today's readings and report what happened."""
+        """Submit today's readings and report what happened.
+
+        Never raises: everything that can go wrong is recorded in the state, so
+        the entities reporting it stay available and an unexpected exception is
+        the only thing that marks the coordinator failed.
+        """
         now = dt_util.now()
-        reading_date = now.date()
-        state = EnecoState(attempted=now, reading_date=reading_date)
+        today = now.date()
+        previous = self.data
+
+        # Carry the last success forward, so one bad night does not erase the
+        # timestamp and the values of a submission that did go through.
+        state = EnecoState(
+            attempted=now,
+            succeeded=previous.succeeded,
+            submitted_date=previous.submitted_date,
+            values=dict(previous.values),
+        )
+
+        if previous.submitted_date == today:
+            _LOGGER.debug("Readings for %s already submitted, skipping", today)
+            return state
 
         try:
             values = self._collect_values()
-        except ReadingUnavailableError as err:
+        except EnecoError as err:
             _LOGGER.warning("Skipping submission: %s", err)
             state.error = str(err)
             return state
@@ -172,11 +194,13 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
                 self.config_entry.data[CONF_ACCOUNT],
                 self.config_entry.data[CONF_EAN],
                 ENERGY_TYPE,
-                reading_date,
+                today,
                 values,
             )
         except EnecoAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            _LOGGER.warning("Eneco no longer accepts the stored password: %s", err)
+            state.error = str(err)
+            self.config_entry.async_start_reauth(self.hass)
         except EnecoValidationError as err:
             _LOGGER.warning("Eneco rejected the readings: %s", err)
             state.error = ", ".join(err.codes)
@@ -185,8 +209,9 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             state.error = str(err)
         else:
             state.succeeded = now
+            state.submitted_date = today
             state.values = {register.key: value for register, value in values.items()}
-            _LOGGER.debug("Submitted %s for %s", state.values, reading_date)
+            _LOGGER.debug("Submitted %s for %s", state.values, today)
 
         return state
 
