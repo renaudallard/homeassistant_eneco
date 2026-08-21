@@ -130,19 +130,31 @@ endpoints the website itself uses.
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install homeassistant mypy pillow pytest-homeassistant-custom-component
-ruff format . && ruff check .
+.venv/bin/pip install -r requirements-dev.txt
+ruff format --check custom_components tests tools
+ruff check custom_components tests tools
 .venv/bin/mypy custom_components/eneco_be tests tools
-python3 tools/check-translations.py
-.venv/bin/pytest
+.venv/bin/python tools/check-translations.py
+.venv/bin/pytest tests -q
 ```
 
-`ruff` and `mypy` are configured with the same rule set and error codes Home
-Assistant core uses, so anything that would fail a core review fails here too.
+That is exactly what CI runs, alongside hassfest and the HACS validator.
+
+`ruff` and `mypy` use the same rule set and error codes Home Assistant core
+uses, so anything that would fail a core review fails here too.
 
 `tools/license-header.py` adds the licence header to any new source file, and
 `tools/check-translations.py` keeps `strings.json`, the translations,
 `icons.json` and the code in step.
+
+`tools/check-portal.py` signs in to a real account and reads back the discovery
+chain, the registers and the recent readings, without submitting anything. The
+portal has no public API and no versioning, so when something stops working this
+is what tells you which endpoint moved:
+
+```sh
+ENECO_EMAIL=you@example.com .venv/bin/python tools/check-portal.py
+```
 
 The brand images in `custom_components/eneco_be/brand` are what HACS validates
 and what Home Assistant serves for the integration.

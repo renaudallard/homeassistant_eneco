@@ -1,0 +1,7 @@
+# Pinned so a green run here means a green run anywhere.
+# pytest-homeassistant-custom-component tracks a Home Assistant release; keep
+# the two in step when bumping either.
+homeassistant==2026.8.2
+mypy==2.3.1
+pytest-homeassistant-custom-component==0.13.356
+ruff==0.16.3
