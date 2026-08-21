@@ -1,5 +1,8 @@
 {
   "name": "Eneco Belgium",
   "country": "BE",
-  "homeassistant": "2026.8.0"
+  "homeassistant": "2026.8.0",
+  "zip_release": true,
+  "filename": "eneco_be.zip",
+  "hide_default_branch": true
 }

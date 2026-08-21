@@ -75,7 +75,8 @@ it.
 ### HACS
 
 Add this repository as a custom repository of type *Integration*, install it,
-and restart Home Assistant.
+and restart Home Assistant. Releases ship as a single archive, so downloading
+one is a single request rather than a file at a time.
 
 ### Manually
 
