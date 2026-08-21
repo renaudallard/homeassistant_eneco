@@ -159,6 +159,15 @@ class Meter:
 
 
 @dataclass(frozen=True, slots=True)
+class Reading:
+    """A meter reading the portal already holds."""
+
+    date: str
+    reading_type: str
+    values: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
 class ServiceDeliveryPoint:
     """A metered connection at a delivery address."""
 
@@ -437,6 +446,44 @@ class EnecoClient:
             and entry.get("meterTimeFrameType")
         )
         return Meter(ean=str(payload.get("ean") or ean), registers=registers)
+
+    async def async_get_readings(self, account: str, ean: str) -> list[Reading]:
+        """Return the readings the portal holds for a meter, newest first.
+
+        The integration does not need this, but it is how a portal that has
+        changed underneath us gets noticed. See tools/check-portal.py.
+        """
+        payload = await self._async_api(
+            "GET",
+            f"/accounts/{account}/meter-readings",
+            params=[("eans", ean)],
+        )
+        if not isinstance(payload, list):
+            return []
+
+        readings: list[Reading] = []
+        for entry in payload:
+            if not isinstance(entry, dict):
+                continue
+            values: dict[str, int] = {}
+            for index in entry.get("indexValues") or []:
+                if not isinstance(index, dict):
+                    continue
+                direction = index.get("direction")
+                timeframe = index.get("meterTimeFrameType")
+                value = index.get("value")
+                if direction is None or timeframe is None or value is None:
+                    continue
+                register = Register(direction=str(direction), timeframe=str(timeframe))
+                values[register.key] = int(value)
+            readings.append(
+                Reading(
+                    date=str(entry.get("date") or ""),
+                    reading_type=str(entry.get("meterReadingType") or ""),
+                    values=values,
+                )
+            )
+        return sorted(readings, key=lambda r: r.date, reverse=True)
 
     async def async_submit_readings(
         self,
