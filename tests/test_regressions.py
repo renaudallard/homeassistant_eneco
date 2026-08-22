@@ -55,7 +55,8 @@ from custom_components.eneco_be.coordinator import REPAIR_AFTER_FAILURES, EnecoS
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eneco_be.sensor import EnecoSensor
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
@@ -538,4 +539,33 @@ async def test_the_repair_clears_once_a_submission_lands(
     await press(hass)
 
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+    assert state_of(hass, STATUS).state == "success"
+
+
+async def test_the_catch_up_waits_for_home_assistant_to_start(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A catch-up must not read the sources while they are still loading.
+
+    Setting up an entry is not the moment to read another integration's
+    sensors: on the restart this exists for, they are usually not added yet,
+    and reading them then spends the day's only attempt on nothing.
+    """
+    hass.set_state(CoreState.not_running)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "06:00:00"}
+    )
+
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert submissions(mock_portal) == []
+
+    set_sources(hass)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "success"

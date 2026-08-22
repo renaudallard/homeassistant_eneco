@@ -221,13 +221,18 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         _LOGGER.debug("Next submission due %s", self.next_submission)
 
     @callback
-    def async_catch_up(self) -> None:
+    def async_catch_up(self, _hass: HomeAssistant) -> None:
         """Submit straight away if today's moment has already gone by.
 
         A wall clock trigger cannot fire while Home Assistant is down, so
         without this a restart across the configured time costs a whole day.
         The reading is dated today either way, and a date that has already been
         submitted is skipped, so the worst this can do is nothing.
+
+        Called once Home Assistant is running, never during setup: reading a
+        source sensor that its own integration has not added yet would spend
+        the day's attempt on a value nobody has published. The argument is what
+        async_at_started hands its callback; the coordinator has its own hass.
         """
         now = dt_util.now()
         if now.time() < self.submit_time:

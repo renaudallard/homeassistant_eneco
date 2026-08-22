@@ -32,6 +32,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.start import async_at_started
 
 from .api import EnecoAuthError, EnecoClient, EnecoConnectionError
 from .const import DOMAIN
@@ -69,7 +70,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
 
     coordinator.async_schedule()
     entry.async_on_unload(coordinator.async_cancel_schedule)
-    coordinator.async_catch_up()
+    # Not before Home Assistant is running: a catch-up reads the source sensors,
+    # and during setup the integrations that own them are usually still loading.
+    entry.async_on_unload(async_at_started(hass, coordinator.async_catch_up))
     return True
 
 
