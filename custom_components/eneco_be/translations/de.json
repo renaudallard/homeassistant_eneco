@@ -67,6 +67,7 @@
     },
     "abort": {
       "already_configured": "Dieser Zähler ist bereits eingerichtet.",
+      "already_in_progress": "Dieser Zähler wird bereits eingerichtet.",
       "cannot_connect": "Das Eneco Portal war nicht erreichbar: {error}",
       "no_addresses": "Dieses Konto hat keine Adresse mit einem laufenden Vertrag.",
       "no_meters": "An dieser Adresse gibt es weder einen Strom- noch einen Gaszähler.",

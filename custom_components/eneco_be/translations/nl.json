@@ -67,6 +67,7 @@
     },
     "abort": {
       "already_configured": "Deze meter is al ingesteld.",
+      "already_in_progress": "Deze meter wordt al ingesteld.",
       "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
       "no_addresses": "Dit account heeft geen adres met een actief contract.",
       "no_meters": "Op dit adres staat geen elektriciteits- of gasmeter.",

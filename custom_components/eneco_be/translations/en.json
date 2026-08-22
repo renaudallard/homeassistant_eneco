@@ -67,6 +67,7 @@
     },
     "abort": {
       "already_configured": "This meter is already set up.",
+      "already_in_progress": "This meter is already being set up.",
       "cannot_connect": "Could not reach the Eneco portal: {error}",
       "no_addresses": "This account has no address with an active contract.",
       "no_meters": "There is no electricity or gas meter at this address.",

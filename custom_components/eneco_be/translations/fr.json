@@ -67,6 +67,7 @@
     },
     "abort": {
       "already_configured": "Ce compteur est déjà configuré.",
+      "already_in_progress": "Ce compteur est déjà en cours de configuration.",
       "cannot_connect": "Impossible de joindre le portail Eneco : {error}",
       "no_addresses": "Ce compte n'a aucune adresse avec un contrat actif.",
       "no_meters": "Il n'y a ni compteur électricité ni compteur gaz à cette adresse.",

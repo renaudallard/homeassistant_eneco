@@ -387,3 +387,30 @@ async def test_a_login_with_no_account(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "no_accounts"}
+
+
+async def test_a_second_flow_for_the_same_meter(
+    hass: HomeAssistant, mock_portal: AiohttpClientMocker
+) -> None:
+    """async_set_unique_id aborts on a flow already holding the same meter.
+
+    The reason it aborts with had no text anywhere, so the dialog had nothing
+    to show but the bare already_in_progress.
+    """
+    first = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    first = await hass.config_entries.flow.async_configure(
+        first["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    )
+    assert first["step_id"] == "sources"
+
+    second = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    second = await hass.config_entries.flow.async_configure(
+        second["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    )
+
+    assert second["type"] is FlowResultType.ABORT
+    assert second["reason"] == "already_in_progress"
