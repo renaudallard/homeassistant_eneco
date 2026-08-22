@@ -191,8 +191,8 @@ endpoints the website itself uses.
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
-ruff format --check custom_components tests tools
-ruff check custom_components tests tools
+.venv/bin/ruff format --check custom_components tests tools
+.venv/bin/ruff check custom_components tests tools
 .venv/bin/mypy custom_components/eneco_be tests tools
 .venv/bin/python tools/check-translations.py
 .venv/bin/pytest tests -q
@@ -204,8 +204,8 @@ That is exactly what CI runs, alongside hassfest and the HACS validator.
 uses, so anything that would fail a core review fails here too.
 
 The formatter targets Python 3.14 and rewrites a multiple exception `except`
-clause to the PEP 758 form, which nothing older can parse. The two clauses that
-affects carry a `# fmt: skip`, and a test parses everything the integration
+clause to the PEP 758 form, which nothing older can parse. Every clause that
+affects carries a `# fmt: skip`, and a test parses everything the integration
 ships against the previous version of the language to keep it that way.
 
 `tools/license-header.py` adds the licence header to any new source file, and
