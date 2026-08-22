@@ -664,10 +664,10 @@ async def test_a_register_eneco_has_never_shown_us_is_dropped(
 
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "sources"
-    assert "offtake_day" in result["data_schema"].schema
-    assert not any(
-        str(key).startswith("offtake_zz") for key in result["data_schema"].schema
-    )
+    schema = result["data_schema"]
+    assert schema is not None
+    assert "offtake_day" in schema.schema
+    assert not any(str(key).startswith("offtake_zz") for key in schema.schema)
 
 
 def test_the_shipped_sources_parse_on_the_previous_python() -> None:
