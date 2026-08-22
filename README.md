@@ -187,8 +187,11 @@ production. In short: an Okta password grant produces a one-shot session token,
 NextAuth trades it for a session cookie, and the session yields the bearer token
 the REST API wants.
 
-Nothing here is scraped at runtime: every call is a JSON request against the same
-endpoints the website itself uses.
+The daily submission is JSON throughout: every call it makes goes to the same
+REST endpoints the website uses. Setting up an entry is the one exception. No
+endpoint exposes the list of accounts you may act on, which reaches the browser
+only inside the `__NEXT_DATA__` payload the dashboard renders, so that one list
+is read out of the page.
 
 ## Development
 
