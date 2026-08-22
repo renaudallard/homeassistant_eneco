@@ -572,9 +572,22 @@ class EnecoClient:
                 timeout=REQUEST_TIMEOUT,
                 **kwargs,
             ) as response:
-                if response.status == HTTPStatus.NO_CONTENT:
-                    return None, response.status
-                return await response.json(content_type=None), response.status
+                status = response.status
+                if status == HTTPStatus.NO_CONTENT:
+                    return None, status
+                try:
+                    return await response.json(content_type=None), status
+                except ValueError:
+                    if status < HTTPStatus.BAD_REQUEST:
+                        raise
+                    # A portal that is refusing the call often says so in an
+                    # HTML error page. The status is the whole point of the
+                    # answer, so hand it back rather than lose it to the body:
+                    # a 401 buried here would never sign in again.
+                    _LOGGER.debug(
+                        "%s %s returned HTTP %s, no JSON", method, path, status
+                    )
+                    return None, status
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.debug("%s %s failed: %s", method, path, err)
             # Name the failure, never quote it: aiohttp puts the URL it was

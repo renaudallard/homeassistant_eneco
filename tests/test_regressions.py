@@ -67,9 +67,10 @@ from homeassistant.const import (
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .conftest import ACCOUNT, API, EMAIL, PASSWORD, mock_discovery, mock_login
+from .conftest import ACCOUNT, API, EAN, EMAIL, PASSWORD, mock_discovery, mock_login
 from .test_init import (
     LAST,
     NEXT,
@@ -752,3 +753,46 @@ async def test_setting_up_inside_the_submit_second_reports_success(
 
     assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "success"
+
+
+async def test_an_expired_token_is_renewed_even_without_json(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A 401 must be acted on whatever the body looks like.
+
+    The status was only handed back once the body had been decoded, so a
+    portal answering an expired token with an HTML error page turned into a
+    plain connection failure: the token was never dropped, the one retry never
+    ran, and nothing ever asked the user to sign in again.
+    """
+    calls: list[str] = []
+
+    async def answer(method: str, url: Any, data: Any) -> Any:
+        calls.append(str(url))
+        if len(calls) == 1:
+            return AiohttpClientMockResponse(
+                method,
+                url,
+                status=HTTPStatus.UNAUTHORIZED,
+                text="<html><body>Unauthorized</body></html>",
+            )
+        return AiohttpClientMockResponse(method, url, json={"data": None})
+
+    aioclient_mock.post(f"{API}/accounts/{ACCOUNT}/meter-readings", side_effect=answer)
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    client = EnecoClient(async_get_clientsession(hass), EMAIL, PASSWORD)
+    await client.async_login()
+    await client.async_submit_readings(
+        ACCOUNT,
+        EAN,
+        "Electricity",
+        dt_util.now().date(),
+        {Register("OffTake", "HI"): 1},
+    )
+
+    assert len(calls) == 2
