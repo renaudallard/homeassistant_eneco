@@ -126,9 +126,9 @@ class Register:
     def key(self) -> str:
         """Return a stable identifier such as ``offtake_day``.
 
-        Raises EnecoError for a wire value outside the documented enums, so an
-        unknown register is refused at discovery instead of being stored in the
-        options and only failing later when from_key cannot read it back.
+        Raises EnecoError for a wire value outside the documented enums. That
+        is a last resort: discovery drops such a register before it can reach
+        here, so nothing undocumented is ever stored in the options.
         """
         try:
             return f"{DIRECTION_KEYS[self.direction]}_{TIMEFRAME_KEYS[self.timeframe]}"
@@ -174,6 +174,20 @@ class ServiceDeliveryPoint:
 
     ean: str
     energy_type: str
+
+
+def _known_register(direction: str, timeframe: str) -> Register | None:
+    """Return the register a wire pair names, or None if it is undocumented.
+
+    The portal has no public API and no versioning, so meeting a tariff code
+    this integration has never seen is a question of when. Dropping the one
+    register that cannot be named leaves the rest of the meter usable, where
+    carrying it along fails the whole entry the first time its key is read.
+    """
+    if direction not in DIRECTION_KEYS or timeframe not in TIMEFRAME_KEYS:
+        _LOGGER.warning("Ignoring unknown register %s/%s", direction, timeframe)
+        return None
+    return Register(direction=direction, timeframe=timeframe)
 
 
 def _unwrap(payload: Any) -> Any:
@@ -436,20 +450,22 @@ class EnecoClient:
         if not isinstance(payload, dict):
             raise EnecoConnectionError("the portal returned no meter registers")
 
-        registers = tuple(
-            Register(
-                direction=str(entry["direction"]),
-                timeframe=str(entry["meterTimeFrameType"]),
-            )
-            for entry in payload.get("registers") or []
-            if isinstance(entry, dict)
-            and entry.get("direction")
-            and entry.get("meterTimeFrameType")
-        )
+        registers: list[Register] = []
+        for entry in payload.get("registers") or []:
+            if not isinstance(entry, dict):
+                continue
+            direction = entry.get("direction")
+            timeframe = entry.get("meterTimeFrameType")
+            if not direction or not timeframe:
+                continue
+            register = _known_register(str(direction), str(timeframe))
+            if register is not None:
+                registers.append(register)
+
         return Meter(
             ean=str(payload.get("ean") or ean),
             energy_type=str(payload.get("energyType") or "Electricity"),
-            registers=registers,
+            registers=tuple(registers),
         )
 
     async def async_get_readings(self, account: str, ean: str) -> list[Reading]:
@@ -479,7 +495,9 @@ class EnecoClient:
                 value = index.get("value")
                 if direction is None or timeframe is None or value is None:
                     continue
-                register = Register(direction=str(direction), timeframe=str(timeframe))
+                register = _known_register(str(direction), str(timeframe))
+                if register is None:
+                    continue
                 values[register.key] = int(value)
             readings.append(
                 Reading(

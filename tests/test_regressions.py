@@ -54,9 +54,11 @@ from custom_components.eneco_be.const import ATTR_LAST_ERROR, CONF_SUBMIT_TIME, 
 from custom_components.eneco_be.coordinator import REPAIR_AFTER_FAILURES, EnecoState
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eneco_be.sensor import EnecoSensor
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
+    CONF_EMAIL,
+    CONF_PASSWORD,
     EVENT_HOMEASSISTANT_STARTED,
     UnitOfEnergy,
 )
@@ -624,3 +626,39 @@ async def test_options_open_on_an_entry_without_an_energy_type(
 
     result = await hass.config_entries.options.async_init(config_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
+
+
+async def test_a_register_eneco_has_never_shown_us_is_dropped(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A tariff code outside the documented enums must not sink the meter.
+
+    Register.key raises for one, and the config flow read the keys of every
+    register outside any try, so a single unknown code left the flow raising
+    Unknown error with its session still open and the meter unusable.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        registers=[
+            {"direction": "OffTake", "meterTimeFrameType": "HI"},
+            {"direction": "OffTake", "meterTimeFrameType": "ZZ"},
+        ],
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "sources"
+    assert "offtake_day" in result["data_schema"].schema
+    assert not any(
+        str(key).startswith("offtake_zz") for key in result["data_schema"].schema
+    )

@@ -160,6 +160,10 @@ prompt by itself.
 - **One reading per day.** Eneco rejects a second reading for a date that
   already has one, and rejects any value below the previous reading. Both show up
   on the status sensor.
+- **A tariff period this integration does not know is skipped.** The portal
+  has no versioning, so if Eneco ever adds one it is left out of the form and
+  out of the submission, and the registers alongside it carry on working. The
+  Home Assistant log names it.
 - Your credentials are stored in the Home Assistant configuration, like every
   other cloud integration.
 - **A submission time between 02:00 and 03:00 is affected by daylight saving.**
