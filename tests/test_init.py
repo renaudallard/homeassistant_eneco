@@ -46,6 +46,7 @@ from homeassistant.const import (
     UnitOfEnergy,
 )
 from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .conftest import ACCOUNT, API, EAN, SOURCES, mock_discovery, mock_login
@@ -111,6 +112,16 @@ async def press_entity(hass: HomeAssistant, entity_id: str) -> None:
 async def press(hass: HomeAssistant) -> None:
     """Press the submit button of the meter used across the tests."""
     await press_entity(hass, BUTTON)
+
+
+async def press_failing(hass: HomeAssistant) -> None:
+    """Press the submit button for a submission that is meant to fail.
+
+    The button reports a failed submission to whoever pressed it, so a test
+    about the recorded outcome has to accept that on the way past.
+    """
+    with pytest.raises(HomeAssistantError):
+        await press(hass)
 
 
 async def test_setup_creates_entities(
@@ -222,7 +233,7 @@ async def test_unusable_source_blocks_the_whole_submission(
     set_sources(hass)
     hass.states.async_set("sensor.import_night", state, attributes)
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"
@@ -238,7 +249,7 @@ async def test_missing_source_entity(
     set_sources(hass)
     hass.states.async_remove("sensor.export_day")
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"
@@ -264,7 +275,7 @@ async def test_portal_rejection_is_reported(
 
     set_sources(hass)
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     status = state_of(hass, STATUS)
     assert status.state == "failed"

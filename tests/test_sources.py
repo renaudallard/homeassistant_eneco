@@ -26,6 +26,7 @@
 
 from typing import Any
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
@@ -48,12 +49,14 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError
 
 from .conftest import ACCOUNT, ADDRESS, API, EMAIL, PASSWORD, mock_discovery, mock_login
 from .test_init import (
     STATUS,
     press,
     press_entity,
+    press_failing,
     set_sources,
     setup_entry,
     state_of,
@@ -167,7 +170,8 @@ async def test_an_energy_sensor_is_refused_for_gas(
     entry = gas_entry(**{CONF_SOURCES: {"offtake_single": "sensor.gas"}})
     hass.states.async_set("sensor.gas", "4821", {ATTR_UNIT_OF_MEASUREMENT: "kWh"})
     await setup_entry(hass, entry)
-    await press_entity(hass, GAS_BUTTON)
+    with pytest.raises(HomeAssistantError):
+        await press_entity(hass, GAS_BUTTON)
 
     assert submissions(aioclient_mock) == []
     assert state_of(hass, GAS_STATUS).state == "failed"
@@ -228,7 +232,7 @@ async def test_mapped_registers_are_still_all_or_nothing(
     set_sources(hass)
     hass.states.async_set("sensor.export_day", "unavailable", {})
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"

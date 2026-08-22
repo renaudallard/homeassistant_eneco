@@ -119,7 +119,9 @@ attribute. Three failures in a row also raise a repair on the dashboard, which
 clears itself once a submission lands.
 
 Press the button from an automation if you want a different schedule than the
-built-in daily one.
+built-in daily one. A press that cannot submit fails the service call with the
+reason, so a script notices; a press on a day that is already done, or with no
+register mapped, is a no op rather than an error.
 
 Use *Download diagnostics* on the device to see exactly what was last sent.
 

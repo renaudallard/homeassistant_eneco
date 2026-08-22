@@ -64,10 +64,12 @@ from homeassistant.const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     EVENT_HOMEASSISTANT_STARTED,
+    STATE_UNAVAILABLE,
     UnitOfEnergy,
 )
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
@@ -78,6 +80,7 @@ from .test_init import (
     NEXT,
     STATUS,
     press,
+    press_failing,
     set_sources,
     setup_entry,
     state_of,
@@ -197,7 +200,7 @@ async def test_account_number_never_reaches_the_user(
 
     set_sources(hass)
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     status = state_of(hass, STATUS)
     assert status.state == "failed"
@@ -251,7 +254,7 @@ async def test_a_failure_keeps_the_last_success(
     # Force a second attempt for the same day by clearing the guard.
     entry = config_entry
     entry.runtime_data.data.submitted_date = None
-    await press(hass)
+    await press_failing(hass)
 
     assert state_of(hass, STATUS).state == "failed"
     assert state_of(hass, LAST).state == first
@@ -525,10 +528,10 @@ async def test_a_repair_is_raised_once_failures_persist(
     issue_id = f"submission_failed_{config_entry.entry_id}"
 
     for _ in range(REPAIR_AFTER_FAILURES - 1):
-        await press(hass)
+        await press_failing(hass)
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
 
-    await press(hass)
+    await press_failing(hass)
     issue = issue_registry.async_get_issue(DOMAIN, issue_id)
     assert issue is not None
     assert issue.severity is ir.IssueSeverity.WARNING
@@ -564,7 +567,7 @@ async def test_the_repair_clears_once_a_submission_lands(
     issue_id = f"submission_failed_{config_entry.entry_id}"
 
     for _ in range(REPAIR_AFTER_FAILURES):
-        await press(hass)
+        await press_failing(hass)
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
 
     failing = False
@@ -622,7 +625,7 @@ async def test_a_source_that_is_not_a_number_is_reported(
         {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
     )
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"
@@ -827,7 +830,7 @@ async def test_the_repair_outlives_a_restart(
     set_sources(hass)
     await setup_entry(hass, config_entry)
     for _ in range(REPAIR_AFTER_FAILURES):
-        await press(hass)
+        await press_failing(hass)
 
     issue = issue_registry.async_get_issue(
         DOMAIN, f"submission_failed_{config_entry.entry_id}"
@@ -858,7 +861,7 @@ async def test_a_source_outside_what_a_meter_can_read(
         {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
     )
     await setup_entry(hass, config_entry)
-    await press(hass)
+    await press_failing(hass)
 
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"
@@ -919,7 +922,7 @@ async def test_removing_the_entry_takes_the_repair_with_it(
     set_sources(hass)
     await setup_entry(hass, config_entry)
     for _ in range(REPAIR_AFTER_FAILURES):
-        await press(hass)
+        await press_failing(hass)
 
     issue_id = f"submission_failed_{config_entry.entry_id}"
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
@@ -981,7 +984,7 @@ async def test_the_debug_log_does_not_name_the_account(
     set_sources(hass)
     await setup_entry(hass, config_entry)
     with caplog.at_level(logging.DEBUG, logger="custom_components.eneco_be"):
-        await press(hass)
+        await press_failing(hass)
 
     assert "meter-readings" in caplog.text
     assert ACCOUNT not in caplog.text
@@ -1033,3 +1036,41 @@ async def test_unloading_mid_catch_up_still_records_the_date(
 
     stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
     assert stored["submitted_date"] == dt_util.now().date().isoformat()
+
+
+async def test_the_button_says_when_the_submission_did_not_go_through(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A press that sends nothing must not come back as success.
+
+    The coordinator records operational failures rather than raising them, so
+    the service call returned cleanly and the button's own state advanced to
+    the press timestamp: a script pressing it carried on as though the
+    readings had been sent.
+    """
+    set_sources(hass)
+    hass.states.async_set("sensor.import_night", STATE_UNAVAILABLE)
+    await setup_entry(hass, config_entry)
+
+    with pytest.raises(HomeAssistantError, match="sensor.import_night"):
+        await press(hass)
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).state == "failed"
+
+
+async def test_a_day_already_done_is_not_an_error_for_the_button(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Only a failure is a failure: a no op is a perfectly good outcome."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+    await press(hass)
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "already_submitted"

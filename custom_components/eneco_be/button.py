@@ -28,6 +28,7 @@ from typing import override
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import EnecoConfigEntry
@@ -60,5 +61,13 @@ class EnecoSubmitButton(EnecoEntity, ButtonEntity):
 
     @override
     async def async_press(self) -> None:
-        """Run a submission now."""
+        """Run a submission now, and say so when it does not go through.
+
+        The daily run has the status sensor watching it, but someone who asked
+        for a submission here and now is owed the answer where they asked for
+        it: a button that silently does nothing reads as success, and a script
+        pressing it carries on as though the readings had been sent.
+        """
         await self.coordinator.async_refresh()
+        if error := self.coordinator.data.error:
+            raise HomeAssistantError(error)
