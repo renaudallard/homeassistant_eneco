@@ -796,3 +796,39 @@ async def test_an_expired_token_is_renewed_even_without_json(
     )
 
     assert len(calls) == 2
+
+
+async def test_the_repair_outlives_a_restart(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """A repair Home Assistant forgets on restart tells nobody anything.
+
+    Only a persistent issue keeps its severity and its text across a restart;
+    the rest come back inactive and are never listed. Nothing here raises the
+    card again except a submission, and there is one of those a day, so a
+    restart could hide a meter that has stopped reporting for another day.
+    """
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    for _ in range(REPAIR_AFTER_FAILURES):
+        await press(hass)
+
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"submission_failed_{config_entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.is_persistent

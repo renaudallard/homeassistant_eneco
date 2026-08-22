@@ -307,6 +307,10 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             DOMAIN,
             issue_id,
             is_fixable=False,
+            # A card that only survives until the next restart is no use here:
+            # nothing raises it again until the next submission, and there is
+            # exactly one of those a day.
+            is_persistent=True,
             severity=ir.IssueSeverity.WARNING,
             translation_key="submission_failed",
             translation_placeholders={
