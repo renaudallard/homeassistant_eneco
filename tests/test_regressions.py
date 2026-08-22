@@ -61,6 +61,7 @@ from homeassistant.const import (
     UnitOfEnergy,
 )
 from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
@@ -599,3 +600,27 @@ async def test_a_source_that_is_not_a_number_is_reported(
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"
     assert "sensor.import_night" in state_of(hass, STATUS).attributes[ATTR_LAST_ERROR]
+
+
+async def test_options_open_on_an_entry_without_an_energy_type(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Entries predating gas support have no energy type in their data.
+
+    The coordinator always read it with a default, so such an entry loads and
+    submits; only the options form insisted on the key and raised KeyError at
+    the user the moment they pressed Configure.
+    """
+    data = dict(config_entry.data)
+    del data["energy_type"]
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, data=data)
+
+    set_sources(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    assert result["type"] is FlowResultType.FORM

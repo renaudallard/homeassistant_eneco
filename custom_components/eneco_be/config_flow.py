@@ -470,6 +470,8 @@ class EnecoOptionsFlow(OptionsFlowWithReload):
             data_schema=_sources_schema(
                 registers,
                 self.config_entry.options,
-                self.config_entry.data[CONF_ENERGY_TYPE],
+                # Entries written before gas support have no energy type, and
+                # every one of those is an electricity meter.
+                self.config_entry.data.get(CONF_ENERGY_TYPE, ELECTRICITY),
             ),
         )
