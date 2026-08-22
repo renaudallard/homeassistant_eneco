@@ -27,6 +27,7 @@
 from collections.abc import AsyncGenerator
 from datetime import date
 from http import HTTPStatus
+import re
 from typing import Any
 
 from aiohttp import ClientSession
@@ -222,3 +223,68 @@ async def test_validation_codes_are_surfaced(
         "MeterReading.NewReadingsShouldBeHigher.HI.OffTake",
         "MeterReading.AlreadyExists",
     ]
+
+
+async def test_a_meter_answer_that_is_not_shaped_right(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession
+) -> None:
+    """The register list gets the same type check as every other lookup.
+
+    The addresses and the delivery points are both checked for being a list
+    before they are walked; the registers were not, so a scalar there raised
+    TypeError straight out of the config flow instead of an EnecoError the
+    flow knows how to abort on.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    aioclient_mock.get(
+        re.compile(rf"{re.escape(API)}/accounts/{ACCOUNT}/meter-readings/registers.*"),
+        json={"data": {"ean": EAN, "energyType": "Electricity", "registers": 7}},
+    )
+
+    api = client(session)
+    await api.async_login()
+    meter = await api.async_get_meter(ACCOUNT, EAN)
+
+    assert meter.registers == ()
+
+
+async def test_a_reading_whose_index_is_not_a_number(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession
+) -> None:
+    """int() on a wire value raises outside the client's own error taxonomy."""
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    aioclient_mock.get(
+        re.compile(rf"{re.escape(API)}/accounts/{ACCOUNT}/meter-readings.*"),
+        json={
+            "data": [
+                {
+                    "date": "2026-08-20",
+                    "meterReadingType": "Customer",
+                    "indexValues": [
+                        {
+                            "direction": "OffTake",
+                            "meterTimeFrameType": "HI",
+                            "value": "not a number",
+                        },
+                        {
+                            "direction": "OffTake",
+                            "meterTimeFrameType": "LO",
+                            "value": 42,
+                        },
+                    ],
+                }
+            ]
+        },
+    )
+
+    api = client(session)
+    await api.async_login()
+    readings = await api.async_get_readings(ACCOUNT, EAN)
+
+    assert readings[0].values == {"offtake_night": 42}

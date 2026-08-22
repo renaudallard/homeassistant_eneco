@@ -450,8 +450,9 @@ class EnecoClient:
         if not isinstance(payload, dict):
             raise EnecoConnectionError("the portal returned no meter registers")
 
+        listed = payload.get("registers")
         registers: list[Register] = []
-        for entry in payload.get("registers") or []:
+        for entry in listed if isinstance(listed, list) else []:
             if not isinstance(entry, dict):
                 continue
             direction = entry.get("direction")
@@ -498,7 +499,14 @@ class EnecoClient:
                 register = _known_register(str(direction), str(timeframe))
                 if register is None:
                     continue
-                values[register.key] = int(value)
+                try:
+                    values[register.key] = int(value)
+                except (TypeError, ValueError):  # fmt: skip
+                    _LOGGER.warning(
+                        "Ignoring register %s, whose index reads %r",
+                        register.key,
+                        value,
+                    )
             readings.append(
                 Reading(
                     date=str(entry.get("date") or ""),
