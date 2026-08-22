@@ -702,7 +702,13 @@ def test_the_shipped_sources_parse_on_the_previous_python() -> None:
     file no older editor, linter or packaging tool can look at, so the clauses
     that ruff would rewrite carry a fmt: skip and this keeps them honest.
     """
-    for source in sorted(Path("custom_components/eneco_be").rglob("*.py")):
+    package = Path(__file__).resolve().parent.parent / "custom_components" / "eneco_be"
+    sources = sorted(package.rglob("*.py"))
+    # A relative path here quietly matched nothing whenever pytest ran from
+    # anywhere but the repository root, and the guard passed having read none
+    # of the files it is supposed to be guarding.
+    assert len(sources) > 1
+    for source in sources:
         ast.parse(source.read_text(encoding="utf-8"), feature_version=(3, 13))
 
 
