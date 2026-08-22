@@ -79,15 +79,37 @@ def main() -> int:
         for e in sorted(errors - set(strings["config"]["error"]))
     ]
 
-    entities = (BASE / "sensor.py").read_text(encoding="utf-8") + (
-        BASE / "button.py"
-    ).read_text(encoding="utf-8")
-    declared = set(strings["entity"]["sensor"]) | set(strings["entity"]["button"])
+    # Every platform that declares entity names, so adding one to strings.json
+    # brings its module along rather than quietly going unchecked.
+    entities = ""
+    declared: set[str] = set()
+    for platform in strings["entity"]:
+        entities += (BASE / f"{platform}.py").read_text(encoding="utf-8")
+        declared |= set(strings["entity"][platform])
     problems += [
         f"entity translation_key {t} has no strings entry"
         for t in sorted(
             set(re.findall(r'translation_key="([a-z_]+)"', entities)) - declared
         )
+    ]
+
+    # An enum sensor renders through its state translations, so a status the
+    # code can report and strings.json cannot name shows up raw.
+    states = set(strings["entity"]["sensor"].get("status", {}).get("state", {}))
+    reported = set(
+        re.findall(
+            r'^STATUS_[A-Z_]+ = "([a-z_]+)"$',
+            (BASE / "sensor.py").read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    )
+    problems += [
+        f"sensor.py: status {v} has no state translation"
+        for v in sorted(reported - states)
+    ]
+    problems += [
+        f"strings.json: status state {v} is not reported by sensor.py"
+        for v in sorted(states - reported)
     ]
 
     icons = json.loads((BASE / "icons.json").read_text(encoding="utf-8"))
