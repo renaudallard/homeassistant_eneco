@@ -1267,3 +1267,31 @@ async def test_a_start_behind_the_trigger_keeps_the_success(
 
     assert len(submissions(aioclient_mock)) == 1
     assert state_of(hass, STATUS).state == "success"
+
+
+async def test_no_catch_up_is_started_while_stopping(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Shutting down is not the moment to start a submission.
+
+    Home Assistant asks integrations not to start work it then has to wait
+    for, and warns in the log about tasks still running at the final stage.
+    A reading started now is dated today and would be sent again on the next
+    start in any case.
+    """
+    hass.set_state(CoreState.not_running)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "06:00:00"}
+    )
+    set_sources(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    hass.set_state(CoreState.stopping)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert submissions(mock_portal) == []

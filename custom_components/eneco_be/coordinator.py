@@ -278,6 +278,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         the day's attempt on a value nobody has published. The argument is what
         async_at_started hands its callback; the coordinator has its own hass.
         """
+        if self.hass.is_stopping:
+            # Home Assistant asks integrations not to start work it will then
+            # have to wait for, and a submission started now would be dated
+            # today and sent again on the next start anyway.
+            return
         now = dt_util.now()
         # Whole seconds: the trigger fires for the whole of its own second, and
         # landing here in the middle of it would submit twice over, the second
