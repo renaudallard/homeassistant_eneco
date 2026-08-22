@@ -179,11 +179,21 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._credentials = user_input
                 return await self.async_step_account()
 
+        if user_input is not None:
+            known_email = user_input[CONF_EMAIL]
+        elif self.source == "reconfigure":
+            # Reconfigure walks the whole flow again, and the account it is
+            # walking is the one the entry already holds. Asking the user to
+            # remember and retype their own address serves nobody.
+            known_email = self._get_reconfigure_entry().data[CONF_EMAIL]
+        else:
+            known_email = None
+
         return self.async_show_form(
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
                 CREDENTIALS_SCHEMA,
-                {CONF_EMAIL: user_input[CONF_EMAIL]} if user_input else None,
+                {CONF_EMAIL: known_email} if known_email else None,
             ),
             errors=errors,
         )

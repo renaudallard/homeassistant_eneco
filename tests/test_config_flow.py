@@ -414,3 +414,17 @@ async def test_a_second_flow_for_the_same_meter(
 
     assert second["type"] is FlowResultType.ABORT
     assert second["reason"] == "already_in_progress"
+
+
+async def test_reconfigure_offers_the_address_already_on_file(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Reconfigure knows whose account it is walking, so it should say so."""
+    config_entry.add_to_hass(hass)
+    result = await config_entry.start_reconfigure_flow(hass)
+
+    assert result["step_id"] == "user"
+    field = next(key for key in result["data_schema"].schema if key == CONF_EMAIL)
+    assert field.description == {"suggested_value": EMAIL}
