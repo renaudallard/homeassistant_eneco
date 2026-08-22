@@ -832,3 +832,32 @@ async def test_the_repair_outlives_a_restart(
     )
     assert issue is not None
     assert issue.is_persistent
+
+
+@pytest.mark.parametrize("reported", ["-12.4", "1e30", "4294967296"])
+async def test_a_source_outside_what_a_meter_can_read(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    reported: str,
+) -> None:
+    """An index is never negative and never larger than the portal can hold.
+
+    Nothing bounded the value between the sensor and the wire, so a source
+    reporting a huge number was posted and then broke the store on the way
+    out, after Eneco had already accepted it. The state never reached disk,
+    the coordinator reported the day as failed, and the same date was offered
+    again on the next restart.
+    """
+    set_sources(hass)
+    hass.states.async_set(
+        "sensor.import_night",
+        reported,
+        {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).state == "failed"
+    assert "sensor.import_night" in state_of(hass, STATUS).attributes[ATTR_LAST_ERROR]

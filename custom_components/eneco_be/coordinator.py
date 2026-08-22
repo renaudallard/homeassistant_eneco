@@ -65,6 +65,9 @@ _LOGGER = logging.getLogger(__name__)
 ELECTRICITY = "Electricity"
 STORAGE_VERSION = 1
 
+# The portal keeps a meter index in a signed 32 bit integer.
+MAX_INDEX = 2**31 - 1
+
 # How many consecutive failures before the user is told out loud.
 REPAIR_AFTER_FAILURES = 3
 
@@ -437,11 +440,22 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
         if unit == wanted:
-            return round(raw)
-        try:
-            return round(converter.convert(raw, unit, wanted))
-        except (HomeAssistantError, TypeError):  # fmt: skip
+            value = round(raw)
+        else:
+            try:
+                value = round(converter.convert(raw, unit, wanted))
+            except (HomeAssistantError, TypeError):  # fmt: skip
+                _LOGGER.warning(
+                    "%s reports %s, which cannot be read as %s", entity_id, unit, wanted
+                )
+                return None
+
+        # An index is never negative, and the portal keeps it in a 32 bit
+        # integer. Beyond that the store cannot hold the number either, and it
+        # would fail on the way out after the readings had been accepted.
+        if not 0 <= value <= MAX_INDEX:
             _LOGGER.warning(
-                "%s reports %s, which cannot be read as %s", entity_id, unit, wanted
+                "%s reports %s, which is not a meter index", entity_id, value
             )
             return None
+        return value

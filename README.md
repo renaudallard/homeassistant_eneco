@@ -156,7 +156,9 @@ prompt by itself.
   password exchange. An account that requires MFA cannot be used headlessly, and
   setup will say so rather than fail obscurely.
 - **Whole units.** Eneco stores the index as a 32 bit integer, so values are
-  rounded: whole kWh for electricity, whole m³ for gas.
+  rounded: whole kWh for electricity, whole m³ for gas. A sensor reporting a
+  negative index, or one past what the portal can hold, is treated as unusable
+  rather than sent.
 - **One reading per day.** Eneco rejects a second reading for a date that
   already has one, and rejects any value below the previous reading. Both show up
   on the status sensor.
