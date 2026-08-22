@@ -889,3 +889,40 @@ async def test_a_meter_the_portal_will_not_name_reads_as_electricity(
         55,
         11,
     }
+
+
+async def test_removing_the_entry_takes_the_repair_with_it(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """A card naming a meter nobody has set up any more helps no one.
+
+    Only a submission clears the repair, and a removed entry never makes one,
+    so the card stayed on the dashboard for good once the issue was made to
+    survive restarts.
+    """
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    for _ in range(REPAIR_AFTER_FAILURES):
+        await press(hass)
+
+    issue_id = f"submission_failed_{config_entry.entry_id}"
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    assert await hass.config_entries.async_remove(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None

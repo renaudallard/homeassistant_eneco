@@ -30,7 +30,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.start import async_at_started
 
@@ -83,4 +83,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> bo
 
 async def async_remove_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
     """Drop the stored submission history along with the entry."""
+    # The repair is persistent, so nothing else would ever take it away: it
+    # would sit on the dashboard naming a meter that is no longer set up.
+    ir.async_delete_issue(hass, DOMAIN, f"submission_failed_{entry.entry_id}")
     await EnecoCoordinator.async_remove_store_for(hass, entry)
