@@ -201,6 +201,11 @@ That is exactly what CI runs, alongside hassfest and the HACS validator.
 `ruff` and `mypy` use the same rule set and error codes Home Assistant core
 uses, so anything that would fail a core review fails here too.
 
+The formatter targets Python 3.14 and rewrites a multiple exception `except`
+clause to the PEP 758 form, which nothing older can parse. The two clauses that
+affects carry a `# fmt: skip`, and a test parses everything the integration
+ships against the previous version of the language to keep it that way.
+
 `tools/license-header.py` adds the licence header to any new source file, and
 `tools/check-translations.py` keeps `strings.json`, the translations,
 `icons.json` and the code in step.

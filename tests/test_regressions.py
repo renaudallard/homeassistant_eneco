@@ -27,8 +27,10 @@
 Each test here failed before the fix it guards.
 """
 
+import ast
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -666,3 +668,17 @@ async def test_a_register_eneco_has_never_shown_us_is_dropped(
     assert not any(
         str(key).startswith("offtake_zz") for key in result["data_schema"].schema
     )
+
+
+def test_the_shipped_sources_parse_on_the_previous_python() -> None:
+    """Nothing in the integration may need Python 3.14 to be read.
+
+    ruff format writes the PEP 758 form of a multiple exception except clause
+    because the target version says 3.14, and it has twice turned a
+    parenthesised clause back into one no older parser accepts. Nothing here
+    gains anything from the short form, and a file that will not parse is a
+    file no older editor, linter or packaging tool can look at, so the clauses
+    that ruff would rewrite carry a fmt: skip and this keeps them honest.
+    """
+    for source in sorted(Path("custom_components/eneco_be").rglob("*.py")):
+        ast.parse(source.read_text(encoding="utf-8"), feature_version=(3, 13))

@@ -428,7 +428,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             return round(raw)
         try:
             return round(converter.convert(raw, unit, wanted))
-        except HomeAssistantError, TypeError:
+        except (HomeAssistantError, TypeError):  # fmt: skip
             _LOGGER.warning(
                 "%s reports %s, which cannot be read as %s", entity_id, unit, wanted
             )
