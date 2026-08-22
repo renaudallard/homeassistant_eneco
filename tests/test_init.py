@@ -166,7 +166,7 @@ async def test_submit_posts_every_register(
         },
         {
             "accountNumber": ACCOUNT,
-            "readingValue": 10,
+            "readingValue": 11,
             "ean": EAN,
             "meterTimeFrameType": "LO",
             "registeredDate": today,
@@ -175,7 +175,7 @@ async def test_submit_posts_every_register(
         },
         {
             "accountNumber": ACCOUNT,
-            "readingValue": 1234,
+            "readingValue": 1235,
             "ean": EAN,
             "meterTimeFrameType": "HI",
             "registeredDate": today,

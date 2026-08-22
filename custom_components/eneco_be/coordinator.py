@@ -27,7 +27,7 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 import logging
-from math import floor, isfinite
+from math import isfinite
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.const import (
@@ -448,10 +448,10 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
         if unit == wanted:
-            value = floor(raw)
+            value = round(raw)
         else:
             try:
-                value = floor(converter.convert(raw, unit, wanted))
+                value = round(converter.convert(raw, unit, wanted))
             except (HomeAssistantError, TypeError):  # fmt: skip
                 _LOGGER.warning(
                     "%s reports %s, which cannot be read as %s", entity_id, unit, wanted

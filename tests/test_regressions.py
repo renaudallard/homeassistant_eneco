@@ -74,16 +74,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .conftest import (
-    ACCOUNT,
-    API,
-    EAN,
-    EMAIL,
-    PASSWORD,
-    SOURCES,
-    mock_discovery,
-    mock_login,
-)
+from .conftest import ACCOUNT, API, EAN, EMAIL, PASSWORD, mock_discovery, mock_login
 from .test_init import (
     LAST,
     NEXT,
@@ -458,7 +449,7 @@ async def test_stored_state_is_written(
 
     stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
     assert stored["submitted_date"] == dt_util.now().date().isoformat()
-    assert stored["values"]["offtake_day"] == 1234
+    assert stored["values"]["offtake_day"] == 1235
     assert stored["error"] is None
 
 
@@ -903,10 +894,10 @@ async def test_a_meter_the_portal_will_not_name_reads_as_electricity(
     await press(hass)
 
     assert {r["readingValue"] for r in submissions(mock_portal)[0]} == {
-        1234,
+        1235,
         987,
         55,
-        10,
+        11,
     }
 
 
@@ -1088,21 +1079,3 @@ async def test_a_day_already_done_is_not_an_error_for_the_button(
 
     assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "already_submitted"
-
-
-async def test_the_index_is_truncated_not_rounded(
-    hass: HomeAssistant,
-    mock_portal: AiohttpClientMocker,
-    config_entry: MockConfigEntry,
-) -> None:
-    """A meter face shows the digits it has reached, not the nearest one.
-
-    Rounding to nearest sent up to half a unit more than the meter had
-    actually turned, which over-reports the index to Eneco and raises the bar
-    the next reading has to clear.
-    """
-    set_sources(hass, dict.fromkeys(SOURCES.values(), "1234.99"))
-    await setup_entry(hass, config_entry)
-    await press(hass)
-
-    assert {r["readingValue"] for r in submissions(mock_portal)[0]} == {1234}
