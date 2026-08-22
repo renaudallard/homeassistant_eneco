@@ -57,6 +57,8 @@ _NEXT_DATA_RE: Final = re.compile(
     r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.DOTALL
 )
 
+_ACCOUNT_RE: Final = re.compile(r"/accounts/[^/]+")
+
 # Wire values of TimeframeTypeCodeDto, mapped to stable keys used for storage.
 TIMEFRAME_KEYS: Final[dict[str, str]] = {
     "TH": "single",
@@ -174,6 +176,16 @@ class ServiceDeliveryPoint:
 
     ean: str
     energy_type: str
+
+
+def _endpoint(path: str) -> str:
+    """Return a path with the account number taken out of it.
+
+    Debug logs are what a maintainer asks for in a bug report, and every path
+    here is /accounts/<crm account number>/something. Which endpoint answered
+    is the whole point of the line; whose account it was is not.
+    """
+    return _ACCOUNT_RE.sub("/accounts/-", path)
 
 
 def _known_register(direction: str, timeframe: str) -> Register | None:
@@ -561,7 +573,7 @@ class EnecoClient:
         if status >= HTTPStatus.BAD_REQUEST:
             if codes := _validation_codes(payload):
                 raise EnecoValidationError(codes)
-            _LOGGER.debug("%s %s returned HTTP %s", method, path, status)
+            _LOGGER.debug("%s %s returned HTTP %s", method, _endpoint(path), status)
             raise EnecoConnectionError(f"the portal returned HTTP {status}")
         return _unwrap(payload)
 
@@ -593,11 +605,14 @@ class EnecoClient:
                     # answer, so hand it back rather than lose it to the body:
                     # a 401 buried here would never sign in again.
                     _LOGGER.debug(
-                        "%s %s returned HTTP %s, no JSON", method, path, status
+                        "%s %s returned HTTP %s, no JSON",
+                        method,
+                        _endpoint(path),
+                        status,
                     )
                     return None, status
         except (aiohttp.ClientError, TimeoutError) as err:
-            _LOGGER.debug("%s %s failed: %s", method, path, err)
+            _LOGGER.debug("%s %s failed: %s", method, _endpoint(path), err)
             # Name the failure, never quote it: aiohttp puts the URL it was
             # given in its own message, and every path here carries the CRM
             # account number. This text is shown in the interface, kept by the
@@ -606,5 +621,5 @@ class EnecoClient:
                 f"could not reach the portal: {type(err).__name__}"
             ) from err
         except ValueError as err:
-            _LOGGER.debug("%s %s returned no JSON", method, path)
+            _LOGGER.debug("%s %s returned no JSON", method, _endpoint(path))
             raise EnecoConnectionError("the portal returned no JSON") from err

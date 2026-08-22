@@ -30,6 +30,7 @@ Each test here failed before the fix it guards.
 import ast
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -952,3 +953,34 @@ async def test_diagnostics_say_when_nothing_was_sent(
     assert report["last_attempt"]["nothing_mapped"] is True
     assert report["last_attempt"]["skipped"] is False
     assert report["last_attempt"]["failures"] == 0
+
+
+async def test_the_debug_log_does_not_name_the_account(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Debug logs are what gets pasted into a bug report.
+
+    Every REST path is /accounts/<crm account number>/something, and all three
+    debug lines in the client printed the path as it stood.
+    """
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    with caplog.at_level(logging.DEBUG, logger="custom_components.eneco_be"):
+        await press(hass)
+
+    assert "meter-readings" in caplog.text
+    assert ACCOUNT not in caplog.text
