@@ -861,3 +861,31 @@ async def test_a_source_outside_what_a_meter_can_read(
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "failed"
     assert "sensor.import_night" in state_of(hass, STATUS).attributes[ATTR_LAST_ERROR]
+
+
+async def test_a_meter_the_portal_will_not_name_reads_as_electricity(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Both and Unknown are energy types too, and neither means gas.
+
+    The picker offers an energy sensor for anything it does not recognise, and
+    the coordinator asked for cubic metres for anything that was not exactly
+    Electricity, so the two disagreed about the very sensor just chosen.
+    """
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, data={**config_entry.data, "energy_type": "Both"}
+    )
+    set_sources(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    await press(hass)
+
+    assert {r["readingValue"] for r in submissions(mock_portal)[0]} == {
+        1235,
+        987,
+        55,
+        11,
+    }

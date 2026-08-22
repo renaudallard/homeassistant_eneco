@@ -63,6 +63,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 ELECTRICITY = "Electricity"
+GAS = "Gas"
 STORAGE_VERSION = 1
 
 # The portal keeps a meter index in a signed 32 bit integer.
@@ -434,7 +435,10 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             _LOGGER.warning("%s reports %s, which is not a number", entity_id, raw)
             return None
 
-        gas = self.energy_type != ELECTRICITY
+        # Only a gas meter is read as a volume. The portal also answers Both
+        # and Unknown, and the picker offers an energy sensor for either, so
+        # asking for cubic metres here would refuse the sensor it just chose.
+        gas = self.energy_type == GAS
         wanted = UnitOfVolume.CUBIC_METERS if gas else UnitOfEnergy.KILO_WATT_HOUR
         converter = VolumeConverter if gas else EnergyConverter
 
