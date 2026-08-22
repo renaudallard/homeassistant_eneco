@@ -711,3 +711,28 @@ async def test_next_submission_survives_the_autumn_clock_change(
 
     coordinator = config_entry.runtime_data
     assert coordinator.next_submission > dt_util.now()
+
+
+async def test_setting_up_inside_the_submit_second_reports_success(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The catch-up must leave the trigger's own second to the trigger.
+
+    Arming the schedule inside the configured second fires it right away, and
+    the catch-up saw a time that was no longer before the submit time and asked
+    for a second refresh. One reading reached Eneco either way, but the second
+    pass found the date already done and left that on the status sensor.
+    """
+    # Half a second into the configured second, so the trigger armed by the
+    # setup is already due and the catch-up must not step on it.
+    freezer.move_to(
+        dt_util.now().replace(hour=23, minute=50, second=0, microsecond=500000)
+    )
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "success"

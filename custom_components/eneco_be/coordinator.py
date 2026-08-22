@@ -251,7 +251,10 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         async_at_started hands its callback; the coordinator has its own hass.
         """
         now = dt_util.now()
-        if now.time() < self.submit_time:
+        # Whole seconds: the trigger fires for the whole of its own second, and
+        # landing here in the middle of it would submit twice over, the second
+        # of them reporting the day as already done.
+        if now.time().replace(microsecond=0) <= self.submit_time:
             return
         if self.data.submitted_date == now.date():
             return
