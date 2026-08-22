@@ -50,7 +50,8 @@ Requires Home Assistant **2026.8** or newer.
 At the configured local time, once a day, it:
 
 1. reads the current value of the sensor you chose for each register,
-2. rounds it to whole kWh for electricity, or whole m³ for gas,
+2. cuts it down to whole kWh for electricity, or whole m³ for gas, the way the
+   meter's own display does,
 3. posts the set to Eneco, dated today.
 
 Which registers exist is decided by Eneco, not by this integration: it asks the
@@ -159,10 +160,11 @@ account the entry already belongs to.
 - **No two-factor authentication.** The login is a plain Okta username and
   password exchange. An account that requires MFA cannot be used headlessly, and
   setup will say so rather than fail obscurely.
-- **Whole units.** Eneco stores the index as a 32 bit integer, so values are
-  rounded: whole kWh for electricity, whole m³ for gas. A sensor reporting a
-  negative index, or one past what the portal can hold, is treated as unusable
-  rather than sent.
+- **Whole units.** Eneco stores the index as a 32 bit integer, so the fraction
+  is dropped rather than rounded: 1234.9 kWh is sent as 1234, which is what the
+  meter itself displays, and never more than the meter has actually turned. A
+  sensor reporting a negative index, or one past what the portal can hold, is
+  treated as unusable rather than sent.
 - **One reading per day.** Eneco rejects a second reading for a date that
   already has one, and rejects any value below the previous reading. Both show up
   on the status sensor.

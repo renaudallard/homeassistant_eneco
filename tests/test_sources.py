@@ -144,7 +144,7 @@ async def test_gas_is_read_and_sent_in_cubic_metres(
     assert len(posted) == 1
     assert posted[0]["utilityType"] == "Gas"
     assert posted[0]["meterTimeFrameType"] == "TH"
-    assert posted[0]["readingValue"] == 4822
+    assert posted[0]["readingValue"] == 4821
 
 
 async def test_gas_units_are_converted(
@@ -159,7 +159,7 @@ async def test_gas_units_are_converted(
     await setup_entry(hass, entry)
     await press_entity(hass, GAS_BUTTON)
 
-    assert submissions(aioclient_mock)[0][0]["readingValue"] == 4822
+    assert submissions(aioclient_mock)[0][0]["readingValue"] == 4821
 
 
 async def test_an_energy_sensor_is_refused_for_gas(
