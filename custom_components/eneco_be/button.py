@@ -68,6 +68,11 @@ class EnecoSubmitButton(EnecoEntity, ButtonEntity):
         it: a button that silently does nothing reads as success, and a script
         pressing it carries on as though the readings had been sent.
         """
+        # The coordinator only replaces its data when the update returns, so a
+        # refresh that raised leaves the previous attempt's error in place.
+        # Reporting that would blame this press for an earlier one's failure.
+        before = self.coordinator.data
         await self.coordinator.async_refresh()
-        if error := self.coordinator.data.error:
-            raise HomeAssistantError(error)
+        state = self.coordinator.data
+        if state is not before and state.error:
+            raise HomeAssistantError(state.error)

@@ -1091,3 +1091,32 @@ async def test_a_day_already_done_is_not_an_error_for_the_button(
 
     assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "already_submitted"
+
+
+async def test_the_button_does_not_report_an_earlier_press(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A refresh that raises leaves the previous attempt's error in place.
+
+    The coordinator only replaces its data when the update returns, so reading
+    the error straight off it blamed this press for a failure that belonged to
+    an earlier one, on a day whose readings had in fact reached Eneco.
+    """
+    set_sources(hass)
+    hass.states.async_set("sensor.import_night", STATE_UNAVAILABLE)
+    await setup_entry(hass, config_entry)
+    await press_failing(hass)
+
+    set_sources(hass)
+    coordinator = config_entry.runtime_data
+
+    async def unwritable(data: Any) -> None:
+        raise OSError("no space left on device")
+
+    coordinator._store.async_save = unwritable  # noqa: SLF001
+    coordinator.data.submitted_date = None
+    await press(hass)
+
+    assert len(submissions(mock_portal)) == 1
