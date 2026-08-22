@@ -767,6 +767,11 @@ async def test_setting_up_inside_the_submit_second_reports_success(
     set_sources(hass)
     await setup_entry(hass, config_entry)
 
+    # Drive the trigger rather than waiting on its own deadline, which is a
+    # fraction of a second in the past and fires whenever the loop gets to it.
+    async_fire_time_changed(hass, dt_util.now())
+    await hass.async_block_till_done()
+
     assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "success"
 
