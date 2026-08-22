@@ -165,17 +165,27 @@ async def test_session_token_never_reaches_the_message(
     assert SESSION_TOKEN not in repr(raised.value.__cause__)
 
 
+@pytest.mark.parametrize("transport", [False, True])
 async def test_account_number_never_reaches_the_user(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
     config_entry: MockConfigEntry,
+    transport: bool,
 ) -> None:
-    """Error text is shown in the UI and kept by the recorder, so keep ids out."""
-    aioclient_mock.post(
-        f"{API}/accounts/{ACCOUNT}/meter-readings",
-        status=HTTPStatus.INTERNAL_SERVER_ERROR,
-        json={},
-    )
+    """Error text is shown in the UI and kept by the recorder, so keep ids out.
+
+    Every REST path carries the CRM account number, and aiohttp quotes the URL
+    it was handed in its own message, so a connection that fails rather than
+    answers used to hand the number straight to the interface, the store, the
+    repair and the diagnostics that take care to redact it.
+    """
+    url = f"{API}/accounts/{ACCOUNT}/meter-readings"
+    if transport:
+        aioclient_mock.post(
+            url, exc=aiohttp.ConnectionTimeoutError(f"Connection timeout to host {url}")
+        )
+    else:
+        aioclient_mock.post(url, status=HTTPStatus.INTERNAL_SERVER_ERROR, json={})
     mock_login(
         aioclient_mock,
         accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
@@ -188,7 +198,13 @@ async def test_account_number_never_reaches_the_user(
 
     status = state_of(hass, STATUS)
     assert status.state == "failed"
-    assert ACCOUNT not in str(status.attributes["last_error"])
+    assert ACCOUNT not in str(status.attributes[ATTR_LAST_ERROR])
+
+    report = await async_get_config_entry_diagnostics(hass, config_entry)
+    assert ACCOUNT not in str(report)
+
+    stored = await config_entry.runtime_data._store.async_load()  # noqa: SLF001
+    assert ACCOUNT not in str(stored)
 
 
 async def test_error_attribute_is_not_recorded(

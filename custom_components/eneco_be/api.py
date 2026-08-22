@@ -577,7 +577,13 @@ class EnecoClient:
                 return await response.json(content_type=None), response.status
         except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.debug("%s %s failed: %s", method, path, err)
-            raise EnecoConnectionError(f"could not reach the portal: {err}") from err
+            # Name the failure, never quote it: aiohttp puts the URL it was
+            # given in its own message, and every path here carries the CRM
+            # account number. This text is shown in the interface, kept by the
+            # recorder, stored, and handed to the repair.
+            raise EnecoConnectionError(
+                f"could not reach the portal: {type(err).__name__}"
+            ) from err
         except ValueError as err:
             _LOGGER.debug("%s %s returned no JSON", method, path)
             raise EnecoConnectionError("the portal returned no JSON") from err
