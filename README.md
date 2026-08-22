@@ -115,10 +115,9 @@ Every entry creates one device, named after the meter's EAN, with:
 
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
 `already_submitted` when the date was already done, `nothing_to_submit` when no
-register has a sensor, `unchanged` when no register has moved since the last
-submission, or `failed` with the reason in its `last_error` attribute. Three
-failures in a row also raise a repair on the dashboard, which clears itself
-once a submission lands.
+register has a sensor, or `failed` with the reason in its `last_error`
+attribute. Three failures in a row also raise a repair on the dashboard, which
+clears itself once a submission lands.
 
 Press the button from an automation if you want a different schedule than the
 built-in daily one. A press that cannot submit fails the service call with the
@@ -167,14 +166,8 @@ account the entry already belongs to.
   sensor reporting a negative index, or one past what the portal can hold, is
   treated as unusable rather than sent.
 - **One reading per day.** Eneco rejects a second reading for a date that
-  already has one, and takes nothing below the index it already holds. A source
-  that has gone backwards, which is what a `utility_meter` crossing its cycle
-  looks like, is reported against the entity that did it rather than sent and
-  refused.
-- **A register that moves less than a whole unit a day.** Eneco wants every
-  register strictly higher than the one it holds, so a batch with nothing new
-  in it would be rejected in full. Nothing is sent and the status reads
-  `unchanged`, which does not count as a failure.
+  already has one, and rejects any value below the previous reading. Both show up
+  on the status sensor.
 - **A tariff period this integration does not know is skipped.** The portal
   has no versioning, so if Eneco ever adds one it is left out of the form and
   out of the submission, and the registers alongside it carry on working. The

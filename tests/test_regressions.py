@@ -260,11 +260,9 @@ async def test_a_failure_keeps_the_last_success(
     first = state_of(hass, LAST).state
     assert first != "unknown"
 
-    # Force a second attempt for the same day by clearing the guard, with the
-    # meter moved on so there is something new to send.
+    # Force a second attempt for the same day by clearing the guard.
     entry = config_entry
     entry.runtime_data.data.submitted_date = None
-    set_sources(hass, dict.fromkeys(SOURCES.values(), "9999"))
     await press_failing(hass)
 
     assert state_of(hass, STATUS).state == "failed"
@@ -1099,7 +1097,7 @@ async def test_the_index_is_truncated_not_rounded(
 ) -> None:
     """A meter face shows the digits it has reached, not the nearest one.
 
-    Rounding to nearest sent up to half a unit more than the meter has
+    Rounding to nearest sent up to half a unit more than the meter had
     actually turned, which over-reports the index to Eneco and raises the bar
     the next reading has to clear.
     """
@@ -1108,56 +1106,3 @@ async def test_the_index_is_truncated_not_rounded(
     await press(hass)
 
     assert {r["readingValue"] for r in submissions(mock_portal)[0]} == {1234}
-
-
-async def test_a_source_that_has_gone_backwards_is_named(
-    hass: HomeAssistant,
-    mock_portal: AiohttpClientMocker,
-    config_entry: MockConfigEntry,
-) -> None:
-    """Eneco takes nothing below the index it holds, so do not offer one.
-
-    A utility meter crossing its cycle, or a sensor that lost its restored
-    state, sends the whole batch to a rejection that names a wire code rather
-    than the entity anyone could act on.
-    """
-    set_sources(hass)
-    await setup_entry(hass, config_entry)
-    await press(hass)
-    assert len(submissions(mock_portal)) == 1
-
-    config_entry.runtime_data.data.submitted_date = None
-    hass.states.async_set(
-        "sensor.import_day",
-        "3",
-        {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
-    )
-    await press_failing(hass)
-
-    assert len(submissions(mock_portal)) == 1
-    assert state_of(hass, STATUS).state == "failed"
-    assert "sensor.import_day" in state_of(hass, STATUS).attributes[ATTR_LAST_ERROR]
-
-
-async def test_a_meter_that_has_not_moved_is_not_a_failure(
-    hass: HomeAssistant,
-    mock_portal: AiohttpClientMocker,
-    config_entry: MockConfigEntry,
-) -> None:
-    """The portal wants every register strictly higher than the one it has.
-
-    A batch with nothing new in it comes back rejected in full, so a register
-    that moves less than a whole unit a day used to build a failure streak and
-    raise the repair for a meter that was working perfectly.
-    """
-    set_sources(hass)
-    await setup_entry(hass, config_entry)
-    await press(hass)
-    assert len(submissions(mock_portal)) == 1
-
-    config_entry.runtime_data.data.submitted_date = None
-    await press(hass)
-
-    assert len(submissions(mock_portal)) == 1
-    assert state_of(hass, STATUS).state == "unchanged"
-    assert config_entry.runtime_data.data.failures == 0

@@ -116,7 +116,6 @@
           "success": "Erfolgreich",
           "already_submitted": "Bereits übermittelt",
           "nothing_to_submit": "Nichts zu übermitteln",
-          "unchanged": "Zähler hat sich nicht bewegt",
           "failed": "Fehlgeschlagen"
         }
       },

@@ -71,7 +71,6 @@ async def async_get_config_entry_diagnostics(
             # from the last success either way.
             "skipped": state.skipped,
             "nothing_mapped": state.nothing_mapped,
-            "unchanged": state.unchanged,
             "failures": state.failures,
         },
     }

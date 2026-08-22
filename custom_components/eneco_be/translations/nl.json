@@ -116,7 +116,6 @@
           "success": "Gelukt",
           "already_submitted": "Al doorgegeven",
           "nothing_to_submit": "Niets door te geven",
-          "unchanged": "Meter is niet vooruitgegaan",
           "failed": "Mislukt"
         }
       },

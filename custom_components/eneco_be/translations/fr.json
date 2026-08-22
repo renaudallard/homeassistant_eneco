@@ -116,7 +116,6 @@
           "success": "Réussie",
           "already_submitted": "Déjà transmise",
           "nothing_to_submit": "Rien à transmettre",
-          "unchanged": "Le compteur n'a pas bougé",
           "failed": "Échouée"
         }
       },
