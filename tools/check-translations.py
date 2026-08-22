@@ -62,8 +62,13 @@ def main() -> int:
         for s in sorted(set(re.findall(r'step_id="([a-z_]+)"', flow)) - declared_steps)
     ]
 
+    # The literals in the file, plus the ones Home Assistant aborts with on
+    # our behalf: async_set_unique_id and the reauth and reconfigure helpers
+    # never spell their reason out here, so nothing else would notice a
+    # missing translation for them.
     aborts = set(re.findall(r'reason="([a-z_]+)"', flow)) | {
         "already_configured",
+        "already_in_progress",
         "reauth_successful",
         "reconfigure_successful",
         "unique_id_mismatch",
