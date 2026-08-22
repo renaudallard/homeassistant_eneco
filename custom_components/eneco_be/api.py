@@ -178,14 +178,16 @@ class ServiceDeliveryPoint:
     energy_type: str
 
 
-def _endpoint(path: str) -> str:
-    """Return a path with the account number taken out of it.
+def _endpoint(value: object) -> str:
+    """Return text with any account number in it taken out.
 
     Debug logs are what a maintainer asks for in a bug report, and every path
     here is /accounts/<crm account number>/something. Which endpoint answered
-    is the whole point of the line; whose account it was is not.
+    is the whole point of the line; whose account it was is not. This has to
+    cover the exceptions too, because aiohttp quotes the URL it was handed in
+    the text of its own errors.
     """
-    return _ACCOUNT_RE.sub("/accounts/-", path)
+    return _ACCOUNT_RE.sub("/accounts/-", str(value))
 
 
 def _known_register(direction: str, timeframe: str) -> Register | None:
@@ -612,13 +614,14 @@ class EnecoClient:
                     )
                     return None, status
         except (aiohttp.ClientError, TimeoutError) as err:
-            _LOGGER.debug("%s %s failed: %s", method, _endpoint(path), err)
-            # Name the failure, never quote it: aiohttp puts the URL it was
-            # given in its own message, and every path here carries the CRM
-            # account number. This text is shown in the interface, kept by the
+            _LOGGER.debug("%s %s failed: %s", method, _endpoint(path), _endpoint(err))
+            # Redacted, not dropped: aiohttp quotes the URL it was given, and
+            # every path here carries the CRM account number, but the rest of
+            # the message is the only thing that says why the portal could not
+            # be reached. This text is shown in the interface, kept by the
             # recorder, stored, and handed to the repair.
             raise EnecoConnectionError(
-                f"could not reach the portal: {type(err).__name__}"
+                f"could not reach the portal: {_endpoint(err) or type(err).__name__}"
             ) from err
         except ValueError as err:
             _LOGGER.debug("%s %s returned no JSON", method, _endpoint(path))

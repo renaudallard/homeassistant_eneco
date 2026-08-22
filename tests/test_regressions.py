@@ -964,22 +964,28 @@ async def test_diagnostics_say_when_nothing_was_sent(
     assert report["last_attempt"]["failures"] == 0
 
 
+@pytest.mark.parametrize("transport", [False, True])
 async def test_the_debug_log_does_not_name_the_account(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
     config_entry: MockConfigEntry,
     caplog: pytest.LogCaptureFixture,
+    transport: bool,
 ) -> None:
     """Debug logs are what gets pasted into a bug report.
 
     Every REST path is /accounts/<crm account number>/something, and all three
     debug lines in the client printed the path as it stood.
     """
-    aioclient_mock.post(
-        f"{API}/accounts/{ACCOUNT}/meter-readings",
-        status=HTTPStatus.INTERNAL_SERVER_ERROR,
-        json={},
-    )
+    url = f"{API}/accounts/{ACCOUNT}/meter-readings"
+    if transport:
+        # aiohttp quotes the URL it was given in its own message, so this path
+        # carries the account number in the exception as well as in the path.
+        aioclient_mock.post(
+            url, exc=aiohttp.ConnectionTimeoutError(f"Connection timeout to host {url}")
+        )
+    else:
+        aioclient_mock.post(url, status=HTTPStatus.INTERNAL_SERVER_ERROR, json={})
     mock_login(
         aioclient_mock,
         accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
