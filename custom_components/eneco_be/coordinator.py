@@ -263,7 +263,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         if self.data.submitted_date == now.date():
             return
         _LOGGER.debug("Today's submission was missed, catching up")
-        self.config_entry.async_create_background_task(
+        # Not a background task: unloading the entry cancels those, and being
+        # cancelled between a reading the portal has taken and the record of
+        # it would offer the same date again. A date already submitted cannot
+        # be corrected, so unload waits for this instead.
+        self.config_entry.async_create_task(
             self.hass, self.async_refresh(), f"{DOMAIN} catch up"
         )
 

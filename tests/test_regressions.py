@@ -28,6 +28,7 @@ Each test here failed before the fix it guards.
 """
 
 import ast
+import asyncio
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
 import logging
@@ -984,3 +985,51 @@ async def test_the_debug_log_does_not_name_the_account(
 
     assert "meter-readings" in caplog.text
     assert ACCOUNT not in caplog.text
+
+
+async def test_unloading_mid_catch_up_still_records_the_date(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    hass_storage: dict[str, Any],
+) -> None:
+    """Unloading must not lose a reading the portal has already taken.
+
+    The catch-up ran as a config entry background task, and unloading cancels
+    those. Cancelled between the answer and the store write, the guard against
+    sending a date twice had nothing recorded, and the next setup offered the
+    same day again to a portal that will not let anyone undo it.
+    """
+    hass.set_state(CoreState.not_running)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "06:00:00"}
+    )
+    set_sources(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = config_entry.runtime_data
+    written = asyncio.Event()
+    release = asyncio.Event()
+    real_save = coordinator._store.async_save  # noqa: SLF001
+
+    async def slow_save(data: Any) -> None:
+        written.set()
+        await release.wait()
+        await real_save(data)
+
+    coordinator._store.async_save = slow_save  # noqa: SLF001
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await written.wait()
+
+    unloading = hass.async_create_task(
+        hass.config_entries.async_unload(config_entry.entry_id)
+    )
+    await asyncio.sleep(0)
+    release.set()
+    assert await unloading
+
+    stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
+    assert stored["submitted_date"] == dt_util.now().date().isoformat()
