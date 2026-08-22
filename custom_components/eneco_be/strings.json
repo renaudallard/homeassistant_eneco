@@ -116,6 +116,7 @@
           "success": "Success",
           "already_submitted": "Already submitted",
           "nothing_to_submit": "Nothing to submit",
+          "unchanged": "Meter has not moved",
           "failed": "Failed"
         }
       },

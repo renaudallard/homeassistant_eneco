@@ -81,6 +81,14 @@ class NothingMappedError(EnecoError):
     """No register has a source entity, so there is nothing to send."""
 
 
+class ReadingWentBackwardsError(EnecoError):
+    """A source reads below the index Eneco has already taken."""
+
+
+class NothingNewError(EnecoError):
+    """No register has moved since the last submission."""
+
+
 @dataclass(slots=True)
 class EnecoState:
     """Outcome of the most recent submission attempt."""
@@ -92,6 +100,7 @@ class EnecoState:
     error: str | None = None
     skipped: bool = False
     nothing_mapped: bool = False
+    unchanged: bool = False
     failures: int = 0
 
     def as_dict(self) -> dict[str, Any]:
@@ -106,6 +115,7 @@ class EnecoState:
             "error": self.error,
             "skipped": self.skipped,
             "nothing_mapped": self.nothing_mapped,
+            "unchanged": self.unchanged,
             "failures": self.failures,
         }
 
@@ -140,6 +150,7 @@ class EnecoState:
             error=data.get("error"),
             skipped=bool(data.get("skipped")),
             nothing_mapped=bool(data.get("nothing_mapped")),
+            unchanged=bool(data.get("unchanged")),
             failures=whole(data.get("failures")) or 0,
         )
 
@@ -359,6 +370,10 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             _LOGGER.debug("No source entity is mapped, nothing to submit")
             state.nothing_mapped = True
             return state
+        except NothingNewError:
+            _LOGGER.debug("No register has moved, nothing to submit")
+            state.unchanged = True
+            return state
         except EnecoError as err:
             _LOGGER.warning("Skipping submission: %s", err)
             state.error = str(err)
@@ -406,7 +421,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         if not mapped:
             raise NothingMappedError("no register has a source entity")
 
-        values: dict[Register, int] = {}
+        readings: dict[str, int] = {}
         unusable: list[str] = []
 
         for key, entity_id in mapped.items():
@@ -414,11 +429,34 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             if value is None:
                 unusable.append(entity_id)
                 continue
-            values[Register.from_key(key)] = value
+            readings[key] = value
 
         if unusable:
             raise ReadingUnavailableError(f"no usable value from {', '.join(unusable)}")
-        return values
+
+        # Eneco keeps the index it already holds and takes nothing below it, so
+        # a source that has gone backwards is a source to go and fix. A utility
+        # meter crossing its cycle or a sensor that lost its restored state
+        # does exactly that, and naming the entity beats the portal's own code.
+        accepted = self.data.values
+        behind = [
+            f"{mapped[key]} reads {value}, below the {accepted[key]} already sent"
+            for key, value in readings.items()
+            if key in accepted and value < accepted[key]
+        ]
+        if behind:
+            raise ReadingWentBackwardsError("; ".join(behind))
+
+        # The portal wants every register strictly higher than the one it has,
+        # so a batch with nothing new in it comes back rejected in full. That
+        # is a meter that has not moved, not a fault worth counting.
+        if readings and all(
+            key in accepted and value == accepted[key]
+            for key, value in readings.items()
+        ):
+            raise NothingNewError("no register has moved since the last submission")
+
+        return {Register.from_key(key): value for key, value in readings.items()}
 
     def _read_value(self, entity_id: str) -> int | None:
         """Return an entity's state in the meter's own unit, or None.
