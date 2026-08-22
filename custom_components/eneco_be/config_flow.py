@@ -154,12 +154,17 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
             client = EnecoClient(
                 session, user_input[CONF_EMAIL], user_input[CONF_PASSWORD]
             )
+            signed_in = False
             try:
                 await client.async_login()
+                signed_in = True
                 self._accounts = await client.async_get_accounts()
             except EnecoAuthError as err:
+                # Reading the accounts raises this too, for a dashboard that
+                # did not render and for a login that owns none. Neither is the
+                # password, and saying it was sends the user round in circles.
                 _LOGGER.debug("Sign in refused: %s", err)
-                errors["base"] = "invalid_auth"
+                errors["base"] = "no_accounts" if signed_in else "invalid_auth"
                 session.detach()
             except EnecoConnectionError as err:
                 _LOGGER.debug("Portal unreachable: %s", err)

@@ -62,6 +62,7 @@
     },
     "error": {
       "invalid_auth": "Eneco a refusé ces identifiants.",
+      "no_accounts": "Connexion réussie, mais aucun compte Eneco pouvant encoder des relevés n'est lié à ces identifiants.",
       "cannot_connect": "Impossible de joindre le portail Eneco."
     },
     "abort": {

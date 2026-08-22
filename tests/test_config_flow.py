@@ -365,3 +365,25 @@ async def test_reconfigure_onto_a_different_meter_is_refused(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "unique_id_mismatch"
     assert config_entry.data[CONF_EAN] == EAN
+
+
+async def test_a_login_with_no_account(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Signing in and owning nothing is not a wrong password.
+
+    Reading the accounts raises the same error as a refused sign in, and both
+    used to come back as invalid_auth, which told the user to check credentials
+    the portal had just accepted.
+    """
+    mock_login(aioclient_mock, accounts=[])
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "no_accounts"}
