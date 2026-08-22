@@ -1213,3 +1213,57 @@ async def test_a_submission_in_flight_does_not_outlive_the_entry(
 
     assert key not in hass_storage
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_a_start_behind_the_trigger_keeps_the_success(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Starting up can take minutes, and the trigger does not wait for it.
+
+    The catch-up runs when Home Assistant finishes starting, which can be well
+    after the trigger has fired. While that submission is still on the wire the
+    date is not recorded yet, so the catch-up ran a second pass behind it,
+    which found the date done and left already_submitted on the status sensor
+    for a day that had in fact just succeeded.
+    """
+    release = asyncio.Event()
+
+    async def answer(method: str, url: Any, data: Any) -> Any:
+        await release.wait()
+        return AiohttpClientMockResponse(method, url, json={"data": None})
+
+    aioclient_mock.post(f"{API}/accounts/{ACCOUNT}/meter-readings", side_effect=answer)
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    hass.set_state(CoreState.not_running)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "12:00:00"}
+    )
+    set_sources(hass)
+    freezer.move_to(dt_util.now().replace(hour=11, minute=59, second=58))
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # The trigger fires and its submission is still on the wire.
+    freezer.move_to(dt_util.now().replace(hour=12, minute=0, second=0))
+    async_fire_time_changed(hass, dt_util.now())
+    await asyncio.sleep(0)
+    assert config_entry.runtime_data.data.submitted_date is None
+
+    # Startup finishes a couple of minutes later, with the date not recorded
+    # yet because the call has not come back.
+    freezer.move_to(dt_util.now().replace(hour=12, minute=2, second=0))
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    release.set()
+    await hass.async_block_till_done()
+
+    assert len(submissions(aioclient_mock)) == 1
+    assert state_of(hass, STATUS).state == "success"

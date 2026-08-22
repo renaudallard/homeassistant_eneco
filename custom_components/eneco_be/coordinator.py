@@ -171,6 +171,9 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         self.client = client
         self.data = EnecoState()
         self._unsub: CALLBACK_TYPE | None = None
+        # The date the daily trigger last fired for, so a catch-up arriving
+        # behind it stands down rather than running a second time.
+        self._triggered: date | None = None
         self._store = Store[dict[str, Any]](
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         )
@@ -253,6 +256,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
         async def _submit(now: datetime) -> None:
             _LOGGER.debug("Daily submission triggered at %s", now)
+            self._triggered = dt_util.now().date()
             await self.async_refresh()
 
         self._unsub = async_track_time_change(
@@ -279,6 +283,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         # landing here in the middle of it would submit twice over, the second
         # of them reporting the day as already done.
         if now.time().replace(microsecond=0) <= self.submit_time:
+            return
+        # Starting up can take minutes, so the trigger may already have gone
+        # off, and its submission may still be on the wire with the date not
+        # recorded yet. Either way today is spoken for.
+        if self._triggered == now.date():
             return
         if self.data.submitted_date == now.date():
             return
