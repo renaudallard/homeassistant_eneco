@@ -27,6 +27,7 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 import logging
+from math import isfinite
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.const import (
@@ -401,6 +402,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         try:
             raw = float(state.state)
         except ValueError:
+            return None
+        # float() is happy with nan and inf, and round() is not: without this a
+        # source stuck on either takes the whole coordinator down with it.
+        if not isfinite(raw):
+            _LOGGER.warning("%s reports %s, which is not a number", entity_id, raw)
             return None
 
         gas = self.energy_type != ELECTRICITY

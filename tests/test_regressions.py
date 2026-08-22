@@ -55,7 +55,11 @@ from custom_components.eneco_be.coordinator import REPAIR_AFTER_FAILURES, EnecoS
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eneco_be.sensor import EnecoSensor
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.const import (
+    ATTR_UNIT_OF_MEASUREMENT,
+    EVENT_HOMEASSISTANT_STARTED,
+    UnitOfEnergy,
+)
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
@@ -569,3 +573,29 @@ async def test_the_catch_up_waits_for_home_assistant_to_start(
 
     assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "success"
+
+
+@pytest.mark.parametrize("reported", ["nan", "inf", "-inf", "1e400"])
+async def test_a_source_that_is_not_a_number_is_reported(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    reported: str,
+) -> None:
+    """float() accepts nan and inf where round() does not.
+
+    Letting either through raised out of the coordinator, which took every
+    entity of the entry unavailable instead of recording a failed attempt.
+    """
+    set_sources(hass)
+    hass.states.async_set(
+        "sensor.import_night",
+        reported,
+        {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
+    )
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).state == "failed"
+    assert "sensor.import_night" in state_of(hass, STATUS).attributes[ATTR_LAST_ERROR]
