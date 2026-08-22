@@ -682,3 +682,32 @@ def test_the_shipped_sources_parse_on_the_previous_python() -> None:
     """
     for source in sorted(Path("custom_components/eneco_be").rglob("*.py")):
         ast.parse(source.read_text(encoding="utf-8"), feature_version=(3, 13))
+
+
+async def test_next_submission_survives_the_autumn_clock_change(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The probe used to lose the fold and land an hour in the past.
+
+    Adding a second to a local time always yields fold zero, so during the
+    repeated hour of the autumn change the probe moved backwards in absolute
+    time and the helper handed back the moment that had just passed.
+    """
+    await hass.config.async_set_time_zone("Europe/Brussels")
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "02:30:00"}
+    )
+    set_sources(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # The second pass through 02:30 on the night the hour repeats.
+    freezer.move_to("2026-10-25T01:30:00+00:00")
+    assert dt_util.now().fold == 1
+
+    coordinator = config_entry.runtime_data
+    assert coordinator.next_submission > dt_util.now()

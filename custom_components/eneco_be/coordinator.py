@@ -210,8 +210,13 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         at = self.submit_time
         # The helper works to whole seconds and is inclusive of the moment it is
         # given, so asking from the current second hands back the trigger that
-        # has just fired. Start from the next second and the answer is always ahead.
-        probe = dt_util.now().replace(microsecond=0) + timedelta(seconds=1)
+        # has just fired. Start from the next second and the answer is always
+        # ahead. Add that second in UTC, the way the trigger itself does:
+        # adding it to a local time throws the fold away, and inside the hour
+        # the autumn clock change repeats that moves the probe an hour back.
+        probe = dt_util.as_local(
+            dt_util.utcnow().replace(microsecond=0) + timedelta(seconds=1)
+        )
         return dt_util.find_next_time_expression_time(
             probe, [at.second], [at.minute], [at.hour]
         )
