@@ -211,9 +211,10 @@ ships against the previous version of the language to keep it that way.
 `icons.json` and the code in step.
 
 `tools/check-portal.py` signs in to a real account and reads back the discovery
-chain, the registers and the recent readings, without submitting anything. The
-portal has no public API and no versioning, so when something stops working this
-is what tells you which endpoint moved:
+chain, then the registers and recent readings of every meter it would set up an
+entry for, gas as well as electricity, without submitting anything. The portal
+has no public API and no versioning, so when something stops working this is
+what tells you which endpoint moved:
 
 ```sh
 ENECO_EMAIL=you@example.com .venv/bin/python tools/check-portal.py

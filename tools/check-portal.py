@@ -25,8 +25,9 @@
 
 """Check the Eneco portal still behaves the way this integration expects.
 
-Read only: it signs in, walks the discovery chain and reads back the meter's
-registers and recent readings.  Nothing is ever submitted.
+Read only: it signs in, walks the discovery chain and reads back the registers
+and recent readings of every meter the integration would set up an entry for,
+electricity and gas alike. Nothing is ever submitted.
 
 The portal has no public API and no versioning, so when Eneco redeploys the
 site this is what turns "the integration stopped working" into "this endpoint
@@ -64,7 +65,8 @@ from custom_components.eneco_be.api import (
 # a check that quietly identified itself as something else.
 SERVER_SOFTWARE = "HomeAssistant/2026.8.2 aiohttp/3.14.3 Python/3.14"
 
-ELECTRICITY = "Electricity"
+# The kinds of meter the integration will set up an entry for.
+METERED = ("Electricity", "Gas")
 
 type Formatter = Callable[[str, int], str]
 
@@ -130,10 +132,13 @@ async def check(email: str, password: str, show: Formatter) -> int:
                     print(f"      {point.energy_type:12} EAN {show(point.ean, 6)}")
 
                 for point in points:
-                    if point.energy_type != ELECTRICITY:
+                    if point.energy_type not in METERED:
                         continue
                     meter = await client.async_get_meter(account.number, point.ean)
-                    print(f"      registers for EAN {show(meter.ean, 6)}:")
+                    print(
+                        f"      registers for {meter.energy_type}"
+                        f" EAN {show(meter.ean, 6)}:"
+                    )
                     for register in meter.registers:
                         print(
                             f"        {register.key:24}"
