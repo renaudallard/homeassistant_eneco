@@ -49,7 +49,7 @@
           "submit_time": "Übermitteln um"
         },
         "data_description": {
-          "submit_time": "Ortszeit, zu der die Zählerstände einmal täglich gesendet werden."
+          "submit_time": "Ortszeit, zu der die Zählerstände einmal täglich gesendet werden. Die vorgeschlagene Zeit wird zufällig aus dem späten Abend gewählt, damit nicht alle Haushalte Eneco im selben Moment erreichen."
         }
       },
       "reauth_confirm": {

@@ -49,7 +49,7 @@
           "submit_time": "Doorgeven om"
         },
         "data_description": {
-          "submit_time": "Lokale tijd waarop de meterstanden eenmaal per dag worden doorgegeven."
+          "submit_time": "Lokale tijd waarop de meterstanden eenmaal per dag worden doorgegeven. De voorgestelde tijd wordt willekeurig in de late avond gekozen, zodat niet elk huishouden Eneco op hetzelfde moment bereikt."
         }
       },
       "reauth_confirm": {

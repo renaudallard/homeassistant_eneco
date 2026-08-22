@@ -25,7 +25,9 @@
 """Config flow for the Eneco Belgium integration."""
 
 from collections.abc import Mapping
+from datetime import time
 import logging
+import random
 from typing import Any, override
 
 from aiohttp import ClientSession
@@ -60,8 +62,9 @@ from .const import (
     CONF_REGISTERS,
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
-    DEFAULT_SUBMIT_TIME,
     DOMAIN,
+    SUGGEST_SUBMIT_FROM,
+    SUGGEST_SUBMIT_TO,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,6 +94,22 @@ CREDENTIALS_SCHEMA = vol.Schema(
 )
 
 
+def _suggested_submit_time() -> str:
+    """Return the time of day to offer a setup that has not chosen one.
+
+    Every meter this integration reads is submitted to the same portal, and a
+    single default would have all of them arrive there in the same second. The
+    suggestion is drawn from a window of whole minutes instead. It is only a
+    suggestion: the field is there to be changed.
+    """
+    first = time.fromisoformat(SUGGEST_SUBMIT_FROM)
+    last = time.fromisoformat(SUGGEST_SUBMIT_TO)
+    minute = random.randint(
+        first.hour * 60 + first.minute, last.hour * 60 + last.minute
+    )
+    return time(minute // 60, minute % 60).isoformat()
+
+
 def _sources_schema(
     registers: list[str], defaults: Mapping[str, Any], energy_type: str
 ) -> vol.Schema:
@@ -116,7 +135,9 @@ def _sources_schema(
     fields[
         vol.Required(
             CONF_SUBMIT_TIME,
-            default=defaults.get(CONF_SUBMIT_TIME, DEFAULT_SUBMIT_TIME),
+            # Only a setup with no time of its own gets a fresh suggestion;
+            # reconfiguring or changing the sources keeps the one in use.
+            default=defaults.get(CONF_SUBMIT_TIME) or _suggested_submit_time(),
         )
     ] = selector.TimeSelector()
     return vol.Schema(fields)

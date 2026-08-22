@@ -49,7 +49,7 @@
           "submit_time": "Transmettre à"
         },
         "data_description": {
-          "submit_time": "Heure locale à laquelle les relevés sont transmis, une fois par jour."
+          "submit_time": "Heure locale à laquelle les relevés sont transmis, une fois par jour. L'heure proposée est tirée au hasard en fin de soirée, pour que tous les ménages n'arrivent pas chez Eneco au même moment."
         }
       },
       "reauth_confirm": {

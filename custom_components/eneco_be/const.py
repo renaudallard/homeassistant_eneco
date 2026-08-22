@@ -40,5 +40,10 @@ CONF_SUBMIT_TIME: Final = "submit_time"
 
 DEFAULT_SUBMIT_TIME: Final = "23:50:00"
 
+# A first setup is offered a time drawn from this window rather than one fixed
+# time, so that the households running this do not all reach Eneco at once.
+SUGGEST_SUBMIT_FROM: Final = "22:30:00"
+SUGGEST_SUBMIT_TO: Final = "23:50:00"
+
 
 ATTR_LAST_ERROR: Final = "last_error"

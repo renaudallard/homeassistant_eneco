@@ -24,6 +24,7 @@
 
 """Tests for the Eneco Belgium config flow."""
 
+from datetime import time
 from http import HTTPStatus
 from typing import Any
 
@@ -34,6 +35,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMockResponse,
 )
 
+from custom_components.eneco_be.config_flow import _suggested_submit_time
 from custom_components.eneco_be.const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
@@ -428,3 +430,66 @@ async def test_reconfigure_offers_the_address_already_on_file(
     assert result["step_id"] == "user"
     field = next(key for key in result["data_schema"].schema if key == CONF_EMAIL)
     assert field.description == {"suggested_value": EMAIL}
+
+
+def _offered_time(result: Any) -> time:
+    """Return the submission time a form is offering."""
+    schema = result["data_schema"]
+    assert schema is not None
+    field = next(key for key in schema.schema if key == CONF_SUBMIT_TIME)
+    return time.fromisoformat(field.default())
+
+
+def test_the_suggested_time_is_scattered_across_the_window() -> None:
+    """One fixed default would land every installation on Eneco at once."""
+    picks = {_suggested_submit_time() for _ in range(300)}
+
+    assert len(picks) > 1
+    for pick in picks:
+        offered = time.fromisoformat(pick)
+        assert time(22, 30) <= offered <= time(23, 50)
+        assert offered.second == 0
+
+
+async def test_a_first_setup_is_offered_a_time_from_the_window(
+    hass: HomeAssistant, mock_portal: AiohttpClientMocker
+) -> None:
+    """A setup with no time of its own gets one drawn from the window.
+
+    Checking the range alone would not notice a fixed default, since the old
+    one sat inside the window, so this walks the form several times over and
+    asks that they were not all handed the same minute.
+    """
+    offered = set()
+    for _ in range(8):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+        )
+        assert result["step_id"] == "sources"
+        chosen = _offered_time(result)
+        assert time(22, 30) <= chosen <= time(23, 50)
+        assert chosen.second == 0
+        offered.add(chosen)
+        # The next flow would abort as already in progress otherwise, since
+        # this one is holding the meter's unique id.
+        hass.config_entries.flow.async_abort(result["flow_id"])
+
+    assert len(offered) > 1
+
+
+async def test_the_options_form_keeps_the_time_in_use(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Only a setup without one is scattered; the rest keep what they chose."""
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+
+    assert _offered_time(result) == time(23, 50)

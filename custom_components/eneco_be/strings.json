@@ -49,7 +49,7 @@
           "submit_time": "Submit at"
         },
         "data_description": {
-          "submit_time": "Local time of day at which the readings are sent, once a day."
+          "submit_time": "Local time of day at which the readings are sent, once a day. The time offered is picked at random from the late evening, so that not every household reaches Eneco at the same moment."
         }
       },
       "reauth_confirm": {

@@ -94,7 +94,10 @@ one into a `custom_components/eneco_be` you make yourself.
 2. **Account, address, meter.** Only asked when you have more than one; the
    integration skips straight past any step with a single answer.
 3. **Meter readings.** A sensor per register, each optional, and the time of day
-   to submit.
+   to submit. The time offered is drawn at random from between 22:30 and 23:50,
+   so that the households running this do not all reach Eneco in the same
+   second. Change it to whatever suits you; it is only a suggestion, and only a
+   setup that has not chosen one is given it.
 
 The sensor for a register must be a *total* index, the same number you would
 read off the meter, not a rate or a daily delta. The picker lists only sensors
