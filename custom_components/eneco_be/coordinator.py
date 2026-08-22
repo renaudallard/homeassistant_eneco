@@ -113,20 +113,30 @@ class EnecoState:
             raw = data.get(key)
             return dt_util.parse_datetime(raw) if isinstance(raw, str) else None
 
+        def whole(value: Any) -> int | None:
+            """Return an integer, or None for anything that is not one."""
+            try:
+                return int(value)
+            except (TypeError, ValueError):  # fmt: skip
+                return None
+
         raw_date = data.get("submitted_date")
         submitted = dt_util.parse_date(raw_date) if isinstance(raw_date, str) else None
-        values = data.get("values")
+        raw_values = data.get("values")
+        values = raw_values if isinstance(raw_values, dict) else {}
         return cls(
             attempted=moment("attempted"),
             succeeded=moment("succeeded"),
             submitted_date=submitted,
-            values={str(k): int(v) for k, v in values.items()}
-            if isinstance(values, dict)
-            else {},
+            values={
+                str(key): reading
+                for key, value in values.items()
+                if (reading := whole(value)) is not None
+            },
             error=data.get("error"),
             skipped=bool(data.get("skipped")),
             nothing_mapped=bool(data.get("nothing_mapped")),
-            failures=int(data.get("failures") or 0),
+            failures=whole(data.get("failures")) or 0,
         )
 
 

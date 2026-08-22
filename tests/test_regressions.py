@@ -435,6 +435,10 @@ async def test_stored_state_is_written(
         {},
         {"submitted_date": "not a date", "values": "not a mapping"},
         {"attempted": None, "succeeded": "nonsense", "values": {"offtake_day": 1}},
+        # A mapping is not enough: what it maps to has to be a number too.
+        {"values": {"offtake_day": "not a number"}},
+        {"values": {"offtake_day": None}},
+        {"failures": "not a number"},
     ],
 )
 async def test_unreadable_stored_state_is_ignored(
