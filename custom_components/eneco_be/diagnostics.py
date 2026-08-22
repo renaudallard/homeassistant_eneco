@@ -66,5 +66,11 @@ async def async_get_config_entry_diagnostics(
             ),
             "values": state.values,
             "error": state.error,
+            # Without these a run that sent nothing looks exactly like one that
+            # sent everything: the timestamps and the values are carried over
+            # from the last success either way.
+            "skipped": state.skipped,
+            "nothing_mapped": state.nothing_mapped,
+            "failures": state.failures,
         },
     }

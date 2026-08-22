@@ -926,3 +926,29 @@ async def test_removing_the_entry_takes_the_repair_with_it(
     await hass.async_block_till_done()
 
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_diagnostics_say_when_nothing_was_sent(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A run that sent nothing must not read as one that sent everything.
+
+    The timestamps and the values are carried forward from the last success,
+    so a report holding only those describes a submission that did not happen,
+    and says nothing about how long it has been going wrong.
+    """
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={CONF_SUBMIT_TIME: "23:50:00"}
+    )
+    set_sources(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    await press(hass)
+
+    report = await async_get_config_entry_diagnostics(hass, config_entry)
+    assert report["last_attempt"]["nothing_mapped"] is True
+    assert report["last_attempt"]["skipped"] is False
+    assert report["last_attempt"]["failures"] == 0
