@@ -80,8 +80,11 @@ one is a single request rather than a file at a time.
 
 ### Manually
 
-Copy `custom_components/eneco_be` into your Home Assistant `config` directory and
-restart.
+Copy `custom_components/eneco_be` from a checkout into the `custom_components`
+directory of your Home Assistant `config`, so that
+`config/custom_components/eneco_be/manifest.json` exists, and restart. The
+`eneco_be.zip` on a release holds those same files at its root, so unpack that
+one into a `custom_components/eneco_be` you make yourself.
 
 ## Setup
 
@@ -94,11 +97,14 @@ restart.
    to submit.
 
 The sensor for a register must be a *total* index, the same number you would
-read off the meter, not a rate or a daily delta. For electricity that is an
-energy sensor in kWh; on a Belgian digital meter these are the ones your P1 or
-DSMR integration exposes as "total consumption tariff 1", "total production
-tariff 2", and so on. For gas it is a volume sensor in m³. Other units of the
-same kind are converted automatically.
+read off the meter, not a rate or a daily delta. The picker lists only sensors
+carrying the right device class, energy for an electricity meter and gas for a
+gas meter, so a template sensor without one has to be given it before it shows
+up. For electricity that is an energy sensor in kWh; on a Belgian digital meter
+these are the ones your P1 or DSMR integration exposes as "total consumption
+tariff 1", "total production tariff 2", and so on. For gas it is a sensor with
+the gas device class, read in m³, not one published as a volume. Other units of
+the same kind are converted automatically.
 
 ## Entities
 
@@ -115,15 +121,20 @@ Every entry creates one device, named after the meter's EAN, with:
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
 `already_submitted` when the date was already done, `nothing_to_submit` when no
 register has a sensor, or `failed` with the reason in its `last_error`
-attribute. Three failures in a row also raise a repair on the dashboard, which
-clears itself once a submission lands.
+attribute. Three failures in a row also raise a repair card under
+*Settings > System > Repairs*. It clears on the next attempt that does not fail,
+and it survives a restart. Disabling the entry takes it down and enabling it
+again brings it back; removing the entry takes it away for good.
 
 Press the button from an automation if you want a different schedule than the
 built-in daily one. A press that cannot submit fails the service call with the
 reason, so a script notices; a press on a day that is already done, or with no
 register mapped, is a no op rather than an error.
 
-Use *Download diagnostics* on the device to see exactly what was last sent.
+Use *Download diagnostics* on the device to see what was last sent, whether the
+last run was skipped or found nothing mapped, and how many attempts have failed
+in a row. Your email address, password, account number, EAN and address are left
+out of it, and the account number is kept out of the log as well.
 
 What the last attempt did is remembered across restarts, so the sensors carry on
 reporting the real last submission rather than resetting, and a day that was
@@ -157,19 +168,24 @@ account the entry already belongs to.
 ## Limitations
 
 - **No two-factor authentication.** The login is a plain Okta username and
-  password exchange. An account that requires MFA cannot be used headlessly, and
-  setup will say so rather than fail obscurely.
+  password exchange. An account that requires MFA cannot be used headlessly. The
+  setup form says so under the password field, but the attempt itself comes back
+  as rejected credentials, with the Okta status only in the debug log.
 - **Whole units.** Eneco stores the index as a 32 bit integer, so values are
   rounded: whole kWh for electricity, whole m³ for gas. A sensor reporting a
   negative index, or one past what the portal can hold, is treated as unusable
   rather than sent.
 - **One reading per day.** Eneco rejects a second reading for a date that
-  already has one, and rejects any value below the previous reading. Both show up
-  on the status sensor.
+  already has one, and refuses a value below the one it already holds. Its own
+  code for that case is named `NewReadingsShouldBeHigher`, so a register that has
+  not advanced a whole unit since the last submission may be refused as well.
+  Both show up on the status sensor.
 - **A tariff period this integration does not know is skipped.** The portal
   has no versioning, so if Eneco ever adds one it is left out of the form and
   out of the submission, and the registers alongside it carry on working. The
-  Home Assistant log names it.
+  Home Assistant log names it. The register list is settled when the entry is set
+  up and stored with it, so one that was skipped, or one Eneco adds later, reaches
+  the form only after *Reconfigure*.
 - Your credentials are stored in the Home Assistant configuration, like every
   other cloud integration.
 - **A submission time between 02:00 and 03:00 is affected by daylight saving.**
@@ -187,11 +203,13 @@ production. In short: an Okta password grant produces a one-shot session token,
 NextAuth trades it for a session cookie, and the session yields the bearer token
 the REST API wants.
 
-The daily submission is JSON throughout: every call it makes goes to the same
-REST endpoints the website uses. Setting up an entry is the one exception. No
-endpoint exposes the list of accounts you may act on, which reaches the browser
-only inside the `__NEXT_DATA__` payload the dashboard renders, so that one list
-is read out of the page.
+Once signed in, submitting is JSON throughout: every call goes to the same REST
+endpoints the website uses. The sign in itself is neither, and the token lives
+only in memory, so the first submission after a restart posts a form to NextAuth
+and follows Okta's redirect chain before any of that. Setting up an entry has
+one more exception: no endpoint exposes the list of accounts you may act on,
+which reaches the browser only inside the `__NEXT_DATA__` payload the dashboard
+renders, so that list is read out of the page.
 
 ## Development
 
@@ -205,7 +223,9 @@ python3 -m venv .venv
 .venv/bin/pytest tests -q
 ```
 
-That is exactly what CI runs, alongside hassfest and the HACS validator.
+That is exactly what CI runs, alongside hassfest and the HACS validator. Build
+the virtualenv with Python 3.14: the pinned Home Assistant does not install on
+anything older.
 
 `ruff` and `mypy` use the same rule set and error codes Home Assistant core
 uses, so anything that would fail a core review fails here too.
@@ -228,6 +248,9 @@ what tells you which endpoint moved:
 ```sh
 ENECO_EMAIL=you@example.com .venv/bin/python tools/check-portal.py
 ```
+
+The password is asked for at the prompt unless `ENECO_PASSWORD` is set as well,
+so the check needs a terminal to run in.
 
 The brand images in `custom_components/eneco_be/brand` are what HACS validates
 and what Home Assistant serves for the integration.
