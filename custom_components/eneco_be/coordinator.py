@@ -186,6 +186,21 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             self.data = EnecoState.from_dict(stored)
             _LOGGER.debug("Restored %s", self.data)
 
+    @callback
+    def async_review_repair(self) -> None:
+        """Bring the repair card into line with the restored state."""
+        self._async_review_repair(self.data)
+
+    @callback
+    def async_clear_repair(self) -> None:
+        """Take the repair down with the entry that raised it.
+
+        Only a submission clears it, and an entry that is unloaded makes none.
+        Disabling one would otherwise leave the card up for good, naming a
+        meter nobody is submitting for any more.
+        """
+        ir.async_delete_issue(self.hass, DOMAIN, self._repair_id)
+
     @staticmethod
     async def async_remove_store_for(
         hass: HomeAssistant, entry: EnecoConfigEntry
@@ -194,6 +209,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         await Store[dict[str, Any]](
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         ).async_remove()
+
+    @property
+    def _repair_id(self) -> str:
+        """Return the id of the repair raised for this entry."""
+        return f"submission_failed_{self.config_entry.entry_id}"
 
     @property
     def energy_type(self) -> str:
@@ -306,14 +326,13 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         A failed status sensor is easy to never look at, and a household can go
         weeks without noticing that nothing is reaching Eneco.
         """
-        issue_id = f"submission_failed_{self.config_entry.entry_id}"
         if state.failures < REPAIR_AFTER_FAILURES:
-            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            ir.async_delete_issue(self.hass, DOMAIN, self._repair_id)
             return
         ir.async_create_issue(
             self.hass,
             DOMAIN,
-            issue_id,
+            self._repair_id,
             is_fixable=False,
             # A card that only survives until the next restart is no use here:
             # nothing raises it again until the next submission, and there is

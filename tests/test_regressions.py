@@ -58,7 +58,11 @@ from custom_components.eneco_be.const import ATTR_LAST_ERROR, CONF_SUBMIT_TIME, 
 from custom_components.eneco_be.coordinator import REPAIR_AFTER_FAILURES, EnecoState
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eneco_be.sensor import EnecoSensor
-from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
+from homeassistant.config_entries import (
+    SOURCE_USER,
+    ConfigEntryDisabler,
+    ConfigEntryState,
+)
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
     CONF_EMAIL,
@@ -1120,3 +1124,45 @@ async def test_the_button_does_not_report_an_earlier_press(
     await press(hass)
 
     assert len(submissions(mock_portal)) == 1
+
+
+async def test_the_repair_goes_when_the_entry_is_disabled(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """A card nobody can act on must not outlive the entry that raised it.
+
+    Only a submission clears the repair, and a disabled entry makes none, so
+    once the card was made to survive restarts it stayed up for good. Setting
+    the entry up again has to put it straight back.
+    """
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    for _ in range(REPAIR_AFTER_FAILURES):
+        await press_failing(hass)
+
+    issue_id = f"submission_failed_{config_entry.entry_id}"
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    await hass.config_entries.async_set_disabled_by(
+        config_entry.entry_id, ConfigEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
+
+    await hass.config_entries.async_set_disabled_by(config_entry.entry_id, None)
+    await hass.async_block_till_done()
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None

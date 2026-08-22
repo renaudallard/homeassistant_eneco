@@ -64,6 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
 
     coordinator = EnecoCoordinator(hass, entry, client)
     await coordinator.async_load()
+    coordinator.async_review_repair()
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -77,13 +78,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> bool:
-    """Unload the entry and everything registered with it."""
+    """Unload the entry and everything registered with it.
+
+    The repair goes with it: nothing but a submission takes it down, and an
+    unloaded entry makes none. Setting the entry up again puts it straight
+    back from the stored failure count, so only being disabled or removed
+    actually leaves it down.
+    """
+    entry.runtime_data.async_clear_repair()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
     """Drop the stored submission history along with the entry."""
-    # The repair is persistent, so nothing else would ever take it away: it
-    # would sit on the dashboard naming a meter that is no longer set up.
+    # Unloading normally takes the card down first, but an entry removed while
+    # it was never loaded has one too, and it is persistent.
     ir.async_delete_issue(hass, DOMAIN, f"submission_failed_{entry.entry_id}")
     await EnecoCoordinator.async_remove_store_for(hass, entry)
