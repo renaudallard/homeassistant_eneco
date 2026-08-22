@@ -315,8 +315,13 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         """Submit, then remember the outcome across restarts."""
         state = await self._async_submit()
         state.failures = self.data.failures + 1 if state.error else 0
-        self._async_review_repair(state)
-        await self._store.async_save(state.as_dict())
+        # Unloading waits ten seconds and then carries on without cancelling,
+        # and one call can take three quarters of a minute, so this can still
+        # be running once the entry is gone. Writing then would put back the
+        # store file and the repair that removing it has just taken away.
+        if self.hass.config_entries.async_get_entry(self.config_entry.entry_id):
+            self._async_review_repair(state)
+            await self._store.async_save(state.as_dict())
         return state
 
     @callback

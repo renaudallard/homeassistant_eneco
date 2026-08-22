@@ -1166,3 +1166,50 @@ async def test_the_repair_goes_when_the_entry_is_disabled(
     await hass.config_entries.async_set_disabled_by(config_entry.entry_id, None)
     await hass.async_block_till_done()
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+
+
+async def test_a_submission_in_flight_does_not_outlive_the_entry(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    hass_storage: dict[str, Any],
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """Removing an entry must not leave its store and its card behind.
+
+    Unloading waits ten seconds for a task and then carries on without
+    cancelling it, and one portal call can take three quarters of a minute, so
+    a submission can still be running when the entry has gone. Writing then
+    put the store file and the repair straight back.
+    """
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    coordinator = config_entry.runtime_data
+    coordinator.data.failures = REPAIR_AFTER_FAILURES - 1
+
+    key = f"{DOMAIN}.{config_entry.entry_id}"
+    issue_id = f"submission_failed_{config_entry.entry_id}"
+
+    assert await hass.config_entries.async_remove(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
+
+    # A task that outlived the ten second wait is already inside the update
+    # when the entry goes, so the coordinator's own shutdown flag, which does
+    # stop a fresh refresh, never gets a say. This is that task finishing.
+    await coordinator._async_update_data()  # noqa: SLF001
+    await hass.async_block_till_done()
+
+    assert key not in hass_storage
+    assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
