@@ -54,7 +54,7 @@
       },
       "reauth_confirm": {
         "title": "Se reconnecter",
-        "description": "Eneco n'accepte plus le mot de passe enregistré pour {email}.",
+        "description": "Eneco n'accepte plus le mot de passe enregistré pour {email}. Si cette adresse n'est plus votre identifiant My Eneco, fermez cette fenêtre et choisissez plutôt Reconfigurer.",
         "data": {
           "password": "Mot de passe"
         }

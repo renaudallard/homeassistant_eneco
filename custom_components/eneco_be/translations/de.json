@@ -54,7 +54,7 @@
       },
       "reauth_confirm": {
         "title": "Erneut anmelden",
-        "description": "Eneco akzeptiert das gespeicherte Passwort für {email} nicht mehr.",
+        "description": "Eneco akzeptiert das gespeicherte Passwort für {email} nicht mehr. Ist diese Adresse nicht mehr Ihr My Eneco Login, schließen Sie dies und wählen Sie stattdessen Neu konfigurieren.",
         "data": {
           "password": "Passwort"
         }

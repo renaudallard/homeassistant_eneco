@@ -146,9 +146,11 @@ click the three dots on the entry and choose *Configure*. The form comes up
 prefilled with your current mapping.
 
 *Reconfigure*, in the same menu, walks the whole flow again including the
-credentials, which is what you want after a meter change. If Eneco stops
-accepting the stored password, Home Assistant raises a reauthentication
-prompt by itself.
+credentials, which is what you want after a meter change, or if the email
+address you sign in to Eneco with has changed. If Eneco stops accepting the
+stored password, Home Assistant raises a reauthentication prompt by itself;
+that one asks for the password alone, because it is there to re-establish the
+account the entry already belongs to.
 
 ## Limitations
 

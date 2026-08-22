@@ -54,7 +54,7 @@
       },
       "reauth_confirm": {
         "title": "Opnieuw aanmelden",
-        "description": "Eneco aanvaardt het bewaarde wachtwoord voor {email} niet meer.",
+        "description": "Eneco aanvaardt het bewaarde wachtwoord voor {email} niet meer. Is dat adres niet langer uw My Eneco-login, sluit dit dan en kies Herconfigureren.",
         "data": {
           "password": "Wachtwoord"
         }

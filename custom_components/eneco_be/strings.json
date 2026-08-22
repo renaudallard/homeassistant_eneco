@@ -54,7 +54,7 @@
       },
       "reauth_confirm": {
         "title": "Sign in again",
-        "description": "Eneco no longer accepts the stored password for {email}.",
+        "description": "Eneco no longer accepts the stored password for {email}. If that address is not your My Eneco login any more, close this and choose Reconfigure instead.",
         "data": {
           "password": "Password"
         }
