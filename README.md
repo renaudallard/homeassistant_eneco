@@ -125,9 +125,10 @@ Every entry creates one device, named after the meter's EAN, with:
 `already_submitted` when the date was already done, `nothing_to_submit` when no
 register has a sensor, or `failed` with the reason in its `last_error`
 attribute. Three failures in a row also raise a repair card under
-*Settings > System > Repairs*. It clears on the next attempt that does not fail,
-and it survives a restart. Disabling the entry takes it down and enabling it
-again brings it back; removing the entry takes it away for good.
+*Settings > System > Repairs*, naming the meter by the last four digits of its
+EAN. It clears on the next attempt that does not fail, and it survives a
+restart. Disabling the entry takes it down and enabling it again brings it
+back; removing the entry takes it away for good.
 
 Press the button from an automation if you want a different schedule than the
 built-in daily one. A press that cannot submit fails the service call with the

@@ -132,7 +132,7 @@
   "issues": {
     "submission_failed": {
       "title": "Zählerstände erreichen Eneco nicht",
-      "description": "{name} konnte die Zählerstände {count} Mal hintereinander nicht übermitteln. Letzter Grund: {error}\n\nÖffne die Integration und prüfe den Status-Sensor, die als Quelle gewählten Sensoren und ob Eneco deine Anmeldung noch akzeptiert."
+      "description": "Der Eneco-Zähler, dessen EAN auf {ean_end} endet, konnte die Zählerstände {count} Mal hintereinander nicht übermitteln. Letzter Grund: {error}\n\nÖffne die Integration und prüfe den Status-Sensor, die als Quelle gewählten Sensoren und ob Eneco deine Anmeldung noch akzeptiert."
     }
   }
 }

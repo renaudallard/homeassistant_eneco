@@ -359,8 +359,11 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             is_persistent=True,
             severity=ir.IssueSeverity.WARNING,
             translation_key="submission_failed",
+            # Not the title, which carries the whole EAN: Home Assistant adds
+            # every repair of the domain to the diagnostics as it is, past the
+            # redaction the integration applies there.
             translation_placeholders={
-                "name": self.config_entry.title,
+                "ean_end": self.config_entry.data[CONF_EAN][-4:],
                 "count": str(state.failures),
                 "error": state.error or "",
             },

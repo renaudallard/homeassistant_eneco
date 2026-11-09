@@ -132,7 +132,7 @@
   "issues": {
     "submission_failed": {
       "title": "Meterstanden bereiken Eneco niet",
-      "description": "{name} heeft de meterstanden {count} keer op rij niet kunnen doorgeven. Laatste reden: {error}\n\nOpen de integratie en controleer de statussensor, de gekozen bronsensoren, en of Eneco je aanmelding nog aanvaardt."
+      "description": "De Eneco-meter met een EAN die eindigt op {ean_end} heeft de meterstanden {count} keer op rij niet kunnen doorgeven. Laatste reden: {error}\n\nOpen de integratie en controleer de statussensor, de gekozen bronsensoren, en of Eneco je aanmelding nog aanvaardt."
     }
   }
 }

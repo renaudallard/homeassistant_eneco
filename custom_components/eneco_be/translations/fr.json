@@ -132,7 +132,7 @@
   "issues": {
     "submission_failed": {
       "title": "Les relevés n'arrivent pas chez Eneco",
-      "description": "{name} n'a pas réussi à transmettre ses relevés {count} fois de suite. Dernière raison : {error}\n\nOuvrez l'intégration et vérifiez le capteur d'état, les capteurs choisis comme sources, et si Eneco accepte toujours votre connexion."
+      "description": "Le compteur Eneco dont l'EAN se termine par {ean_end} n'a pas réussi à transmettre ses relevés {count} fois de suite. Dernière raison : {error}\n\nOuvrez l'intégration et vérifiez le capteur d'état, les capteurs choisis comme sources, et si Eneco accepte toujours votre connexion."
     }
   }
 }

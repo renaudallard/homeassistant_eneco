@@ -31,6 +31,7 @@ import ast
 import asyncio
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
+import json
 import logging
 from pathlib import Path
 import re
@@ -48,6 +49,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMocker,
     AiohttpClientMockResponse,
 )
+from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.eneco_be.api import (
     EnecoClient,
@@ -77,6 +79,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 
 from .conftest import (
@@ -1335,3 +1338,60 @@ async def test_nothing_is_posted_when_the_meter_cannot_be_read(
 
     assert submissions(aioclient_mock) == []
     assert state_of(hass, STATUS).state == "failed"
+
+
+async def test_the_repair_keeps_the_ean_out_of_the_diagnostics(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """Home Assistant appends the repairs of the domain to the diagnostics.
+
+    It does so as they are, after the integration has redacted its own part,
+    so a placeholder carrying the entry title put the whole EAN back into a
+    file the README asks users to attach to a bug report.
+    """
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    for _ in range(REPAIR_AFTER_FAILURES):
+        await press_failing(hass)
+
+    issue = issue_registry.async_get_issue(
+        DOMAIN, f"submission_failed_{config_entry.entry_id}"
+    )
+    assert issue is not None
+    assert issue.translation_placeholders is not None
+    assert issue.translation_placeholders["ean_end"] == EAN[-4:]
+
+    # The file a user downloads, not only the part the integration writes.
+    assert await async_setup_component(hass, "diagnostics", {})
+    client = await hass_client()
+    response = await client.get(
+        f"/api/diagnostics/config_entry/{config_entry.entry_id}"
+    )
+    assert response.status == HTTPStatus.OK
+    download = await response.text()
+    assert json.loads(download)["issues"]
+    assert EAN not in download
+
+    # Every language has to name the same placeholders the repair hands over,
+    # or the card shows the raw template.
+    package = Path(__file__).parent.parent / "custom_components" / DOMAIN
+    sources = [package / "strings.json", *sorted(package.glob("translations/*.json"))]
+    for source in sources:
+        text = json.loads(source.read_text(encoding="utf-8"))
+        template = text["issues"]["submission_failed"]["description"]
+        named = set(re.findall(r"{(\w+)}", template))
+        assert named == set(issue.translation_placeholders), source.name
