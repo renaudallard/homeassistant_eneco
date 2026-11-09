@@ -12,5 +12,5 @@
   "loggers": [
     "custom_components.eneco_be"
   ],
-  "version": "0.3.1"
+  "version": "0.3.2"
 }
