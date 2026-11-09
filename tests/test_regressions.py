@@ -33,6 +33,7 @@ from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
 import logging
 from pathlib import Path
+import re
 from typing import Any
 
 import aiohttp
@@ -78,7 +79,16 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
-from .conftest import ACCOUNT, API, EAN, EMAIL, PASSWORD, mock_discovery, mock_login
+from .conftest import (
+    ACCOUNT,
+    API,
+    EAN,
+    EMAIL,
+    METER_NUMBER,
+    PASSWORD,
+    mock_discovery,
+    mock_login,
+)
 from .test_init import (
     LAST,
     NEXT,
@@ -810,6 +820,7 @@ async def test_an_expired_token_is_renewed_even_without_json(
     await client.async_submit_readings(
         ACCOUNT,
         EAN,
+        METER_NUMBER,
         "Electricity",
         dt_util.now().date(),
         {Register("OffTake", "HI"): 1},
@@ -1295,3 +1306,32 @@ async def test_no_catch_up_is_started_while_stopping(
     await hass.async_block_till_done()
 
     assert submissions(mock_portal) == []
+
+
+async def test_nothing_is_posted_when_the_meter_cannot_be_read(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The meter number comes from the register lookup made just before.
+
+    When that lookup fails there is no meter number to send, and a batch
+    without one is what the portal has refused since October 2026. The
+    attempt fails on the lookup instead, with nothing posted.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    aioclient_mock.get(
+        re.compile(rf"{re.escape(API)}/accounts/{ACCOUNT}/meter-readings/registers.*"),
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={},
+    )
+    aioclient_mock.post(f"{API}/accounts/{ACCOUNT}/meter-readings", json={"data": None})
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press_failing(hass)
+
+    assert submissions(aioclient_mock) == []
+    assert state_of(hass, STATUS).state == "failed"

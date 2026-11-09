@@ -46,7 +46,7 @@ from custom_components.eneco_be.api import (
 )
 from homeassistant.core import HomeAssistant
 
-from .conftest import ACCOUNT, API, EAN, EMAIL, PASSWORD, mock_login
+from .conftest import ACCOUNT, API, EAN, EMAIL, METER_NUMBER, PASSWORD, mock_login
 
 TODAY = date(2026, 8, 21)
 
@@ -214,6 +214,7 @@ async def test_validation_codes_are_surfaced(
         await api.async_submit_readings(
             ACCOUNT,
             EAN,
+            METER_NUMBER,
             "Electricity",
             TODAY,
             {Register("OffTake", "HI"): 100},

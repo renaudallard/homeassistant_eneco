@@ -214,6 +214,10 @@ one more exception: no endpoint exposes the list of accounts you may act on,
 which reaches the browser only inside the `__NEXT_DATA__` payload the dashboard
 renders, so that list is read out of the page.
 
+Each submission first asks the portal for the meter's registers, because the
+website sends the meter number they report along with the readings. Asking every
+time rather than storing it means a replaced meter is picked up by itself.
+
 ## Development
 
 ```sh

@@ -157,6 +157,7 @@ class Meter:
     """The registers a meter accepts readings for."""
 
     ean: str
+    number: str
     energy_type: str
     registers: tuple[Register, ...]
 
@@ -479,6 +480,7 @@ class EnecoClient:
 
         return Meter(
             ean=str(payload.get("ean") or ean),
+            number=str(payload.get("meterNumber") or ""),
             energy_type=str(payload.get("energyType") or "Electricity"),
             registers=tuple(registers),
         )
@@ -534,17 +536,24 @@ class EnecoClient:
         self,
         account: str,
         ean: str,
+        meter_number: str,
         energy_type: str,
         reading_date: date,
         values: dict[Register, int],
     ) -> None:
         """Submit one reading per register.
 
+        ``meter_number`` is the one :meth:`async_get_meter` reports. The
+        website has sent it with every reading since Eneco redeployed the
+        portal on 28 October 2026, the day a submission without it started
+        coming back as a bare HTTP 400.
+
         Raises EnecoValidationError when the portal rejects the values.
         """
         body = [
             {
                 "accountNumber": account,
+                "meterNumber": meter_number,
                 "readingValue": int(value),
                 "ean": ean,
                 "meterTimeFrameType": register.timeframe,

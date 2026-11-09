@@ -143,10 +143,18 @@ Array of `MeterReadingResponse`:
 The body is a JSON **array**, one entry per register, of `AddMeterReadingRequest`:
 
 ```json
-[ { "accountNumber": "...", "readingValue": 12345, "ean": "...",
+[ { "accountNumber": "...", "meterNumber": "...", "readingValue": 12345, "ean": "...",
     "meterTimeFrameType": "HI", "registeredDate": "2026-08-21",
     "utilityType": "Electricity", "direction": "OffTake" } ]
 ```
+
+`meterNumber` is the one the registers endpoint above reports, and the website sends
+`''` when it has none. These notes were first taken without it, and the live
+submission of 2026-08-21 that confirmed them did not send it. The website has sent it
+since the redeploy of 28 October 2026, when the site moved to Turbopack, and from the
+next evening on a submission without it came back as HTTP 400 with no validation
+code. Whether the backend checks the value or only that the field is there is
+*unverified*.
 
 `readingValue` is an `int32`; the form widget is configured with
 `maximumFractionDigits={0}`, so only whole units are accepted. Success is HTTP 200

@@ -48,6 +48,7 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 ACCOUNT = "1234567890"
 ADDRESS = "a" * 64
 EAN = "541449000000000001"
+METER_NUMBER = "1SAG1100000000"
 
 EMAIL = "someone@example.com"
 PASSWORD = "hunter2"
@@ -151,7 +152,7 @@ def mock_discovery(
         json={
             "data": {
                 "ean": ean,
-                "meterNumber": "1SAG1100000000",
+                "meterNumber": METER_NUMBER,
                 "energyType": energy_type,
                 "meterType": "Digital",
                 "meterRegime": "Smr3",

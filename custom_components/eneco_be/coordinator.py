@@ -402,10 +402,17 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             state.error = str(err)
             return state
 
+        account = self.config_entry.data[CONF_ACCOUNT]
+        ean = self.config_entry.data[CONF_EAN]
         try:
+            # Asked for every time rather than stored with the entry, so an
+            # entry set up before the meter number was sent carries on as it
+            # is, and a replaced meter is followed without a reconfigure.
+            meter = await self.client.async_get_meter(account, ean)
             await self.client.async_submit_readings(
-                self.config_entry.data[CONF_ACCOUNT],
-                self.config_entry.data[CONF_EAN],
+                account,
+                ean,
+                meter.number,
                 self.energy_type,
                 today,
                 values,

@@ -49,7 +49,15 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .conftest import ACCOUNT, API, EAN, SOURCES, mock_discovery, mock_login
+from .conftest import (
+    ACCOUNT,
+    API,
+    EAN,
+    METER_NUMBER,
+    SOURCES,
+    mock_discovery,
+    mock_login,
+)
 
 BUTTON = "button.eneco_541449000000000001_submit_readings"
 STATUS = "sensor.eneco_541449000000000001_status"
@@ -157,6 +165,7 @@ async def test_submit_posts_every_register(
     ) == [
         {
             "accountNumber": ACCOUNT,
+            "meterNumber": METER_NUMBER,
             "readingValue": 55,
             "ean": EAN,
             "meterTimeFrameType": "HI",
@@ -166,6 +175,7 @@ async def test_submit_posts_every_register(
         },
         {
             "accountNumber": ACCOUNT,
+            "meterNumber": METER_NUMBER,
             "readingValue": 11,
             "ean": EAN,
             "meterTimeFrameType": "LO",
@@ -175,6 +185,7 @@ async def test_submit_posts_every_register(
         },
         {
             "accountNumber": ACCOUNT,
+            "meterNumber": METER_NUMBER,
             "readingValue": 1235,
             "ean": EAN,
             "meterTimeFrameType": "HI",
@@ -184,6 +195,7 @@ async def test_submit_posts_every_register(
         },
         {
             "accountNumber": ACCOUNT,
+            "meterNumber": METER_NUMBER,
             "readingValue": 987,
             "ean": EAN,
             "meterTimeFrameType": "LO",
