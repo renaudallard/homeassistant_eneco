@@ -59,6 +59,13 @@ _NEXT_DATA_RE: Final = re.compile(
 
 _ACCOUNT_RE: Final = re.compile(r"/accounts/[^/]+")
 
+# An error code of the portal's own, such as MeterReading.AlreadyExists, and
+# the name of a field in a request, such as Validation or [0].MeterNumber.
+_CODE_RE: Final = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+")
+_FIELD_RE: Final = re.compile(r"[$\[\]\d_.]*[A-Za-z][$\[\]\w.]*", re.ASCII)
+_MAX_NAME: Final = 100
+_MAX_REASONS: Final = 8
+
 # Wire values of TimeframeTypeCodeDto, mapped to stable keys used for storage.
 TIMEFRAME_KEYS: Final[dict[str, str]] = {
     "TH": "single",
@@ -212,20 +219,55 @@ def _unwrap(payload: Any) -> Any:
     return payload
 
 
-def _validation_codes(payload: Any) -> list[str]:
-    """Return the validation codes of an error body, which is wrapped twice."""
-    if not isinstance(payload, dict):
-        return []
-    errors = payload.get("errors")
+def _error_groups(payload: Any) -> dict[Any, Any]:
+    """Return the dict an error body keeps its reasons in, or an empty one.
+
+    The portal's own errors are wrapped twice, as lists of codes by kind:
+    ``{"errors": {"errors": {"Validation": [...]}}}``. A body that is wrapped
+    once only is returned as it is, whatever it holds.
+    """
+    errors = payload.get("errors") if isinstance(payload, dict) else None
     if not isinstance(errors, dict):
-        return []
+        return {}
     inner = errors.get("errors")
-    if not isinstance(inner, dict):
-        return []
-    codes = inner.get("Validation")
+    return inner if isinstance(inner, dict) else errors
+
+
+def _validation_codes(payload: Any) -> list[str]:
+    """Return the validation codes of an error body."""
+    codes = _error_groups(payload).get("Validation")
     if not isinstance(codes, list):
         return []
     return [str(code) for code in codes]
+
+
+def _error_reasons(payload: Any) -> list[str]:
+    """Return the names an error body gives, and none of what it quotes.
+
+    A refusal with no validation code is otherwise reported as a bare status,
+    which says nothing about what to change. Only what is shaped like a field
+    name or like one of the portal's own codes is taken: a free text message
+    may quote the value that was sent, a bare number may be the account or the
+    EAN, and this text ends up in the interface, the recorder, the repair and
+    the diagnostics.
+    """
+    reasons: list[str] = []
+    for key, value in list(_error_groups(payload).items())[:_MAX_REASONS]:
+        if not _is_name(key, _FIELD_RE):
+            continue
+        listed = value[:_MAX_REASONS] if isinstance(value, list) else []
+        codes = [code for code in listed if _is_name(code, _CODE_RE)]
+        reasons.append(f"{key} {', '.join(codes)}" if codes else key)
+    return reasons
+
+
+def _is_name(value: Any, shape: re.Pattern[str]) -> bool:
+    """Return whether a value from an error body is a name of that shape."""
+    return (
+        isinstance(value, str)
+        and len(value) <= _MAX_NAME
+        and shape.fullmatch(value) is not None
+    )
 
 
 class EnecoClient:
@@ -585,6 +627,10 @@ class EnecoClient:
             if codes := _validation_codes(payload):
                 raise EnecoValidationError(codes)
             _LOGGER.debug("%s %s returned HTTP %s", method, _endpoint(path), status)
+            if reasons := _error_reasons(payload):
+                raise EnecoConnectionError(
+                    f"the portal returned HTTP {status}: {'; '.join(reasons)}"
+                )
             raise EnecoConnectionError(f"the portal returned HTTP {status}")
         return _unwrap(payload)
 

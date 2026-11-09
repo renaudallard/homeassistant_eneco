@@ -91,6 +91,11 @@ Errors are wrapped twice:
 { "errors": { "errors": { "Validation": ["MeterReading.AlreadyExists"] } } }
 ```
 
+`Validation` is not the only kind: the website's itsme link reads its codes from
+`Unexpected` the same way. The integration reports the codes of any other kind, and
+the keys of a body that is wrapped only once, by name alone. It leaves out free text,
+which may quote what was sent, and any key without a letter in it.
+
 ### `GET /accounts/{accountNumber}/delivery-addresses`
 
 `ListContractAddressesResponse`:

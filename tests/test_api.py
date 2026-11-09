@@ -226,6 +226,65 @@ async def test_validation_codes_are_surfaced(
     ]
 
 
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (
+            {"errors": {"errors": {"Unexpected": ["AddMeterReadings.Failed"]}}},
+            "the portal returned HTTP 400: Unexpected AddMeterReadings.Failed",
+        ),
+        (
+            {
+                "title": "One or more validation errors occurred.",
+                "errors": {
+                    "[0].MeterNumber": ["The MeterNumber field is required."],
+                    "$[0].readingValue": ["'1SAG1100000000' is not an Int32."],
+                    "1234567890": ["MeterReading.AlreadyExists"],
+                    "a b": ["MeterReading.AlreadyExists"],
+                },
+            },
+            "the portal returned HTTP 400: [0].MeterNumber; $[0].readingValue",
+        ),
+        ({"errors": "nope"}, "the portal returned HTTP 400"),
+        (["MeterReading.AlreadyExists"], "the portal returned HTTP 400"),
+    ],
+)
+async def test_a_refusal_without_a_validation_code_names_its_reason(
+    aioclient_mock: AiohttpClientMocker,
+    session: ClientSession,
+    body: Any,
+    message: str,
+) -> None:
+    """A bare HTTP 400 is all that was left of the refusal since October.
+
+    The names in the body are kept, and nothing else: the free text quotes
+    what was sent, and a key that is only digits may be the account.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    aioclient_mock.post(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        status=HTTPStatus.BAD_REQUEST,
+        json=body,
+    )
+
+    api = client(session)
+    await api.async_login()
+    with pytest.raises(EnecoConnectionError) as raised:
+        await api.async_submit_readings(
+            ACCOUNT,
+            EAN,
+            METER_NUMBER,
+            "Electricity",
+            TODAY,
+            {Register("OffTake", "HI"): 100},
+        )
+
+    assert str(raised.value) == message
+
+
 async def test_a_meter_answer_that_is_not_shaped_right(
     aioclient_mock: AiohttpClientMocker, session: ClientSession
 ) -> None:
