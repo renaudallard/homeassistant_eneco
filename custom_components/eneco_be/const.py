@@ -28,15 +28,22 @@ from typing import Final
 
 DOMAIN: Final = "eneco_be"
 
+# A config entry is one login, holding the credentials. Every meter that login
+# submits for is a subentry of this type, holding everything below.
+SUBENTRY_METER: Final = "meter"
+
 CONF_ACCOUNT: Final = "account"
 CONF_ADDRESS: Final = "address"
 CONF_EAN: Final = "ean"
 CONF_ENERGY_TYPE: Final = "energy_type"
-# entry.data: the register keys the meter exposes, discovered at setup time.
+# The register keys the meter exposes, discovered when it was set up.
 CONF_REGISTERS: Final = "registers"
-# entry.options: register key -> source entity id, and when to submit.
+# Register key -> source entity id, and when to submit.
 CONF_SOURCES: Final = "sources"
 CONF_SUBMIT_TIME: Final = "submit_time"
+
+ELECTRICITY: Final = "Electricity"
+GAS: Final = "Gas"
 
 DEFAULT_SUBMIT_TIME: Final = "23:50:00"
 

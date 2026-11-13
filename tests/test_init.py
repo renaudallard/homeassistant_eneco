@@ -55,8 +55,10 @@ from .conftest import (
     EAN,
     METER_NUMBER,
     SOURCES,
+    meter_of,
     mock_discovery,
     mock_login,
+    update_meter,
 )
 
 BUTTON = "button.eneco_541449000000000001_submit_readings"
@@ -95,8 +97,9 @@ def submissions(mocker: AiohttpClientMocker) -> list[Any]:
 async def setup_entry(
     hass: HomeAssistant, config_entry: MockConfigEntry
 ) -> MockConfigEntry:
-    """Add and set up the entry."""
-    config_entry.add_to_hass(hass)
+    """Add the entry, unless the test already did, and set it up."""
+    if hass.config_entries.async_get_entry(config_entry.entry_id) is None:
+        config_entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
     return config_entry
@@ -363,12 +366,10 @@ async def test_options_are_used(
     )
     set_sources(hass)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
+    update_meter(
+        hass,
         config_entry,
-        options={
-            **config_entry.options,
-            CONF_SOURCES: {**SOURCES, "offtake_day": "sensor.somewhere_else"},
-        },
+        **{CONF_SOURCES: {**SOURCES, "offtake_day": "sensor.somewhere_else"}},
     )
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -403,7 +404,7 @@ async def test_submission_time_is_adjustable_from_the_device(
     await hass.async_block_till_done()
 
     assert state_of(hass, SUBMIT_TIME).state == "06:30:00"
-    assert config_entry.options[CONF_SUBMIT_TIME] == "06:30:00"
+    assert meter_of(config_entry).data[CONF_SUBMIT_TIME] == "06:30:00"
 
     # The old moment must no longer fire, the new one must.
     now = dt_util.now()
@@ -453,9 +454,7 @@ async def setup_with_submit_time(
 ) -> None:
     """Set up the entry with a given submission time."""
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: at}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: at})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 

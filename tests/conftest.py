@@ -42,8 +42,12 @@ from custom_components.eneco_be.const import (
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
     DOMAIN,
+    SUBENTRY_METER,
 )
+from custom_components.eneco_be.coordinator import EnecoCoordinator
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
+from homeassistant.core import HomeAssistant
 
 ACCOUNT = "1234567890"
 ADDRESS = "a" * 64
@@ -63,6 +67,10 @@ SOURCES = {
     "injection_day": "sensor.export_day",
     "injection_night": "sensor.export_night",
 }
+
+# The subentry id of the meter the tests set up, fixed so that stored state
+# and repair ids can be spelled out.
+METER_ID = "01JMETERSUBENTRY000000000"
 
 
 @pytest.fixture(autouse=True)
@@ -195,21 +203,99 @@ def mock_portal(aioclient_mock: AiohttpClientMocker) -> AiohttpClientMocker:
     return aioclient_mock
 
 
-@pytest.fixture
-def config_entry() -> MockConfigEntry:
-    """Return a configured entry for the meter used in the tests."""
+def meter_data(**changes: Any) -> dict[str, Any]:
+    """Return what the meter subentry of the tests holds."""
+    return {
+        CONF_ACCOUNT: ACCOUNT,
+        CONF_ADDRESS: ADDRESS,
+        CONF_EAN: EAN,
+        CONF_ENERGY_TYPE: "Electricity",
+        CONF_REGISTERS: REGISTERS,
+        CONF_SOURCES: SOURCES,
+        CONF_SUBMIT_TIME: "23:50:00",
+        **changes,
+    }
+
+
+def login_entry(**changes: Any) -> MockConfigEntry:
+    """Return a login holding the one meter of the tests."""
+    meter = meter_data(**changes)
     return MockConfigEntry(
         domain=DOMAIN,
-        title=f"Eneco {EAN}",
-        unique_id=EAN,
+        version=2,
+        title="s•••@e•••.com",
+        unique_id=EMAIL,
+        data={CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD},
+        subentries_data=[
+            {
+                "data": meter,
+                "subentry_id": METER_ID,
+                "subentry_type": SUBENTRY_METER,
+                "title": f"{meter[CONF_ENERGY_TYPE]} {meter[CONF_EAN]}",
+                "unique_id": meter[CONF_EAN],
+            }
+        ],
+    )
+
+
+def legacy_entry(
+    ean: str = EAN,
+    email: str = EMAIL,
+    *,
+    energy_type: str = "Electricity",
+    registers: list[str] | None = None,
+    sources: dict[str, str] | None = None,
+    submit_time: str = "23:50:00",
+    **changes: Any,
+) -> MockConfigEntry:
+    """Return an entry as version 1 wrote it, one meter signed in on its own."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        version=1,
+        title=f"Eneco {ean}",
+        unique_id=ean,
         data={
-            CONF_EMAIL: EMAIL,
+            CONF_EMAIL: email,
             CONF_PASSWORD: PASSWORD,
             CONF_ACCOUNT: ACCOUNT,
             CONF_ADDRESS: ADDRESS,
-            CONF_EAN: EAN,
-            CONF_ENERGY_TYPE: "Electricity",
-            CONF_REGISTERS: REGISTERS,
+            CONF_EAN: ean,
+            CONF_ENERGY_TYPE: energy_type,
+            CONF_REGISTERS: REGISTERS if registers is None else registers,
         },
-        options={CONF_SOURCES: SOURCES, CONF_SUBMIT_TIME: "23:50:00"},
+        options={
+            CONF_SOURCES: SOURCES if sources is None else sources,
+            CONF_SUBMIT_TIME: submit_time,
+        },
+        **changes,
     )
+
+
+def meter_of(entry: ConfigEntry) -> ConfigSubentry:
+    """Return the meter subentry of the tests."""
+    return entry.subentries[METER_ID]
+
+
+def coordinator_of(entry: ConfigEntry) -> EnecoCoordinator:
+    """Return the coordinator of the meter of the tests."""
+    coordinator: EnecoCoordinator = entry.runtime_data.coordinators[METER_ID]
+    return coordinator
+
+
+def update_meter(hass: HomeAssistant, entry: ConfigEntry, **changes: Any) -> None:
+    """Change what the meter subentry of the tests holds."""
+    subentry = meter_of(entry)
+    hass.config_entries.async_update_subentry(
+        entry, subentry, data={**subentry.data, **changes}
+    )
+
+
+def stored_meter(hass_storage: dict[str, Any], entry: ConfigEntry) -> Any:
+    """Return what the store holds for the meter of the tests."""
+    return hass_storage[f"{DOMAIN}.{entry.entry_id}.meters"]["data"]["meters"][METER_ID]
+
+
+@pytest.fixture
+def config_entry() -> MockConfigEntry:
+    """Return a configured login for the meter used in the tests."""
+    return login_entry()

@@ -24,6 +24,8 @@
 
 """Collect meter readings from Home Assistant and submit them to Eneco."""
 
+import asyncio
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 import logging
@@ -44,6 +46,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+from homeassistant.util.hass_dict import HassKey
 from homeassistant.util.unit_conversion import EnergyConverter, VolumeConverter
 
 from .api import EnecoAuthError, EnecoClient, EnecoError, EnecoValidationError, Register
@@ -55,6 +58,8 @@ from .const import (
     CONF_SUBMIT_TIME,
     DEFAULT_SUBMIT_TIME,
     DOMAIN,
+    ELECTRICITY,
+    GAS,
 )
 
 if TYPE_CHECKING:
@@ -62,8 +67,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-ELECTRICITY = "Electricity"
-GAS = "Gas"
 STORAGE_VERSION = 1
 
 # The portal keeps a meter index in a signed 32 bit integer.
@@ -144,6 +147,94 @@ class EnecoState:
         )
 
 
+def repair_prefix(entry_id: str) -> str:
+    """Return what the repair id of every meter of an entry starts with."""
+    return f"submission_failed_{entry_id}_"
+
+
+DATA_STORES: HassKey[dict[str, MeterStore]] = HassKey(DOMAIN)
+
+
+class MeterStore:
+    """The submission state of every meter of one login, in one file.
+
+    Kept per entry rather than per meter so that a meter removed while its
+    entry was not loaded leaves nothing behind: whatever the entry no longer
+    has is dropped the next time it loads.
+
+    One instance serves an entry for as long as Home Assistant runs, across
+    reloads. A reload does not wait for a submission the daily trigger
+    started, and the coordinator left running it has to record its outcome
+    where the next one reads, without writing back the other meters as they
+    stood before. Each meter also has a lock here that a submission holds, so
+    the coordinator set up next waits for one still running and then sees
+    the date it recorded.
+    """
+
+    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        """Bind the store to an entry without reading it."""
+        self._store = Store[dict[str, Any]](
+            hass, STORAGE_VERSION, self.key_for(entry_id)
+        )
+        self._meters: dict[str, dict[str, Any]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._loaded = False
+
+    @staticmethod
+    def for_entry(hass: HomeAssistant, entry_id: str) -> MeterStore:
+        """Return the store of an entry, the same one across reloads."""
+        stores = hass.data.setdefault(DATA_STORES, {})
+        if (store := stores.get(entry_id)) is None:
+            store = stores[entry_id] = MeterStore(hass, entry_id)
+        return store
+
+    @staticmethod
+    def key_for(entry_id: str) -> str:
+        """Return the storage key of an entry's meters."""
+        return f"{DOMAIN}.{entry_id}.meters"
+
+    async def async_load(self, keep: Iterable[str]) -> None:
+        """Read the stored states once, dropping meters the entry lost."""
+        if not self._loaded:
+            stored = await self._store.async_load()
+            raw = stored.get("meters") if isinstance(stored, dict) else None
+            self._meters = raw if isinstance(raw, dict) else {}
+            self._loaded = True
+        wanted = set(keep)
+        kept = {
+            key: value
+            for key, value in self._meters.items()
+            if key in wanted and isinstance(value, dict)
+        }
+        if len(kept) != len(self._meters):
+            self._meters = kept
+            await self._store.async_save({"meters": dict(self._meters)})
+
+    def lock(self, subentry_id: str) -> asyncio.Lock:
+        """Return the lock a submission of one meter holds."""
+        return self._locks.setdefault(subentry_id, asyncio.Lock())
+
+    def get(self, subentry_id: str) -> dict[str, Any] | None:
+        """Return the stored state of one meter, if there is one."""
+        return self._meters.get(subentry_id)
+
+    async def async_save(self, subentry_id: str, state: dict[str, Any]) -> None:
+        """Record one meter's state and write every meter's back."""
+        self._meters[subentry_id] = state
+        # A copy: the store serialises later, and another meter may record its
+        # own state in the meantime.
+        await self._store.async_save({"meters": dict(self._meters)})
+
+    @staticmethod
+    async def async_remove_for(hass: HomeAssistant, entry_id: str) -> None:
+        """Delete the file and forget the store, along with the entry."""
+        store = hass.data.get(DATA_STORES, {}).pop(entry_id, None)
+        if store is None:
+            store = MeterStore(hass, entry_id)
+        store._meters = {}
+        await store._store.async_remove()
+
+
 class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
     """Read the configured sensors and hand their values to the portal.
 
@@ -158,9 +249,17 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         self,
         hass: HomeAssistant,
         entry: EnecoConfigEntry,
+        subentry_id: str,
         client: EnecoClient,
+        store: MeterStore,
     ) -> None:
-        """Initialise the coordinator without contacting the portal."""
+        """Initialise the coordinator without contacting the portal.
+
+        The state the last run of Home Assistant knew is restored from the
+        store straight away. Without it a restart looks exactly like a fresh
+        install, and the guard against submitting a date twice would be gone
+        with it.
+        """
         super().__init__(
             hass,
             _LOGGER,
@@ -169,25 +268,32 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             update_interval=None,
         )
         self.client = client
+        self.subentry_id = subentry_id
+        # What the subentry held when last seen: it can be removed while a
+        # submission is still running, and that submission still needs it.
+        self.meter: Mapping[str, Any] = entry.subentries[subentry_id].data
         self.data = EnecoState()
         self._unsub: CALLBACK_TYPE | None = None
         # The date the daily trigger last fired for, so a catch-up arriving
         # behind it stands down rather than running a second time.
         self._triggered: date | None = None
-        self._store = Store[dict[str, Any]](
-            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
-        )
-
-    async def async_load(self) -> None:
-        """Restore what the last run of Home Assistant knew.
-
-        Without this a restart looks exactly like a fresh install, and the guard
-        against submitting a date twice would be gone with it.
-        """
-        stored = await self._store.async_load()
-        if stored:
+        self._store = store
+        if stored := store.get(subentry_id):
             self.data = EnecoState.from_dict(stored)
             _LOGGER.debug("Restored %s", self.data)
+
+    @callback
+    def async_update_meter(self, meter: Mapping[str, Any]) -> None:
+        """Take on a changed subentry: new sources, or a new time to submit."""
+        self.meter = meter
+        self.async_schedule()
+        self.async_update_listeners()
+
+    @property
+    def _is_current(self) -> bool:
+        """Return whether the meter is still part of a configured entry."""
+        entry = self.hass.config_entries.async_get_entry(self.config_entry.entry_id)
+        return entry is not None and self.subentry_id in entry.subentries
 
     @callback
     def async_review_repair(self) -> None:
@@ -202,33 +308,22 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         Disabling one would otherwise leave the card up for good, naming a
         meter nobody is submitting for any more.
         """
-        ir.async_delete_issue(self.hass, DOMAIN, self._repair_id)
-
-    @staticmethod
-    async def async_remove_store_for(
-        hass: HomeAssistant, entry: EnecoConfigEntry
-    ) -> None:
-        """Forget the stored state of an entry that is being removed."""
-        await Store[dict[str, Any]](
-            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
-        ).async_remove()
+        ir.async_delete_issue(self.hass, DOMAIN, self.repair_id)
 
     @property
-    def _repair_id(self) -> str:
-        """Return the id of the repair raised for this entry."""
-        return f"submission_failed_{self.config_entry.entry_id}"
+    def repair_id(self) -> str:
+        """Return the id of the repair raised for this meter."""
+        return f"{repair_prefix(self.config_entry.entry_id)}{self.subentry_id}"
 
     @property
     def energy_type(self) -> str:
-        """Return the kind of meter this entry submits for."""
-        return str(self.config_entry.data.get(CONF_ENERGY_TYPE, ELECTRICITY))
+        """Return the kind of meter this coordinator submits for."""
+        return str(self.meter.get(CONF_ENERGY_TYPE, ELECTRICITY))
 
     @property
     def submit_time(self) -> time:
         """Return the local time of day readings are sent."""
-        configured = self.config_entry.options.get(
-            CONF_SUBMIT_TIME, DEFAULT_SUBMIT_TIME
-        )
+        configured = self.meter.get(CONF_SUBMIT_TIME, DEFAULT_SUBMIT_TIME)
         return dt_util.parse_time(configured) or time.fromisoformat(DEFAULT_SUBMIT_TIME)
 
     @property
@@ -314,28 +409,41 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
     async def async_set_submit_time(self, value: time) -> None:
         """Change the time of day readings are sent and re-arm the trigger."""
-        self.hass.config_entries.async_update_entry(
-            self.config_entry,
-            options={
-                **self.config_entry.options,
-                CONF_SUBMIT_TIME: value.isoformat(),
-            },
-        )
-        self.async_schedule()
-        self.async_update_listeners()
+        meter = {**self.meter, CONF_SUBMIT_TIME: value.isoformat()}
+        if self._is_current:
+            self.hass.config_entries.async_update_subentry(
+                self.config_entry,
+                self.config_entry.subentries[self.subentry_id],
+                data=meter,
+            )
+        self.async_update_meter(meter)
 
     @override
     async def _async_update_data(self) -> EnecoState:
-        """Submit, then remember the outcome across restarts."""
-        state = await self._async_submit()
-        state.failures = self.data.failures + 1 if state.error else 0
-        # Unloading waits ten seconds and then carries on without cancelling,
-        # and one call can take three quarters of a minute, so this can still
-        # be running once the entry is gone. Writing then would put back the
-        # store file and the repair that removing it has just taken away.
-        if self.hass.config_entries.async_get_entry(self.config_entry.entry_id):
-            self._async_review_repair(state)
-            await self._store.async_save(state.as_dict())
+        """Submit, then remember the outcome across restarts.
+
+        One submission per meter at a time, across reloads too, and from the
+        latest state recorded: a coordinator from before a reload may have
+        attempted one since this one restored its own.
+        """
+        async with self._store.lock(self.subentry_id):
+            if stored := self._store.get(self.subentry_id):
+                latest = EnecoState.from_dict(stored)
+                if latest.attempted is not None and (
+                    self.data.attempted is None
+                    or latest.attempted > self.data.attempted
+                ):
+                    self.data = latest
+            state = await self._async_submit()
+            state.failures = self.data.failures + 1 if state.error else 0
+            # Unloading waits ten seconds and then carries on without
+            # cancelling, and one call can take three quarters of a minute, so
+            # this can still be running once the entry or the meter is gone.
+            # Writing then would put back the state and the repair that
+            # removing it took away.
+            if self._is_current:
+                self._async_review_repair(state)
+                await self._store.async_save(self.subentry_id, state.as_dict())
         return state
 
     @callback
@@ -346,12 +454,12 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         weeks without noticing that nothing is reaching Eneco.
         """
         if state.failures < REPAIR_AFTER_FAILURES:
-            ir.async_delete_issue(self.hass, DOMAIN, self._repair_id)
+            ir.async_delete_issue(self.hass, DOMAIN, self.repair_id)
             return
         ir.async_create_issue(
             self.hass,
             DOMAIN,
-            self._repair_id,
+            self.repair_id,
             is_fixable=False,
             # A card that only survives until the next restart is no use here:
             # nothing raises it again until the next submission, and there is
@@ -363,7 +471,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             # every repair of the domain to the diagnostics as it is, past the
             # redaction the integration applies there.
             translation_placeholders={
-                "ean_end": self.config_entry.data[CONF_EAN][-4:],
+                "ean_end": self.meter[CONF_EAN][-4:],
                 "count": str(state.failures),
                 "error": state.error or "",
             },
@@ -405,8 +513,8 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             state.error = str(err)
             return state
 
-        account = self.config_entry.data[CONF_ACCOUNT]
-        ean = self.config_entry.data[CONF_EAN]
+        account = self.meter[CONF_ACCOUNT]
+        ean = self.meter[CONF_EAN]
         try:
             # Asked for every time rather than stored with the entry, so an
             # entry set up before the meter number was sent carries on as it
@@ -449,7 +557,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         partial set would record an incoherent moment across them and the date
         cannot be submitted again to correct it.
         """
-        mapping: dict[str, str] = self.config_entry.options.get(CONF_SOURCES, {})
+        mapping: Mapping[str, str] = self.meter.get(CONF_SOURCES, {})
         mapped = {key: entity for key, entity in mapping.items() if entity}
         if not mapped:
             raise NothingMappedError("no register has a source entity")

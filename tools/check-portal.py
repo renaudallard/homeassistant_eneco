@@ -26,7 +26,7 @@
 """Check the Eneco portal still behaves the way this integration expects.
 
 Read only: it signs in, walks the discovery chain and reads back the registers
-and recent readings of every meter the integration would set up an entry for,
+and recent readings of every meter the integration would set up,
 electricity and gas alike. Nothing is ever submitted.
 
 The portal has no public API and no versioning, so when Eneco redeploys the
@@ -65,7 +65,7 @@ from custom_components.eneco_be.api import (
 # a check that quietly identified itself as something else.
 SERVER_SOFTWARE = "HomeAssistant/2026.8.2 aiohttp/3.14.3 Python/3.14"
 
-# The kinds of meter the integration will set up an entry for.
+# The kinds of meter the integration will set up.
 METERED = ("Electricity", "Gas")
 
 type Formatter = Callable[[str, int], str]

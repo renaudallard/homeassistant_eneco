@@ -55,34 +55,49 @@ def main() -> int:
         problems += [f"{path.name}: missing {k}" for k in sorted(expected - found)]
         problems += [f"{path.name}: unknown {k}" for k in sorted(found - expected)]
 
-    flow = (BASE / "config_flow.py").read_text(encoding="utf-8")
-    declared_steps = set(strings["config"]["step"]) | set(strings["options"]["step"])
-    problems += [
-        f"config_flow.py: step {s} has no strings entry"
-        for s in sorted(set(re.findall(r'step_id="([a-z_]+)"', flow)) - declared_steps)
-    ]
+    # The login flow, the meter subentry flow, and the steps both share.
+    flow, subentry = (
+        (BASE / "config_flow.py")
+        .read_text(encoding="utf-8")
+        .split("\nclass MeterSubentryFlow(")
+    )
+    shared = (BASE / "meter_flow.py").read_text(encoding="utf-8")
+    meter = strings["config_subentries"]["meter"]
+    flows = (
+        ("config", flow + shared, strings["config"]),
+        ("config_subentries.meter", subentry + shared, meter),
+    )
 
-    # The literals in the file, plus the ones Home Assistant aborts with on
+    # The literals in the code, plus the ones Home Assistant aborts with on
     # our behalf: async_set_unique_id and the reauth and reconfigure helpers
     # never spell their reason out here, so nothing else would notice a
     # missing translation for them.
-    aborts = set(re.findall(r'reason="([a-z_]+)"', flow)) | {
-        "already_configured",
-        "already_in_progress",
-        "reauth_successful",
-        "reconfigure_successful",
-        "unique_id_mismatch",
+    implicit = {
+        "config": {
+            "already_configured",
+            "already_in_progress",
+            "reauth_successful",
+            "reconfigure_successful",
+        },
+        "config_subentries.meter": {"reconfigure_successful"},
     }
-    problems += [
-        f"config_flow.py: abort reason {r} has no strings entry"
-        for r in sorted(aborts - set(strings["config"]["abort"]))
-    ]
 
-    errors = set(re.findall(r'errors\["base"\] = "([a-z_]+)"', flow))
-    problems += [
-        f"config_flow.py: error {e} has no strings entry"
-        for e in sorted(errors - set(strings["config"]["error"]))
-    ]
+    for name, code, section in flows:
+        steps = set(re.findall(r'step_id="([a-z_]+)"', code))
+        problems += [
+            f"{name}: step {s} has no strings entry"
+            for s in sorted(steps - set(section["step"]))
+        ]
+        aborts = set(re.findall(r'reason="([a-z_]+)"', code)) | implicit[name]
+        problems += [
+            f"{name}: abort reason {r} has no strings entry"
+            for r in sorted(aborts - set(section["abort"]))
+        ]
+        errors = set(re.findall(r'errors\["base"\] = "([a-z_]+)"', code))
+        problems += [
+            f"{name}: error {e} has no strings entry"
+            for e in sorted(errors - set(section.get("error", {})))
+        ]
 
     # Every platform that declares entity names, so adding one to strings.json
     # brings its module along rather than quietly going unchecked.

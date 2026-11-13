@@ -35,7 +35,6 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMockResponse,
 )
 
-from custom_components.eneco_be.config_flow import _suggested_submit_time
 from custom_components.eneco_be.const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
@@ -45,8 +44,15 @@ from custom_components.eneco_be.const import (
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
     DOMAIN,
+    SUBENTRY_METER,
 )
-from homeassistant.config_entries import SOURCE_USER
+from custom_components.eneco_be.meter_flow import suggested_submit_time
+from custom_components.eneco_be.migrate import login_title
+from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    SOURCE_USER,
+    ConfigEntryState,
+)
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -56,14 +62,42 @@ from .conftest import (
     ADDRESS,
     EAN,
     EMAIL,
+    METER_ID,
     PASSWORD,
     REGISTERS,
     SOURCES,
+    coordinator_of,
+    login_entry,
+    meter_of,
     mock_discovery,
     mock_login,
 )
 
 CREDENTIALS = {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+
+
+async def setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Add and set up an entry."""
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+def logins(mocker: AiohttpClientMocker) -> list[Any]:
+    """Return the credentials of every sign in posted to Okta."""
+    return [
+        data
+        for method, url, data, _ in mocker.mock_calls
+        if method.lower() == "post" and str(url).endswith("/api/v1/authn")
+    ]
+
+
+async def reconfigure_meter(hass: HomeAssistant, entry: MockConfigEntry) -> Any:
+    """Start changing the sources of the meter of the tests."""
+    return await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_METER),
+        context={"source": SOURCE_RECONFIGURE, "subentry_id": METER_ID},
+    )
 
 
 async def test_full_flow(hass: HomeAssistant, mock_portal: AiohttpClientMocker) -> None:
@@ -85,21 +119,23 @@ async def test_full_flow(hass: HomeAssistant, mock_portal: AiohttpClientMocker) 
         result["flow_id"], {**SOURCES, CONF_SUBMIT_TIME: "22:15:00"}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == f"Eneco {EAN}"
-    assert result["data"] == {
-        CONF_EMAIL: EMAIL,
-        CONF_PASSWORD: PASSWORD,
+    assert result["title"] == "s•••@e•••.com"
+    assert result["data"] == CREDENTIALS
+    entry = result["result"]
+    assert entry.unique_id == EMAIL
+    (meter,) = entry.subentries.values()
+    assert meter.subentry_type == SUBENTRY_METER
+    assert meter.unique_id == EAN
+    assert meter.title == f"Electricity {EAN}"
+    assert meter.data == {
         CONF_ACCOUNT: ACCOUNT,
         CONF_ADDRESS: ADDRESS,
         CONF_EAN: EAN,
         CONF_ENERGY_TYPE: "Electricity",
         CONF_REGISTERS: REGISTERS,
-    }
-    assert result["options"] == {
         CONF_SOURCES: SOURCES,
         CONF_SUBMIT_TIME: "22:15:00",
     }
-    assert result["result"].unique_id == EAN
 
 
 async def test_pickers_shown_when_ambiguous(
@@ -199,6 +235,7 @@ async def test_retry_after_wrong_password(
             method, url, json={"status": "SUCCESS", "sessionToken": "one-shot"}
         )
 
+    # Registered first, so it answers before the one mock_login adds.
     aioclient_mock.post("https://login.eneco.be/api/v1/authn", side_effect=authn)
     mock_login(
         aioclient_mock,
@@ -285,31 +322,74 @@ async def test_reauth(
     await hass.config_entries.async_unload(config_entry.entry_id)
 
 
-async def test_options_flow(
+async def test_reauth_brings_a_failed_login_back(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """An entry whose setup was refused has no listener to reload it."""
+
+    async def authn(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        if data["password"] != "new-secret":
+            return AiohttpClientMockResponse(
+                method, url, status=HTTPStatus.UNAUTHORIZED, json={}
+            )
+        return AiohttpClientMockResponse(
+            method, url, json={"status": "SUCCESS", "sessionToken": "one-shot"}
+        )
+
+    # Registered first, so it answers before the one mock_login adds.
+    aioclient_mock.post("https://login.eneco.be/api/v1/authn", side_effect=authn)
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    config_entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(config_entry.entry_id)
+    failed = config_entry.state
+    assert failed is ConfigEntryState.SETUP_ERROR
+
+    (flow,) = hass.config_entries.flow.async_progress()
+    assert flow["context"]["source"] == "reauth"
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reauth_successful"
+    assert config_entry.state is ConfigEntryState.LOADED
+
+
+async def test_changing_the_sources(
     hass: HomeAssistant,
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
 ) -> None:
-    """The options flow rewrites the sources and the submission time."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
+    """Reconfiguring a meter rewrites its sources and time, without a reload."""
+    await setup(hass, config_entry)
+    client = coordinator_of(config_entry).client
+    sign_ins = len(logins(mock_portal))
 
-    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await reconfigure_meter(hass, config_entry)
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "sources"
 
     changed = {**SOURCES, "offtake_day": "sensor.other"}
-    result = await hass.config_entries.options.async_configure(
+    result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], {**changed, CONF_SUBMIT_TIME: "06:00:00"}
     )
     await hass.async_block_till_done()
 
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert config_entry.options == {
-        CONF_SOURCES: changed,
-        CONF_SUBMIT_TIME: "06:00:00",
-    }
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert meter_of(config_entry).data[CONF_SOURCES] == changed
+    assert meter_of(config_entry).data[CONF_SUBMIT_TIME] == "06:00:00"
+    coordinator = coordinator_of(config_entry)
+    assert coordinator.client is client
+    assert coordinator.submit_time == time(6, 0)
+    assert len(logins(mock_portal)) == sign_ins
 
 
 async def test_reconfigure(
@@ -317,56 +397,91 @@ async def test_reconfigure(
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
 ) -> None:
-    """Reconfigure walks the whole flow and rewrites the existing entry."""
-    config_entry.add_to_hass(hass)
+    """Reconfiguring the login changes its credentials and keeps its meters."""
+    await setup(hass, config_entry)
+    client = coordinator_of(config_entry).client
     result = await config_entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], CREDENTIALS
-    )
-    assert result["step_id"] == "sources"
-
-    changed = {**SOURCES, "offtake_day": "sensor.new_import_day"}
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {**changed, CONF_SUBMIT_TIME: "05:00:00"}
+        result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: "new-secret"}
     )
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
-    assert config_entry.options[CONF_SOURCES] == changed
-    assert config_entry.data[CONF_EAN] == EAN
+    assert config_entry.data == {CONF_EMAIL: EMAIL, CONF_PASSWORD: "new-secret"}
+    assert meter_of(config_entry).data[CONF_EAN] == EAN
+    assert config_entry.state is ConfigEntryState.LOADED
+    # Reloaded on the new password, from the entry's own update listener.
+    assert coordinator_of(config_entry).client is not client
+    assert logins(mock_portal)[-1]["password"] == "new-secret"
     assert len(hass.config_entries.async_entries(DOMAIN)) == 1
 
-    await hass.config_entries.async_unload(config_entry.entry_id)
 
-
-async def test_reconfigure_onto_a_different_meter_is_refused(
+async def test_reconfigure_onto_a_login_without_the_account_is_refused(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
     config_entry: MockConfigEntry,
 ) -> None:
-    """An entry is pinned to its meter, so a different EAN must abort."""
-    other = "541449000000000002"
+    """The meters stay, so the login must still reach their account."""
     mock_login(
         aioclient_mock,
-        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
-    )
-    mock_discovery(
-        aioclient_mock, points=[{"ean": other, "type": "Electricity"}], ean=other
+        accounts=[{"crmAccountNumber": "999", "alias": "Office", "role": "owner"}],
     )
 
     config_entry.add_to_hass(hass)
     result = await config_entry.start_reconfigure_flow(hass)
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], CREDENTIALS
+        result["flow_id"], {CONF_EMAIL: "other@example.com", CONF_PASSWORD: "x"}
     )
 
     assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "unique_id_mismatch"
-    assert config_entry.data[CONF_EAN] == EAN
+    assert result["reason"] == "accounts_missing"
+    assert config_entry.data[CONF_EMAIL] == EMAIL
+    assert config_entry.unique_id == EMAIL
+
+
+async def test_reconfigure_onto_another_configured_login_is_refused(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Two entries for one login would sign in twice, which is the point."""
+    other = login_entry()
+    other.add_to_hass(hass)
+    hass.config_entries.async_update_entry(other, unique_id="other@example.com")
+
+    config_entry.add_to_hass(hass)
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: "Other@Example.com", CONF_PASSWORD: "x"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert config_entry.data[CONF_EMAIL] == EMAIL
+
+
+async def test_a_login_already_set_up_is_refused_before_signing_in(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Its other meters belong on the entry it has, under Add meter."""
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: EMAIL.upper(), CONF_PASSWORD: PASSWORD}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert logins(mock_portal) == []
 
 
 async def test_a_login_with_no_account(
@@ -391,10 +506,10 @@ async def test_a_login_with_no_account(
     assert result["errors"] == {"base": "no_accounts"}
 
 
-async def test_a_second_flow_for_the_same_meter(
+async def test_a_second_flow_for_the_same_login(
     hass: HomeAssistant, mock_portal: AiohttpClientMocker
 ) -> None:
-    """async_set_unique_id aborts on a flow already holding the same meter.
+    """async_set_unique_id aborts on a flow already holding the same login.
 
     The reason it aborts with had no text anywhere, so the dialog had nothing
     to show but the bare already_in_progress.
@@ -432,6 +547,22 @@ async def test_reconfigure_offers_the_address_already_on_file(
     assert field.description == {"suggested_value": EMAIL}
 
 
+@pytest.mark.parametrize(
+    ("email", "title"),
+    [
+        ("someone@example.com", "s•••@e•••.com"),
+        (" Renaud@Mail.Example.be ", "R•••@M•••.be"),
+        ("someone@localhost", "s•••@l•••"),
+        ("not-an-address", "n•••"),
+    ],
+)
+def test_the_entry_title_keeps_the_address_out_of_the_log(
+    email: str, title: str
+) -> None:
+    """Home Assistant logs entry titles, and users paste those logs."""
+    assert login_title(email) == title
+
+
 def _offered_time(result: Any) -> time:
     """Return the submission time a form is offering."""
     schema = result["data_schema"]
@@ -442,7 +573,7 @@ def _offered_time(result: Any) -> time:
 
 def test_the_suggested_time_is_scattered_across_the_window() -> None:
     """One fixed default would land every installation on Eneco at once."""
-    picks = {_suggested_submit_time() for _ in range(300)}
+    picks = {suggested_submit_time() for _ in range(300)}
 
     assert len(picks) > 1
     for pick in picks:
@@ -474,22 +605,19 @@ async def test_a_first_setup_is_offered_a_time_from_the_window(
         assert chosen.second == 0
         offered.add(chosen)
         # The next flow would abort as already in progress otherwise, since
-        # this one is holding the meter's unique id.
+        # this one is holding the login's unique id.
         hass.config_entries.flow.async_abort(result["flow_id"])
 
     assert len(offered) > 1
 
 
-async def test_the_options_form_keeps_the_time_in_use(
+async def test_changing_the_sources_keeps_the_time_in_use(
     hass: HomeAssistant,
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
 ) -> None:
-    """Only a setup without one is scattered; the rest keep what they chose."""
-    config_entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.async_block_till_done()
+    """Only a new meter is scattered; the rest keep what they chose."""
+    await setup(hass, config_entry)
 
-    result = await hass.config_entries.options.async_init(config_entry.entry_id)
-
+    result = await reconfigure_meter(hass, config_entry)
     assert _offered_time(result) == time(23, 50)

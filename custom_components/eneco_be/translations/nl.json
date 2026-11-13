@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Eneco België",
-        "description": "Meld je aan met het account dat je op eneco.be gebruikt.",
+        "description": "Meld je aan met het account dat je op eneco.be gebruikt en kies dan de eerste meter. De andere meters voeg je daarna toe aan dezelfde login, met Meter toevoegen.",
         "data": {
           "email": "E-mailadres",
           "password": "Wachtwoord"
@@ -66,36 +66,74 @@
       "cannot_connect": "Kan het Eneco-portaal niet bereiken."
     },
     "abort": {
-      "already_configured": "Deze meter is al ingesteld.",
-      "already_in_progress": "Deze meter wordt al ingesteld.",
+      "accounts_missing": "Deze login heeft geen toegang tot het account van elke ingestelde meter. Verwijder die meters eerst, of meld je aan met de login waartoe ze behoren.",
+      "already_configured": "Deze login is al ingesteld. Voeg de andere meters toe vanuit de invoer, met Meter toevoegen.",
+      "already_in_progress": "Deze login wordt al ingesteld.",
       "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
+      "meters_configured": "Elke meter op dit adres is al ingesteld.",
       "no_addresses": "Dit account heeft geen adres met een actief contract.",
       "no_meters": "Op dit adres staat geen elektriciteits- of gasmeter.",
       "no_registers": "Eneco aanvaardt geen meterstanden voor deze meter.",
       "reauth_successful": "Opnieuw aangemeld.",
-      "reconfigure_successful": "Configuratie bijgewerkt.",
-      "unique_id_mismatch": "Dit is een andere meter dan die waarvoor deze invoer is ingesteld."
+      "reconfigure_successful": "Configuratie bijgewerkt."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Meterstanden",
-        "description": "Kies de sensor met de meterstand voor elk register, en wanneer ze worden doorgegeven. Laat een register leeg en het wordt gewoon niet doorgegeven, wat nodig is voor een meter die je nog met de hand afleest.",
-        "data": {
-          "offtake_single": "Afname",
-          "offtake_day": "Afname, dag",
-          "offtake_night": "Afname, nacht",
-          "offtake_exclusive_night": "Afname, exclusief nacht",
-          "injection_single": "Injectie",
-          "injection_day": "Injectie, dag",
-          "injection_night": "Injectie, nacht",
-          "injection_exclusive_night": "Injectie, exclusief nacht",
-          "submit_time": "Doorgeven om"
+  "config_subentries": {
+    "meter": {
+      "initiate_flow": {
+        "user": "Meter toevoegen",
+        "reconfigure": "Bronnen wijzigen"
+      },
+      "entry_type": "Meter",
+      "step": {
+        "account": {
+          "title": "Account",
+          "description": "Kies het account waarvan je de meterstanden wilt doorgeven.",
+          "data": {
+            "account": "Account"
+          }
         },
-        "data_description": {
-          "submit_time": "Lokale tijd waarop de meterstanden eenmaal per dag worden doorgegeven."
+        "address": {
+          "title": "Adres",
+          "description": "Kies het leveringsadres van de meter.",
+          "data": {
+            "address": "Adres"
+          }
+        },
+        "meter": {
+          "title": "Meter",
+          "description": "Kies de meter waarvoor je meterstanden wilt doorgeven.",
+          "data": {
+            "ean": "EAN"
+          }
+        },
+        "sources": {
+          "title": "Meterstanden",
+          "description": "Kies de sensor met de meterstand voor elk register van EAN {ean}. Elke sensor moet een totale meterstand geven, geen debiet. Laat een register leeg en het wordt gewoon niet doorgegeven, wat nodig is voor een meter die je nog met de hand afleest.",
+          "data": {
+            "offtake_single": "Afname",
+            "offtake_day": "Afname, dag",
+            "offtake_night": "Afname, nacht",
+            "offtake_exclusive_night": "Afname, exclusief nacht",
+            "injection_single": "Injectie",
+            "injection_day": "Injectie, dag",
+            "injection_night": "Injectie, nacht",
+            "injection_exclusive_night": "Injectie, exclusief nacht",
+            "submit_time": "Doorgeven om"
+          },
+          "data_description": {
+            "submit_time": "Lokale tijd waarop de meterstanden eenmaal per dag worden doorgegeven. Voor een nieuwe meter wordt een tijd willekeurig in de late avond voorgesteld, zodat niet elk huishouden Eneco op hetzelfde moment bereikt."
+          }
         }
+      },
+      "abort": {
+        "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
+        "entry_not_loaded": "De login is niet geladen. Herstel of activeer die eerst.",
+        "meters_configured": "Elke meter op dit adres is al ingesteld.",
+        "no_addresses": "Dit account heeft geen adres met een actief contract.",
+        "no_meters": "Op dit adres staat geen elektriciteits- of gasmeter.",
+        "no_registers": "Eneco aanvaardt geen meterstanden voor deze meter.",
+        "reconfigure_successful": "Configuratie bijgewerkt."
       }
     }
   },

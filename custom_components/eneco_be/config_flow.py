@@ -22,59 +22,47 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-"""Config flow for the Eneco Belgium integration."""
+"""Config flow for the Eneco Belgium integration.
+
+An entry is a login. Each meter it submits readings for is a subentry: the
+first one is picked while setting the login up, and every other one is added
+to it afterwards, without signing in again.
+"""
 
 from collections.abc import Mapping
-from datetime import time
 import logging
-import random
 from typing import Any, override
 
 from aiohttp import ClientSession
 import voluptuous as vol
 
 from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
-    OptionsFlowWithReload,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
 )
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .api import (
-    Account,
-    Address,
-    EnecoAuthError,
-    EnecoClient,
-    EnecoConnectionError,
-    EnecoError,
-    Meter,
-    ServiceDeliveryPoint,
-)
+from .api import EnecoAuthError, EnecoClient, EnecoConnectionError, EnecoError
 from .const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
     CONF_EAN,
     CONF_ENERGY_TYPE,
-    CONF_REGISTERS,
-    CONF_SOURCES,
-    CONF_SUBMIT_TIME,
     DOMAIN,
-    SUGGEST_SUBMIT_FROM,
-    SUGGEST_SUBMIT_TO,
+    SUBENTRY_METER,
 )
+from .meter_flow import MeterSteps
+from .migrate import VERSION, login_id, login_title, meter_title
 
 _LOGGER = logging.getLogger(__name__)
-
-ELECTRICITY = "Electricity"
-GAS = "Gas"
-METERED = (ELECTRICITY, GAS)
-
-# Which sensors are worth offering for each kind of meter.
-SOURCE_DEVICE_CLASS = {ELECTRICITY: "energy", GAS: "gas"}
 
 
 def _new_session(hass: HomeAssistant) -> ClientSession:
@@ -94,69 +82,14 @@ CREDENTIALS_SCHEMA = vol.Schema(
 )
 
 
-def _suggested_submit_time() -> str:
-    """Return the time of day to offer a setup that has not chosen one.
+class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
+    """Sign in, then walk down to the first meter of the login."""
 
-    Every meter this integration reads is submitted to the same portal, and a
-    single default would have all of them arrive there in the same second. The
-    suggestion is drawn from a window of whole minutes instead. It is only a
-    suggestion: the field is there to be changed.
-    """
-    first = time.fromisoformat(SUGGEST_SUBMIT_FROM)
-    last = time.fromisoformat(SUGGEST_SUBMIT_TO)
-    minute = random.randint(
-        first.hour * 60 + first.minute, last.hour * 60 + last.minute
-    )
-    return time(minute // 60, minute % 60).isoformat()
-
-
-def _sources_schema(
-    registers: list[str], defaults: Mapping[str, Any], energy_type: str
-) -> vol.Schema:
-    """Build the schema that maps registers to source entities.
-
-    Every register is optional: a meter can be read by hand for some registers
-    and not others, and a mechanical meter has no sensor at all.
-    """
-    sources: Mapping[str, str] = defaults.get(CONF_SOURCES, {})
-    fields: dict[Any, Any] = {
-        vol.Optional(
-            key, description={"suggested_value": sources.get(key)}
-        ): selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                filter=selector.EntityWithDeviceFilterSelectorConfig(
-                    domain="sensor",
-                    device_class=SOURCE_DEVICE_CLASS.get(energy_type, "energy"),
-                )
-            )
-        )
-        for key in registers
-    }
-    fields[
-        vol.Required(
-            CONF_SUBMIT_TIME,
-            # Only a setup with no time of its own gets a fresh suggestion;
-            # reconfiguring or changing the sources keeps the one in use.
-            default=defaults.get(CONF_SUBMIT_TIME) or _suggested_submit_time(),
-        )
-    ] = selector.TimeSelector()
-    return vol.Schema(fields)
-
-
-class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Walk the user from credentials down to a single electricity meter."""
-
-    VERSION = 1
+    VERSION = VERSION
 
     def __init__(self) -> None:
         """Start with nothing discovered."""
-        self._client: EnecoClient | None = None
-        self._accounts: list[Account] = []
-        self._addresses: list[Address] = []
-        self._points: list[ServiceDeliveryPoint] = []
-        self._account: str | None = None
-        self._address: str | None = None
-        self._meter: Meter | None = None
+        self._accounts = []
         self._credentials: dict[str, Any] = {}
         self._session: ClientSession | None = None
 
@@ -168,6 +101,11 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            await self.async_set_unique_id(login_id(user_input[CONF_EMAIL]))
+            if self.source != SOURCE_RECONFIGURE:
+                # Before signing in: a login that is set up already is where
+                # its other meters go, and there is no point asking Okta.
+                self._abort_if_unique_id_configured()
             # A fresh session per attempt: reusing one would leave the previous
             # Okta session cookie in place, and the portal would then happily
             # sign the earlier account back in.
@@ -198,14 +136,15 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._replace_session(session)
                 self._client = client
                 self._credentials = user_input
+                if self.source == SOURCE_RECONFIGURE:
+                    return self._async_reconfigure_login()
                 return await self.async_step_account()
 
         if user_input is not None:
             known_email = user_input[CONF_EMAIL]
-        elif self.source == "reconfigure":
-            # Reconfigure walks the whole flow again, and the account it is
-            # walking is the one the entry already holds. Asking the user to
-            # remember and retype their own address serves nobody.
+        elif self.source == SOURCE_RECONFIGURE:
+            # Asking the user to remember and retype the address the entry
+            # already holds serves nobody.
             known_email = self._get_reconfigure_entry().data[CONF_EMAIL]
         else:
             known_email = None
@@ -219,197 +158,65 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_account(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Pick the account, unless the user only has one."""
-        if user_input is not None:
-            self._account = user_input[CONF_ACCOUNT]
-        elif len(self._accounts) == 1:
-            self._account = self._accounts[0].number
-        else:
-            return self.async_show_form(
-                step_id="account",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_ACCOUNT): selector.SelectSelector(
-                            selector.SelectSelectorConfig(
-                                options=[
-                                    selector.SelectOptionDict(
-                                        value=account.number,
-                                        label=f"{account.alias} ({account.number})",
-                                    )
-                                    for account in self._accounts
-                                ],
-                                mode=selector.SelectSelectorMode.LIST,
-                            )
-                        )
-                    }
-                ),
-            )
-
-        return await self._async_load_addresses()
-
-    async def _async_load_addresses(self) -> ConfigFlowResult:
-        """Fetch the delivery addresses of the chosen account."""
-        assert self._client is not None and self._account is not None
-        try:
-            self._addresses = [
-                address
-                for address in await self._client.async_get_addresses(self._account)
-                if address.has_active_contracts
-            ]
-        except EnecoError as err:
-            return self.async_abort(
-                reason="cannot_connect", description_placeholders={"error": str(err)}
-            )
-
-        if not self._addresses:
-            return self.async_abort(reason="no_addresses")
-        return await self.async_step_address()
-
-    async def async_step_address(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Pick the delivery address, unless there is only one."""
-        if user_input is not None:
-            self._address = user_input[CONF_ADDRESS]
-        elif len(self._addresses) == 1:
-            self._address = self._addresses[0].identifier
-        else:
-            return self.async_show_form(
-                step_id="address",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_ADDRESS): selector.SelectSelector(
-                            selector.SelectSelectorConfig(
-                                options=[
-                                    selector.SelectOptionDict(
-                                        value=address.identifier, label=address.label
-                                    )
-                                    for address in self._addresses
-                                ],
-                                mode=selector.SelectSelectorMode.LIST,
-                            )
-                        )
-                    }
-                ),
-            )
-
-        return await self._async_load_meters()
-
-    async def _async_load_meters(self) -> ConfigFlowResult:
-        """Fetch the electricity connections at the chosen address."""
-        assert self._client is not None
-        assert self._account is not None and self._address is not None
-        try:
-            self._points = [
-                point
-                for point in await self._client.async_get_delivery_points(
-                    self._account, self._address
-                )
-                if point.energy_type in METERED
-            ]
-        except EnecoError as err:
-            return self.async_abort(
-                reason="cannot_connect", description_placeholders={"error": str(err)}
-            )
-
-        if not self._points:
-            return self.async_abort(reason="no_meters")
-        return await self.async_step_meter()
-
-    async def async_step_meter(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Pick the meter, unless the address has only one."""
-        if user_input is not None:
-            ean = user_input[CONF_EAN]
-        elif len(self._points) == 1:
-            ean = self._points[0].ean
-        else:
-            return self.async_show_form(
-                step_id="meter",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_EAN): selector.SelectSelector(
-                            selector.SelectSelectorConfig(
-                                options=[
-                                    selector.SelectOptionDict(
-                                        value=point.ean,
-                                        label=f"{point.energy_type} {point.ean}",
-                                    )
-                                    for point in self._points
-                                ],
-                                mode=selector.SelectSelectorMode.LIST,
-                            )
-                        )
-                    }
-                ),
-            )
-
-        assert self._client is not None and self._account is not None
-        try:
-            self._meter = await self._client.async_get_meter(self._account, ean)
-        except EnecoError as err:
-            return self.async_abort(
-                reason="cannot_connect", description_placeholders={"error": str(err)}
-            )
-
-        if not self._meter.registers:
-            return self.async_abort(reason="no_registers")
-
-        await self.async_set_unique_id(self._meter.ean)
-        if self.source == "reconfigure":
-            self._abort_if_unique_id_mismatch()
-        else:
-            self._abort_if_unique_id_configured()
-        return await self.async_step_sources()
-
-    async def async_step_sources(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Map every register of the meter to a Home Assistant sensor."""
-        assert self._meter is not None and self._account is not None
-        registers = [register.key for register in self._meter.registers]
-
-        if user_input is not None:
-            data = {
-                **self._credentials,
-                CONF_ACCOUNT: self._account,
-                CONF_ADDRESS: self._address,
-                CONF_EAN: self._meter.ean,
-                CONF_ENERGY_TYPE: self._meter.energy_type,
-                CONF_REGISTERS: registers,
-            }
-            options = {
-                CONF_SOURCES: {
-                    key: user_input[key] for key in registers if user_input.get(key)
-                },
-                CONF_SUBMIT_TIME: user_input[CONF_SUBMIT_TIME],
-            }
-            if self.source == "reconfigure":
-                return self.async_update_reload_and_abort(
-                    self._get_reconfigure_entry(), data=data, options=options
-                )
-            return self.async_create_entry(
-                title=f"Eneco {self._meter.ean}", data=data, options=options
-            )
-
-        defaults: Mapping[str, Any] = {}
-        if self.source == "reconfigure":
-            defaults = self._get_reconfigure_entry().options
-
-        return self.async_show_form(
-            step_id="sources",
-            data_schema=_sources_schema(registers, defaults, self._meter.energy_type),
-            description_placeholders={"ean": self._meter.ean},
+    @override
+    async def _async_meter_done(self, meter: dict[str, Any]) -> ConfigFlowResult:
+        """Create the login with the meter just picked as its first."""
+        return self.async_create_entry(
+            title=login_title(self._credentials[CONF_EMAIL]),
+            data=self._credentials,
+            subentries=[
+                {
+                    "data": meter,
+                    "subentry_type": SUBENTRY_METER,
+                    "title": meter_title(meter[CONF_ENERGY_TYPE], meter[CONF_EAN]),
+                    "unique_id": meter[CONF_EAN],
+                }
+            ],
         )
+
+    def _async_reconfigure_login(self) -> ConfigFlowResult:
+        """Store new credentials, if they still reach every meter set up.
+
+        The meters stay as they are, so a login that cannot see the account
+        of one of them would leave it failing every night.
+        """
+        entry = self._get_reconfigure_entry()
+        if self.unique_id != entry.unique_id:
+            other = self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, self.unique_id or ""
+            )
+            if other is not None:
+                return self.async_abort(reason="already_configured")
+        reachable = {account.number for account in self._accounts}
+        if any(
+            subentry.data[CONF_ACCOUNT] not in reachable
+            for subentry in entry.subentries.values()
+        ):
+            return self.async_abort(reason="accounts_missing")
+        return self._async_update_and_finish(
+            entry,
+            unique_id=self.unique_id,
+            title=login_title(self._credentials[CONF_EMAIL]),
+            data=self._credentials,
+        )
+
+    def _async_update_and_finish(
+        self, entry: ConfigEntry, **changes: Any
+    ) -> ConfigFlowResult:
+        """Update the entry and get it running on the change.
+
+        A loaded entry reloads itself from its update listener when its
+        credentials change. One that failed to set up has no listener, and
+        must be reloaded from here or it stays failed.
+        """
+        if entry.update_listeners:
+            return self.async_update_and_abort(entry, **changes)
+        return self.async_update_reload_and_abort(entry, **changes)
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Run the whole flow again against the existing entry."""
+        """Change the credentials the login signs in with."""
         return await self.async_step_user(user_input)
 
     async def async_step_reauth(
@@ -437,7 +244,7 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
             except EnecoConnectionError:
                 errors["base"] = "cannot_connect"
             else:
-                return self.async_update_reload_and_abort(
+                return self._async_update_and_finish(
                     entry, data_updates={CONF_PASSWORD: user_input[CONF_PASSWORD]}
                 )
             finally:
@@ -474,40 +281,79 @@ class EnecoConfigFlow(ConfigFlow, domain=DOMAIN):
             self._session.detach()
             self._session = None
 
-    @staticmethod
+    @classmethod
     @callback
     @override
-    def async_get_options_flow(config_entry: Any) -> OptionsFlow:
-        """Return the options flow."""
-        return EnecoOptionsFlow()
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return the subentries a login can have: its meters."""
+        return {SUBENTRY_METER: MeterSubentryFlow}
 
 
-class EnecoOptionsFlow(OptionsFlowWithReload):
-    """Change the source entities and the time of day readings are sent."""
+class MeterSubentryFlow(MeterSteps[SubentryFlowResult], ConfigSubentryFlow):
+    """Add a meter to a login, or change what one submits and when.
 
-    async def async_step_init(
+    Both go through the client the loaded entry already signed in with.
+    """
+
+    def __init__(self) -> None:
+        """Start with nothing discovered."""
+        self._accounts = []
+
+    def _signed_in_client(self) -> EnecoClient | None:
+        """Return the client of the entry, if it is loaded."""
+        entry = self._get_entry()
+        if entry.state is not ConfigEntryState.LOADED:
+            return None
+        client: EnecoClient = entry.runtime_data.client
+        return client
+
+    async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Show the register mapping and the submission time."""
-        registers: list[str] = self.config_entry.data[CONF_REGISTERS]
-
-        if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    CONF_SOURCES: {
-                        key: user_input[key] for key in registers if user_input.get(key)
-                    },
-                    CONF_SUBMIT_TIME: user_input[CONF_SUBMIT_TIME],
-                }
+    ) -> SubentryFlowResult:
+        """Read the accounts of the login and walk down to a new meter."""
+        self._client = self._signed_in_client()
+        if self._client is None:
+            return self.async_abort(reason="entry_not_loaded")
+        try:
+            self._accounts = await self._client.async_get_accounts()
+        except EnecoError as err:
+            return self.async_abort(
+                reason="cannot_connect", description_placeholders={"error": str(err)}
             )
+        return await self.async_step_account()
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=_sources_schema(
-                registers,
-                self.config_entry.options,
-                # Entries written before gas support have no energy type, and
-                # every one of those is an electricity meter.
-                self.config_entry.data.get(CONF_ENERGY_TYPE, ELECTRICITY),
-            ),
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Offer the sources and the time again, for the registers of today.
+
+        The registers are asked for afresh: a meter replaced since it was set
+        up can have different ones.
+        """
+        self._client = self._signed_in_client()
+        if self._client is None:
+            return self.async_abort(reason="entry_not_loaded")
+        meter = self._get_reconfigure_subentry().data
+        self._current = meter
+        self._account = meter[CONF_ACCOUNT]
+        self._address = meter[CONF_ADDRESS]
+        return await self._async_load_registers(meter[CONF_EAN])
+
+    @override
+    async def _async_meter_done(self, meter: dict[str, Any]) -> SubentryFlowResult:
+        """Add the meter, or store its new sources and time."""
+        title = meter_title(meter[CONF_ENERGY_TYPE], meter[CONF_EAN])
+        if self.source == SOURCE_RECONFIGURE:
+            # The entry's update listener takes the change from here: it rearms
+            # the trigger without signing in again.
+            return self.async_update_and_abort(
+                self._get_entry(),
+                self._get_reconfigure_subentry(),
+                title=title,
+                data=meter,
+            )
+        return self.async_create_entry(
+            title=title, data=meter, unique_id=meter[CONF_EAN]
         )

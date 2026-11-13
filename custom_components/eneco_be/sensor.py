@@ -106,10 +106,12 @@ async def async_setup_entry(
     entry: EnecoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the diagnostic sensors."""
-    async_add_entities(
-        EnecoSensor(entry.runtime_data, description) for description in SENSORS
-    )
+    """Set up the diagnostic sensors of every meter."""
+    for subentry_id, coordinator in entry.runtime_data.coordinators.items():
+        async_add_entities(
+            (EnecoSensor(coordinator, description) for description in SENSORS),
+            config_subentry_id=subentry_id,
+        )
 
 
 class EnecoSensor(EnecoEntity, SensorEntity):
@@ -125,7 +127,7 @@ class EnecoSensor(EnecoEntity, SensorEntity):
         """Bind the sensor to its description."""
         super().__init__(coordinator)
         self.entity_description = description
-        ean = coordinator.config_entry.data[CONF_EAN]
+        ean = coordinator.meter[CONF_EAN]
         self._attr_unique_id = f"{ean}_{description.key}"
 
     @property

@@ -33,15 +33,15 @@ from .coordinator import EnecoCoordinator
 
 
 class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
-    """An entity describing the meter this entry submits readings for."""
+    """An entity describing the meter a subentry submits readings for."""
 
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: EnecoCoordinator) -> None:
         """Attach the entity to the device that stands for the meter."""
         super().__init__(coordinator)
-        entry = coordinator.config_entry
-        ean = entry.data[CONF_EAN]
+        meter = coordinator.meter
+        ean = meter[CONF_EAN]
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, ean)},
             entry_type=DeviceEntryType.SERVICE,
@@ -51,6 +51,6 @@ class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
             # No locale prefix: the portal picks one from the visitor's cookie.
             configuration_url=(
                 f"{WEB_HOST}/my-eneco/usage/add-meter-readings/"
-                f"?ean={ean}&address={entry.data[CONF_ADDRESS]}"
+                f"?ean={ean}&address={meter[CONF_ADDRESS]}"
             ),
         )

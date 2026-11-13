@@ -57,11 +57,23 @@ from custom_components.eneco_be.api import (
     EnecoError,
     Register,
 )
-from custom_components.eneco_be.const import ATTR_LAST_ERROR, CONF_SUBMIT_TIME, DOMAIN
-from custom_components.eneco_be.coordinator import REPAIR_AFTER_FAILURES, EnecoState
+from custom_components.eneco_be.const import (
+    ATTR_LAST_ERROR,
+    CONF_SOURCES,
+    CONF_SUBMIT_TIME,
+    DOMAIN,
+    SUBENTRY_METER,
+)
+from custom_components.eneco_be.coordinator import (
+    REPAIR_AFTER_FAILURES,
+    EnecoState,
+    MeterStore,
+)
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
+from custom_components.eneco_be.migrate import login_title
 from custom_components.eneco_be.sensor import EnecoSensor
 from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
     SOURCE_USER,
     ConfigEntryDisabler,
     ConfigEntryState,
@@ -79,6 +91,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 
@@ -87,10 +100,15 @@ from .conftest import (
     API,
     EAN,
     EMAIL,
+    METER_ID,
     METER_NUMBER,
     PASSWORD,
+    coordinator_of,
+    legacy_entry,
     mock_discovery,
     mock_login,
+    stored_meter,
+    update_meter,
 )
 from .test_init import (
     LAST,
@@ -226,7 +244,9 @@ async def test_account_number_never_reaches_the_user(
     report = await async_get_config_entry_diagnostics(hass, config_entry)
     assert ACCOUNT not in str(report)
 
-    stored = await config_entry.runtime_data._store.async_load()  # noqa: SLF001
+    stored = await Store[dict[str, Any]](
+        hass, 1, MeterStore.key_for(config_entry.entry_id)
+    ).async_load()
     assert ACCOUNT not in str(stored)
 
 
@@ -270,7 +290,7 @@ async def test_a_failure_keeps_the_last_success(
 
     # Force a second attempt for the same day by clearing the guard.
     entry = config_entry
-    entry.runtime_data.data.submitted_date = None
+    coordinator_of(entry).data.submitted_date = None
     await press_failing(hass)
 
     assert state_of(hass, STATUS).state == "failed"
@@ -304,7 +324,7 @@ async def test_next_submission_is_never_in_the_past(
 ) -> None:
     """Asked inside the trigger second, the answer must still be ahead."""
     await setup_entry(hass, config_entry)
-    coordinator = config_entry.runtime_data
+    coordinator = coordinator_of(config_entry)
 
     at = dt_util.now().replace(hour=23, minute=50, second=0, microsecond=278000)
     freezer.move_to(at)
@@ -368,7 +388,8 @@ async def test_diagnostics_survive_an_unloaded_entry(
     await hass.async_block_till_done()
 
     report = await async_get_config_entry_diagnostics(hass, config_entry)
-    assert report["last_attempt"] is None
+    assert report["meters"][0]["last_attempt"] is None
+    assert report["meters"][0]["data"]["ean"] == "**REDACTED**"
     assert report["entry"]["data"]["email"] == "**REDACTED**"
 
 
@@ -404,13 +425,11 @@ async def test_submit_time_option_is_read_back(
 ) -> None:
     """An unparseable stored time must fall back rather than crash setup."""
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "nonsense"}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: "nonsense"})
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert config_entry.runtime_data.submit_time == time(23, 50)
+    assert coordinator_of(config_entry).submit_time == time(23, 50)
     assert state_of(hass, NEXT).state != "unknown"
     assert DOMAIN in hass.config.components
 
@@ -464,7 +483,7 @@ async def test_stored_state_is_written(
     await setup_entry(hass, config_entry)
     await press(hass)
 
-    stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
+    stored = stored_meter(hass_storage, config_entry)
     assert stored["submitted_date"] == dt_util.now().date().isoformat()
     assert stored["values"]["offtake_day"] == 1235
     assert stored["error"] is None
@@ -490,9 +509,9 @@ async def test_unreadable_stored_state_is_ignored(
     stored: dict[str, Any],
 ) -> None:
     """A store written by another version must not stop the entry loading."""
-    hass_storage[f"{DOMAIN}.{config_entry.entry_id}"] = {
+    hass_storage[f"{DOMAIN}.{config_entry.entry_id}.meters"] = {
         "version": 1,
-        "data": stored,
+        "data": {"meters": {METER_ID: stored}},
     }
     set_sources(hass)
     await setup_entry(hass, config_entry)
@@ -513,7 +532,7 @@ async def test_removing_the_entry_forgets_the_store(
     set_sources(hass)
     await setup_entry(hass, config_entry)
     await press(hass)
-    key = f"{DOMAIN}.{config_entry.entry_id}"
+    key = f"{DOMAIN}.{config_entry.entry_id}.meters"
     assert key in hass_storage
 
     assert await hass.config_entries.async_remove(config_entry.entry_id)
@@ -542,7 +561,7 @@ async def test_a_repair_is_raised_once_failures_persist(
 
     set_sources(hass)
     await setup_entry(hass, config_entry)
-    issue_id = f"submission_failed_{config_entry.entry_id}"
+    issue_id = f"submission_failed_{config_entry.entry_id}_{METER_ID}"
 
     for _ in range(REPAIR_AFTER_FAILURES - 1):
         await press_failing(hass)
@@ -581,7 +600,7 @@ async def test_the_repair_clears_once_a_submission_lands(
 
     set_sources(hass)
     await setup_entry(hass, config_entry)
-    issue_id = f"submission_failed_{config_entry.entry_id}"
+    issue_id = f"submission_failed_{config_entry.entry_id}_{METER_ID}"
 
     for _ in range(REPAIR_AFTER_FAILURES):
         await press_failing(hass)
@@ -607,9 +626,7 @@ async def test_the_catch_up_waits_for_home_assistant_to_start(
     """
     hass.set_state(CoreState.not_running)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "06:00:00"}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: "06:00:00"})
 
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -658,18 +675,26 @@ async def test_options_open_on_an_entry_without_an_energy_type(
 
     The coordinator always read it with a default, so such an entry loads and
     submits; only the options form insisted on the key and raised KeyError at
-    the user the moment they pressed Configure.
+    the user the moment they pressed Configure. Those entries are meters of a
+    login now, and changing the sources of one has to open just the same.
     """
-    data = dict(config_entry.data)
+    legacy = legacy_entry()
+    data = dict(legacy.data)
     del data["energy_type"]
-    config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(config_entry, data=data)
+    legacy.add_to_hass(hass)
+    hass.config_entries.async_update_entry(legacy, data=data)
 
     set_sources(hass)
-    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
-    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    (entry,) = hass.config_entries.async_entries(DOMAIN)
+    ((subentry_id, meter),) = entry.subentries.items()
+    assert meter.data["energy_type"] == "Electricity"
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_METER),
+        context={"source": SOURCE_RECONFIGURE, "subentry_id": subentry_id},
+    )
     assert result["type"] is FlowResultType.FORM
 
 
@@ -743,9 +768,7 @@ async def test_next_submission_survives_the_autumn_clock_change(
     """
     await hass.config.async_set_time_zone("Europe/Brussels")
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "02:30:00"}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: "02:30:00"})
     set_sources(hass)
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -754,7 +777,7 @@ async def test_next_submission_survives_the_autumn_clock_change(
     freezer.move_to("2026-10-25T01:30:00+00:00")
     assert dt_util.now().fold == 1
 
-    coordinator = config_entry.runtime_data
+    coordinator = coordinator_of(config_entry)
     assert coordinator.next_submission > dt_util.now()
 
 
@@ -862,7 +885,7 @@ async def test_the_repair_outlives_a_restart(
         await press_failing(hass)
 
     issue = issue_registry.async_get_issue(
-        DOMAIN, f"submission_failed_{config_entry.entry_id}"
+        DOMAIN, f"submission_failed_{config_entry.entry_id}_{METER_ID}"
     )
     assert issue is not None
     assert issue.is_persistent
@@ -953,7 +976,7 @@ async def test_removing_the_entry_takes_the_repair_with_it(
     for _ in range(REPAIR_AFTER_FAILURES):
         await press_failing(hass)
 
-    issue_id = f"submission_failed_{config_entry.entry_id}"
+    issue_id = f"submission_failed_{config_entry.entry_id}_{METER_ID}"
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
 
     assert await hass.config_entries.async_remove(config_entry.entry_id)
@@ -974,18 +997,17 @@ async def test_diagnostics_say_when_nothing_was_sent(
     and says nothing about how long it has been going wrong.
     """
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={CONF_SUBMIT_TIME: "23:50:00"}
-    )
+    update_meter(hass, config_entry, **{CONF_SOURCES: {}})
     set_sources(hass)
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
     await press(hass)
 
     report = await async_get_config_entry_diagnostics(hass, config_entry)
-    assert report["last_attempt"]["nothing_mapped"] is True
-    assert report["last_attempt"]["skipped"] is False
-    assert report["last_attempt"]["failures"] == 0
+    last = report["meters"][0]["last_attempt"]
+    assert last["nothing_mapped"] is True
+    assert last["skipped"] is False
+    assert last["failures"] == 0
 
 
 @pytest.mark.parametrize("transport", [False, True])
@@ -1030,6 +1052,7 @@ async def test_unloading_mid_catch_up_still_records_the_date(
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
     hass_storage: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Unloading must not lose a reading the portal has already taken.
 
@@ -1040,24 +1063,22 @@ async def test_unloading_mid_catch_up_still_records_the_date(
     """
     hass.set_state(CoreState.not_running)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "06:00:00"}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: "06:00:00"})
     set_sources(hass)
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
-    coordinator = config_entry.runtime_data
+    coordinator = coordinator_of(config_entry)
     written = asyncio.Event()
     release = asyncio.Event()
     real_save = coordinator._store.async_save  # noqa: SLF001
 
-    async def slow_save(data: Any) -> None:
+    async def slow_save(subentry_id: str, state: dict[str, Any]) -> None:
         written.set()
         await release.wait()
-        await real_save(data)
+        await real_save(subentry_id, state)
 
-    coordinator._store.async_save = slow_save  # noqa: SLF001
+    monkeypatch.setattr(coordinator._store, "async_save", slow_save)  # noqa: SLF001
 
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await written.wait()
@@ -1069,7 +1090,7 @@ async def test_unloading_mid_catch_up_still_records_the_date(
     release.set()
     assert await unloading
 
-    stored = hass_storage[f"{DOMAIN}.{config_entry.entry_id}"]["data"]
+    stored = stored_meter(hass_storage, config_entry)
     assert stored["submitted_date"] == dt_util.now().date().isoformat()
 
 
@@ -1115,6 +1136,7 @@ async def test_the_button_does_not_report_an_earlier_press(
     hass: HomeAssistant,
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A refresh that raises leaves the previous attempt's error in place.
 
@@ -1128,12 +1150,12 @@ async def test_the_button_does_not_report_an_earlier_press(
     await press_failing(hass)
 
     set_sources(hass)
-    coordinator = config_entry.runtime_data
+    coordinator = coordinator_of(config_entry)
 
-    async def unwritable(data: Any) -> None:
+    async def unwritable(subentry_id: str, state: dict[str, Any]) -> None:
         raise OSError("no space left on device")
 
-    coordinator._store.async_save = unwritable  # noqa: SLF001
+    monkeypatch.setattr(coordinator._store, "async_save", unwritable)  # noqa: SLF001
     coordinator.data.submitted_date = None
     await press(hass)
 
@@ -1168,7 +1190,7 @@ async def test_the_repair_goes_when_the_entry_is_disabled(
     for _ in range(REPAIR_AFTER_FAILURES):
         await press_failing(hass)
 
-    issue_id = f"submission_failed_{config_entry.entry_id}"
+    issue_id = f"submission_failed_{config_entry.entry_id}_{METER_ID}"
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
 
     await hass.config_entries.async_set_disabled_by(
@@ -1209,11 +1231,11 @@ async def test_a_submission_in_flight_does_not_outlive_the_entry(
 
     set_sources(hass)
     await setup_entry(hass, config_entry)
-    coordinator = config_entry.runtime_data
+    coordinator = coordinator_of(config_entry)
     coordinator.data.failures = REPAIR_AFTER_FAILURES - 1
 
-    key = f"{DOMAIN}.{config_entry.entry_id}"
-    issue_id = f"submission_failed_{config_entry.entry_id}"
+    key = f"{DOMAIN}.{config_entry.entry_id}.meters"
+    issue_id = f"submission_failed_{config_entry.entry_id}_{METER_ID}"
 
     assert await hass.config_entries.async_remove(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -1258,9 +1280,7 @@ async def test_a_start_behind_the_trigger_keeps_the_success(
 
     hass.set_state(CoreState.not_running)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "12:00:00"}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: "12:00:00"})
     set_sources(hass)
     freezer.move_to(dt_util.now().replace(hour=11, minute=59, second=58))
     assert await hass.config_entries.async_setup(config_entry.entry_id)
@@ -1270,7 +1290,7 @@ async def test_a_start_behind_the_trigger_keeps_the_success(
     freezer.move_to(dt_util.now().replace(hour=12, minute=0, second=0))
     async_fire_time_changed(hass, dt_util.now())
     await asyncio.sleep(0)
-    assert config_entry.runtime_data.data.submitted_date is None
+    assert coordinator_of(config_entry).data.submitted_date is None
 
     # Startup finishes a couple of minutes later, with the date not recorded
     # yet because the call has not come back.
@@ -1297,9 +1317,7 @@ async def test_no_catch_up_is_started_while_stopping(
     """
     hass.set_state(CoreState.not_running)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SUBMIT_TIME: "06:00:00"}
-    )
+    update_meter(hass, config_entry, **{CONF_SUBMIT_TIME: "06:00:00"})
     set_sources(hass)
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -1369,7 +1387,7 @@ async def test_the_repair_keeps_the_ean_out_of_the_diagnostics(
         await press_failing(hass)
 
     issue = issue_registry.async_get_issue(
-        DOMAIN, f"submission_failed_{config_entry.entry_id}"
+        DOMAIN, f"submission_failed_{config_entry.entry_id}_{METER_ID}"
     )
     assert issue is not None
     assert issue.translation_placeholders is not None
@@ -1395,3 +1413,30 @@ async def test_the_repair_keeps_the_ean_out_of_the_diagnostics(
         template = text["issues"]["submission_failed"]["description"]
         named = set(re.findall(r"{(\w+)}", template))
         assert named == set(issue.translation_placeholders), source.name
+
+
+async def test_a_refused_login_does_not_log_the_address(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Home Assistant names the entry by its title when setup fails.
+
+    An entry for a login titled after its address put that address in the
+    warning, the one line a user pastes when sign in stops working.
+    """
+    aioclient_mock.post(
+        "https://login.eneco.be/api/v1/authn",
+        status=HTTPStatus.UNAUTHORIZED,
+        json={"errorSummary": "Authentication failed"},
+    )
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, title=login_title(EMAIL))
+
+    with caplog.at_level(logging.DEBUG):
+        assert not await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert "could not authenticate" in caplog.text
+    assert EMAIL not in caplog.text

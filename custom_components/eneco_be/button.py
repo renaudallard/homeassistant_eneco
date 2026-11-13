@@ -44,8 +44,11 @@ async def async_setup_entry(
     entry: EnecoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the submit button."""
-    async_add_entities([EnecoSubmitButton(entry.runtime_data)])
+    """Set up a submit button for every meter."""
+    for subentry_id, coordinator in entry.runtime_data.coordinators.items():
+        async_add_entities(
+            [EnecoSubmitButton(coordinator)], config_subentry_id=subentry_id
+        )
 
 
 class EnecoSubmitButton(EnecoEntity, ButtonEntity):
@@ -56,7 +59,7 @@ class EnecoSubmitButton(EnecoEntity, ButtonEntity):
     def __init__(self, coordinator: EnecoCoordinator) -> None:
         """Give the button a stable unique id."""
         super().__init__(coordinator)
-        ean = coordinator.config_entry.data[CONF_EAN]
+        ean = coordinator.meter[CONF_EAN]
         self._attr_unique_id = f"{ean}_{DESCRIPTION.key}"
 
     @override

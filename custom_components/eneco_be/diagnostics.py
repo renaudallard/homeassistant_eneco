@@ -32,45 +32,53 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from . import EnecoConfigEntry
+from .coordinator import EnecoState
 
 TO_REDACT = {CONF_EMAIL, CONF_PASSWORD, "ean", "account", "address", "serial_number"}
+
+
+def _last_attempt(state: EnecoState) -> dict[str, Any]:
+    """Return what one meter's last submission attempt did."""
+    return {
+        "attempted": state.attempted.isoformat() if state.attempted else None,
+        "succeeded": state.succeeded.isoformat() if state.succeeded else None,
+        "submitted_date": (
+            state.submitted_date.isoformat() if state.submitted_date else None
+        ),
+        "values": state.values,
+        "error": state.error,
+        # Without these a run that sent nothing looks exactly like one that
+        # sent everything: the timestamps and the values are carried over
+        # from the last success either way.
+        "skipped": state.skipped,
+        "nothing_mapped": state.nothing_mapped,
+        "failures": state.failures,
+    }
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: EnecoConfigEntry
 ) -> dict[str, Any]:
-    """Return what the entry is configured to do and how it last went."""
-    if entry.state is not ConfigEntryState.LOADED:
-        # runtime_data only exists while the entry is loaded, and the half that
-        # matters when setup failed is the configuration itself.
-        return {
-            "entry": {
-                "data": async_redact_data(dict(entry.data), TO_REDACT),
-                "options": dict(entry.options),
-            },
-            "state": entry.state.value,
-            "last_attempt": None,
-        }
+    """Return what every meter is configured to do and how it last went.
 
-    state = entry.runtime_data.data
+    The meters are listed without their titles, which carry the whole EAN.
+    """
+    # runtime_data only exists while the entry is loaded, and the half that
+    # matters when setup failed is the configuration itself.
+    loaded = entry.state is ConfigEntryState.LOADED
+    coordinators = entry.runtime_data.coordinators if loaded else {}
     return {
-        "entry": {
-            "data": async_redact_data(dict(entry.data), TO_REDACT),
-            "options": dict(entry.options),
-        },
-        "last_attempt": {
-            "attempted": state.attempted.isoformat() if state.attempted else None,
-            "succeeded": state.succeeded.isoformat() if state.succeeded else None,
-            "submitted_date": (
-                state.submitted_date.isoformat() if state.submitted_date else None
-            ),
-            "values": state.values,
-            "error": state.error,
-            # Without these a run that sent nothing looks exactly like one that
-            # sent everything: the timestamps and the values are carried over
-            # from the last success either way.
-            "skipped": state.skipped,
-            "nothing_mapped": state.nothing_mapped,
-            "failures": state.failures,
-        },
+        "entry": {"data": async_redact_data(dict(entry.data), TO_REDACT)},
+        "state": entry.state.value,
+        "meters": [
+            {
+                "data": async_redact_data(dict(subentry.data), TO_REDACT),
+                "last_attempt": (
+                    _last_attempt(coordinators[subentry_id].data)
+                    if subentry_id in coordinators
+                    else None
+                ),
+            }
+            for subentry_id, subentry in entry.subentries.items()
+        ],
     }

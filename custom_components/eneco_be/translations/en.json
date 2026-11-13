@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Eneco Belgium",
-        "description": "Sign in with the account you use on eneco.be.",
+        "description": "Sign in with the account you use on eneco.be, then pick the first meter. Its other meters are added to the same login afterwards, with Add meter.",
         "data": {
           "email": "Email",
           "password": "Password"
@@ -66,36 +66,74 @@
       "cannot_connect": "Could not reach the Eneco portal."
     },
     "abort": {
-      "already_configured": "This meter is already set up.",
-      "already_in_progress": "This meter is already being set up.",
+      "accounts_missing": "This login cannot reach the account of every meter set up on it. Remove those meters first, or sign in with the login they belong to.",
+      "already_configured": "This login is already set up. Add its other meters from its entry, with Add meter.",
+      "already_in_progress": "This login is already being set up.",
       "cannot_connect": "Could not reach the Eneco portal: {error}",
+      "meters_configured": "Every meter at this address is already set up.",
       "no_addresses": "This account has no address with an active contract.",
       "no_meters": "There is no electricity or gas meter at this address.",
       "no_registers": "Eneco does not accept meter readings for this meter.",
       "reauth_successful": "Signed in again.",
-      "reconfigure_successful": "Configuration updated.",
-      "unique_id_mismatch": "That is a different meter than the one this entry was set up for."
+      "reconfigure_successful": "Configuration updated."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Meter readings",
-        "description": "Choose the sensor that holds the meter index for each register, and when to submit. Leave a register empty and it is simply not submitted, which is what a meter you still read by hand needs.",
-        "data": {
-          "offtake_single": "Consumption",
-          "offtake_day": "Consumption, day",
-          "offtake_night": "Consumption, night",
-          "offtake_exclusive_night": "Consumption, exclusive night",
-          "injection_single": "Injection",
-          "injection_day": "Injection, day",
-          "injection_night": "Injection, night",
-          "injection_exclusive_night": "Injection, exclusive night",
-          "submit_time": "Submit at"
+  "config_subentries": {
+    "meter": {
+      "initiate_flow": {
+        "user": "Add meter",
+        "reconfigure": "Change sources"
+      },
+      "entry_type": "Meter",
+      "step": {
+        "account": {
+          "title": "Account",
+          "description": "Choose the account whose meter readings you want to submit.",
+          "data": {
+            "account": "Account"
+          }
         },
-        "data_description": {
-          "submit_time": "Local time of day at which the readings are sent, once a day."
+        "address": {
+          "title": "Address",
+          "description": "Choose the delivery address of the meter.",
+          "data": {
+            "address": "Address"
+          }
+        },
+        "meter": {
+          "title": "Meter",
+          "description": "Choose the meter to submit readings for.",
+          "data": {
+            "ean": "EAN"
+          }
+        },
+        "sources": {
+          "title": "Meter readings",
+          "description": "Choose the sensor that holds the meter index for each register of EAN {ean}. Every sensor must report a total index, not a rate. Leave a register empty and it is simply not submitted, which is what a meter you still read by hand needs.",
+          "data": {
+            "offtake_single": "Consumption",
+            "offtake_day": "Consumption, day",
+            "offtake_night": "Consumption, night",
+            "offtake_exclusive_night": "Consumption, exclusive night",
+            "injection_single": "Injection",
+            "injection_day": "Injection, day",
+            "injection_night": "Injection, night",
+            "injection_exclusive_night": "Injection, exclusive night",
+            "submit_time": "Submit at"
+          },
+          "data_description": {
+            "submit_time": "Local time of day at which the readings are sent, once a day. A new meter is offered a time picked at random from the late evening, so that not every household reaches Eneco at the same moment."
+          }
         }
+      },
+      "abort": {
+        "cannot_connect": "Could not reach the Eneco portal: {error}",
+        "entry_not_loaded": "The login is not loaded. Fix it or enable it first.",
+        "meters_configured": "Every meter at this address is already set up.",
+        "no_addresses": "This account has no address with an active contract.",
+        "no_meters": "There is no electricity or gas meter at this address.",
+        "no_registers": "Eneco does not accept meter readings for this meter.",
+        "reconfigure_successful": "Configuration updated."
       }
     }
   },

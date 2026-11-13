@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Eneco Belgien",
-        "description": "Melde dich mit dem Konto an, das du auf eneco.be verwendest.",
+        "description": "Melden Sie sich mit dem Konto an, das Sie auf eneco.be verwenden, und wählen Sie dann den ersten Zähler. Die weiteren Zähler fügen Sie danach demselben Login hinzu, mit Zähler hinzufügen.",
         "data": {
           "email": "E-Mail-Adresse",
           "password": "Passwort"
@@ -66,36 +66,74 @@
       "cannot_connect": "Das Eneco Portal war nicht erreichbar."
     },
     "abort": {
-      "already_configured": "Dieser Zähler ist bereits eingerichtet.",
-      "already_in_progress": "Dieser Zähler wird bereits eingerichtet.",
+      "accounts_missing": "Dieser Login erreicht nicht das Konto jedes eingerichteten Zählers. Entfernen Sie diese Zähler zuerst, oder melden Sie sich mit dem Login an, zu dem sie gehören.",
+      "already_configured": "Dieser Login ist bereits eingerichtet. Fügen Sie die weiteren Zähler über seinen Eintrag hinzu, mit Zähler hinzufügen.",
+      "already_in_progress": "Dieser Login wird bereits eingerichtet.",
       "cannot_connect": "Das Eneco Portal war nicht erreichbar: {error}",
+      "meters_configured": "Jeder Zähler an dieser Adresse ist bereits eingerichtet.",
       "no_addresses": "Dieses Konto hat keine Adresse mit einem laufenden Vertrag.",
       "no_meters": "An dieser Adresse gibt es weder einen Strom- noch einen Gaszähler.",
       "no_registers": "Eneco nimmt für diesen Zähler keine Zählerstände entgegen.",
       "reauth_successful": "Erneut angemeldet.",
-      "reconfigure_successful": "Konfiguration aktualisiert.",
-      "unique_id_mismatch": "Das ist ein anderer Zähler als der, für den dieser Eintrag eingerichtet wurde."
+      "reconfigure_successful": "Konfiguration aktualisiert."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Zählerstände",
-        "description": "Wähle den Sensor mit dem Zählerstand für jedes Register und die Uhrzeit der Übermittlung. Lässt du ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den du noch von Hand abliest.",
-        "data": {
-          "offtake_single": "Bezug",
-          "offtake_day": "Bezug, Tag",
-          "offtake_night": "Bezug, Nacht",
-          "offtake_exclusive_night": "Bezug, ausschließlich Nacht",
-          "injection_single": "Einspeisung",
-          "injection_day": "Einspeisung, Tag",
-          "injection_night": "Einspeisung, Nacht",
-          "injection_exclusive_night": "Einspeisung, ausschließlich Nacht",
-          "submit_time": "Übermitteln um"
+  "config_subentries": {
+    "meter": {
+      "initiate_flow": {
+        "user": "Zähler hinzufügen",
+        "reconfigure": "Quellen ändern"
+      },
+      "entry_type": "Zähler",
+      "step": {
+        "account": {
+          "title": "Konto",
+          "description": "Wähle das Konto, dessen Zählerstände du übermitteln willst.",
+          "data": {
+            "account": "Konto"
+          }
         },
-        "data_description": {
-          "submit_time": "Ortszeit, zu der die Zählerstände einmal täglich gesendet werden."
+        "address": {
+          "title": "Adresse",
+          "description": "Wähle die Lieferadresse des Zählers.",
+          "data": {
+            "address": "Adresse"
+          }
+        },
+        "meter": {
+          "title": "Zähler",
+          "description": "Wähle den Zähler, dessen Stände übermittelt werden sollen.",
+          "data": {
+            "ean": "EAN"
+          }
+        },
+        "sources": {
+          "title": "Zählerstände",
+          "description": "Wähle den Sensor mit dem Zählerstand für jedes Register der EAN {ean}. Jeder Sensor muss einen Gesamtstand liefern, keinen Momentanwert. Lässt du ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den du noch von Hand abliest.",
+          "data": {
+            "offtake_single": "Bezug",
+            "offtake_day": "Bezug, Tag",
+            "offtake_night": "Bezug, Nacht",
+            "offtake_exclusive_night": "Bezug, ausschließlich Nacht",
+            "injection_single": "Einspeisung",
+            "injection_day": "Einspeisung, Tag",
+            "injection_night": "Einspeisung, Nacht",
+            "injection_exclusive_night": "Einspeisung, ausschließlich Nacht",
+            "submit_time": "Übermitteln um"
+          },
+          "data_description": {
+            "submit_time": "Ortszeit, zu der die Zählerstände einmal täglich gesendet werden. Einem neuen Zähler wird eine zufällig aus dem späten Abend gewählte Zeit vorgeschlagen, damit nicht alle Haushalte Eneco im selben Moment erreichen."
+          }
         }
+      },
+      "abort": {
+        "cannot_connect": "Das Eneco Portal war nicht erreichbar: {error}",
+        "entry_not_loaded": "Der Login ist nicht geladen. Beheben oder aktivieren Sie ihn zuerst.",
+        "meters_configured": "Jeder Zähler an dieser Adresse ist bereits eingerichtet.",
+        "no_addresses": "Dieses Konto hat keine Adresse mit einem laufenden Vertrag.",
+        "no_meters": "An dieser Adresse gibt es weder einen Strom- noch einen Gaszähler.",
+        "no_registers": "Eneco nimmt für diesen Zähler keine Zählerstände entgegen.",
+        "reconfigure_successful": "Konfiguration aktualisiert."
       }
     }
   },

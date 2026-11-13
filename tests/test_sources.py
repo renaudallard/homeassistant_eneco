@@ -31,8 +31,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.eneco_be.const import (
-    CONF_ACCOUNT,
-    CONF_ADDRESS,
     CONF_EAN,
     CONF_ENERGY_TYPE,
     CONF_REGISTERS,
@@ -51,7 +49,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
 
-from .conftest import ACCOUNT, ADDRESS, API, EMAIL, PASSWORD, mock_discovery, mock_login
+from .conftest import (
+    ACCOUNT,
+    API,
+    EMAIL,
+    PASSWORD,
+    coordinator_of,
+    login_entry,
+    mock_discovery,
+    mock_login,
+    update_meter,
+)
 from .test_init import (
     STATUS,
     press,
@@ -69,22 +77,16 @@ GAS_EAN = "541449000000000009"
 GAS_BUTTON = f"button.eneco_{GAS_EAN}_submit_readings"
 
 
-def gas_entry(**options: Any) -> MockConfigEntry:
-    """Return an entry for a single register gas meter."""
-    return MockConfigEntry(
-        domain=DOMAIN,
-        title=f"Eneco {GAS_EAN}",
-        unique_id=GAS_EAN,
-        data={
-            CONF_EMAIL: EMAIL,
-            CONF_PASSWORD: PASSWORD,
-            CONF_ACCOUNT: ACCOUNT,
-            CONF_ADDRESS: ADDRESS,
+def gas_entry(**changes: Any) -> MockConfigEntry:
+    """Return a login whose meter is a single register gas meter."""
+    return login_entry(
+        **{
             CONF_EAN: GAS_EAN,
             CONF_ENERGY_TYPE: "Gas",
             CONF_REGISTERS: ["offtake_single"],
-        },
-        options={CONF_SUBMIT_TIME: "23:50:00", **options},
+            CONF_SOURCES: {},
+            **changes,
+        }
     )
 
 
@@ -123,9 +125,10 @@ async def test_a_gas_meter_can_be_configured(
         {"offtake_single": "sensor.gas", CONF_SUBMIT_TIME: "23:50:00"},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_ENERGY_TYPE] == "Gas"
-    assert result["data"][CONF_EAN] == GAS_EAN
-    assert result["data"][CONF_REGISTERS] == ["offtake_single"]
+    (meter,) = result["result"].subentries.values()
+    assert meter.data[CONF_ENERGY_TYPE] == "Gas"
+    assert meter.data[CONF_EAN] == GAS_EAN
+    assert meter.data[CONF_REGISTERS] == ["offtake_single"]
 
 
 async def test_gas_is_read_and_sent_in_cubic_metres(
@@ -185,14 +188,14 @@ async def test_a_register_without_a_sensor_is_not_submitted(
     """A meter can be readable for some registers and not others."""
     set_sources(hass)
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
+    update_meter(
+        hass,
         config_entry,
-        options={
-            **config_entry.options,
+        **{
             CONF_SOURCES: {
                 "offtake_day": "sensor.import_day",
                 "offtake_night": "sensor.import_night",
-            },
+            }
         },
     )
     await setup_entry(hass, config_entry)
@@ -211,16 +214,14 @@ async def test_nothing_mapped_submits_nothing(
 ) -> None:
     """A meter still read by hand has no sensor at all, and that is fine."""
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, options={**config_entry.options, CONF_SOURCES: {}}
-    )
+    update_meter(hass, config_entry, **{CONF_SOURCES: {}})
     await setup_entry(hass, config_entry)
     await press(hass)
 
     assert submissions(mock_portal) == []
     assert state_of(hass, STATUS).state == "nothing_to_submit"
     # Nothing to do is not a failure, so it must not raise a repair.
-    assert config_entry.runtime_data.data.failures == 0
+    assert coordinator_of(config_entry).data.failures == 0
 
 
 async def test_mapped_registers_are_still_all_or_nothing(

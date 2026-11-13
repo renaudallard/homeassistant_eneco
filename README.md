@@ -60,9 +60,13 @@ consumption night, injection day, injection night); a gas meter has one.
 
 **Every register is optional.** Leave one without a sensor and it is simply not
 part of the submission, which is what you want when a meter is still read by
-hand, or when only some of its registers reach Home Assistant. Set up one entry
-per meter: an electricity meter and a gas meter are two entries, and you can add
-either without the other.
+hand, or when only some of its registers reach Home Assistant.
+
+**One entry per login, one meter under it per connection.** The entry holds
+your My Eneco credentials and signs in once; each electricity or gas meter it
+submits for sits under it, with its own device, sources and time. You can have
+either kind without the other, and add the second one later without signing in
+again.
 
 Among the registers you *did* map, a submission is all or nothing. If one of
 those sensors is unavailable or does not report a usable number, nothing is sent
@@ -97,7 +101,15 @@ one into a `custom_components/eneco_be` you make yourself.
    to submit. The time offered is drawn at random from between 22:30 and 23:50,
    so that the households running this do not all reach Eneco in the same
    second. Change it to whatever suits you; it is only a suggestion, and only a
-   setup that has not chosen one is given it.
+   meter that has not chosen one is given it.
+
+That sets up the login with its first meter. To add the other one, a gas meter
+next to an electricity meter for instance, open the integration page and choose
+*Add meter* on the entry. It goes through the same steps from the account on,
+using the login the entry is already signed in with, and only offers meters
+that are not set up yet: an address with one meter of each kind goes straight
+to the one that is missing. Adding the integration a second time with the same
+login is refused and points you there instead.
 
 The sensor for a register must be a *total* index, the same number you would
 read off the meter, not a rate or a daily delta. The picker lists only sensors
@@ -111,7 +123,7 @@ the same kind are converted automatically.
 
 ## Entities
 
-Every entry creates one device, named after the meter's EAN, with:
+Every meter creates one device, named after its EAN, with:
 
 | Entity | Purpose |
 | --- | --- |
@@ -127,18 +139,22 @@ register has a sensor, or `failed` with the reason in its `last_error`
 attribute. Three failures in a row also raise a repair card under
 *Settings > System > Repairs*, naming the meter by the last four digits of its
 EAN. It clears on the next attempt that does not fail, and it survives a
-restart. Disabling the entry takes it down and enabling it again brings it
-back; removing the entry takes it away for good.
+restart. Disabling the entry takes the cards of its meters down and enabling it
+again brings them back; removing a meter, or the entry, takes them away for
+good.
 
 Press the button from an automation if you want a different schedule than the
 built-in daily one. A press that cannot submit fails the service call with the
 reason, so a script notices; a press on a day that is already done, or with no
 register mapped, is a no op rather than an error.
 
-Use *Download diagnostics* on the device to see what was last sent, whether the
-last run was skipped or found nothing mapped, and how many attempts have failed
-in a row. Your email address, password, account number, EAN and address are left
-out of it, and the account number is kept out of the log as well.
+Use *Download diagnostics* on the entry to see, for every meter, what was last
+sent, whether the last run was skipped or found nothing mapped, and how many
+attempts have failed in a row. Your email address, password, account number, EAN and address are left
+out of it, and the account number is kept out of the log as well. The entry is
+titled with a masked form of your email address, such as `s•••@e•••.com`,
+because Home Assistant writes entry titles into its own log lines; rename it if
+you prefer something else.
 
 What the last attempt did is remembered across restarts, so the sensors carry on
 reporting the real last submission rather than resetting, and a day that was
@@ -159,15 +175,27 @@ page. The schedule is rearmed as soon as you change it, and
 `sensor.*_next_submission` updates to match.
 
 To change **which sensor feeds which register**, open the integration page,
-click the three dots on the entry and choose *Configure*. The form comes up
-prefilled with your current mapping.
+click the three dots on the meter and choose *Change sources*. The registers are
+asked of Eneco again, so a replaced meter shows the ones it has now, and the
+form comes up prefilled with your current mapping and time. Neither this nor
+moving the time signs in again.
 
-*Reconfigure*, in the same menu, walks the whole flow again including the
-credentials, which is what you want after a meter change, or if the email
-address you sign in to Eneco with has changed. If Eneco stops accepting the
-stored password, Home Assistant raises a reauthentication prompt by itself;
-that one asks for the password alone, because it is there to re-establish the
-account the entry already belongs to.
+*Reconfigure*, on the entry, changes the credentials, which is what you want if
+the email address you sign in to Eneco with has changed. The meters stay as
+they are, so the new login has to reach the account of every one of them. If
+Eneco stops accepting the stored password, Home Assistant raises a
+reauthentication prompt by itself; that one asks for the password alone,
+because it is there to re-establish the login the entry already belongs to.
+
+## Upgrading from 0.3 or earlier
+
+Until 0.3.2 every meter was an entry of its own, signing in on its own. The
+first start of 0.4.0 folds the entries of each login into one, with a meter
+under it for each, and signs that login in once. Entity ids, history, the
+submission state and any repair card carry over; nothing needs setting up
+again. An entry you had disabled stays disabled and on its own, so a meter you
+switched off does not start submitting. The change cannot be undone by going
+back to an older release, so take a backup first if you might want to.
 
 ## Limitations
 
@@ -187,9 +215,9 @@ account the entry already belongs to.
 - **A tariff period this integration does not know is skipped.** The portal
   has no versioning, so if Eneco ever adds one it is left out of the form and
   out of the submission, and the registers alongside it carry on working. The
-  Home Assistant log names it. The register list is settled when the entry is set
-  up and stored with it, so one that was skipped, or one Eneco adds later, reaches
-  the form only after *Reconfigure*.
+  Home Assistant log names it. The register list is settled when the meter is
+  set up and stored with it, so one that was skipped, or one Eneco adds later,
+  reaches the form only after *Change sources*.
 - Your credentials are stored in the Home Assistant configuration, like every
   other cloud integration.
 - **A submission time between 02:00 and 03:00 is affected by daylight saving.**
@@ -210,7 +238,8 @@ the REST API wants.
 Once signed in, submitting is JSON throughout: every call goes to the same REST
 endpoints the website uses. The sign in itself is neither, and the token lives
 only in memory, so the first submission after a restart posts a form to NextAuth
-and follows Okta's redirect chain before any of that. Setting up an entry has
+and follows Okta's redirect chain before any of that. Every meter of a login
+shares that one sign in, and only one runs at a time. Setting up a meter has
 one more exception: no endpoint exposes the list of accounts you may act on,
 which reaches the browser only inside the `__NEXT_DATA__` payload the dashboard
 renders, so that list is read out of the page.
@@ -248,8 +277,8 @@ ships against the previous version of the language to keep it that way.
 `icons.json` and the code in step.
 
 `tools/check-portal.py` signs in to a real account and reads back the discovery
-chain, then the registers and recent readings of every meter it would set up an
-entry for, gas as well as electricity, without submitting anything. The portal
+chain, then the registers and recent readings of every meter it would set up,
+gas as well as electricity, without submitting anything. The portal
 has no public API and no versioning, so when something stops working this is
 what tells you which endpoint moved:
 
