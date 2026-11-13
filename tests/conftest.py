@@ -92,8 +92,17 @@ def dashboard_page(accounts: list[dict[str, str]]) -> str:
     )
 
 
-def mock_login(mocker: AiohttpClientMocker, *, accounts: list[dict[str, str]]) -> None:
-    """Register the whole sign in sequence."""
+def mock_login(
+    mocker: AiohttpClientMocker,
+    *,
+    accounts: list[dict[str, str]],
+    access_token: Any = None,
+) -> None:
+    """Register the whole sign in sequence.
+
+    ``access_token`` is a side effect answering the session endpoint, for a
+    test that needs each sign in to hand out a different token.
+    """
     mocker.post(
         "https://login.eneco.be/api/v1/authn",
         json={"status": "SUCCESS", "sessionToken": "one-shot"},
@@ -107,7 +116,11 @@ def mock_login(mocker: AiohttpClientMocker, *, accounts: list[dict[str, str]]) -
         re.compile(r"https://login\.eneco\.be/login/sessionCookieRedirect.*"),
         text="",
     )
-    mocker.get("https://eneco.be/api/auth/session/", json={"accessToken": "bearer"})
+    mocker.get(
+        "https://eneco.be/api/auth/session/",
+        json={"accessToken": "bearer"},
+        side_effect=access_token,
+    )
     mocker.get("https://eneco.be/fr/my-eneco/dashboard/", text=dashboard_page(accounts))
 
 

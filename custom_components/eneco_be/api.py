@@ -29,6 +29,7 @@ NextAuth and then talks to a REST API with the resulting bearer token. See
 docs/API.md for how the endpoints and payloads below were established.
 """
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date
 from http import HTTPStatus
@@ -275,6 +276,12 @@ class EnecoClient:
 
     The caller owns ``session`` and it must keep cookies, because the whole
     login is carried by NextAuth and Okta cookies.
+
+    One client serves every meter of a login, so calls can overlap. A sign in
+    is a chain of requests whose cookies build on each other, and two of them
+    interleaved on the same cookie jar would leave neither signed in. Only one
+    runs at a time, and a call that finds its token already renewed by
+    another uses the new one rather than signing in again.
     """
 
     def __init__(
@@ -285,6 +292,7 @@ class EnecoClient:
         self._email = email
         self._password = password
         self._token: str | None = None
+        self._login_lock = asyncio.Lock()
 
     async def async_login(self) -> None:
         """Sign in and obtain a bearer token.
@@ -292,6 +300,19 @@ class EnecoClient:
         Raises EnecoAuthError when the credentials are rejected or the account
         needs a step the portal only offers in a browser, such as MFA.
         """
+        async with self._login_lock:
+            await self._async_login_locked()
+
+    async def _async_renew_token(self, stale: str | None) -> None:
+        """Sign in again, unless another call already replaced ``stale``."""
+        async with self._login_lock:
+            if self._token is not None and self._token != stale:
+                return
+            self._token = None
+            await self._async_login_locked()
+
+    async def _async_login_locked(self) -> None:
+        """Run the sign in chain; the caller holds the lock."""
         session_token = await self._async_okta_session_token()
         authorize_url = await self._async_start_oidc_flow()
         await self._async_redeem_session_token(session_token, authorize_url)
@@ -612,13 +633,13 @@ class EnecoClient:
     async def _async_api(self, method: str, path: str, **kwargs: Any) -> Any:
         """Call the REST API, signing in again once if the token expired."""
         if self._token is None:
-            await self.async_login()
+            await self._async_renew_token(None)
 
+        token = self._token
         payload, status = await self._async_api_once(method, path, **kwargs)
         if status == HTTPStatus.UNAUTHORIZED:
             _LOGGER.debug("Token rejected, signing in again")
-            self._token = None
-            await self.async_login()
+            await self._async_renew_token(token)
             payload, status = await self._async_api_once(method, path, **kwargs)
 
         if status == HTTPStatus.UNAUTHORIZED:

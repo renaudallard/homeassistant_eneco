@@ -24,6 +24,7 @@
 
 """Tests for the portal client itself."""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from datetime import date
 from http import HTTPStatus
@@ -348,3 +349,47 @@ async def test_a_reading_whose_index_is_not_a_number(
     readings = await api.async_get_readings(ACCOUNT, EAN)
 
     assert readings[0].values == {"offtake_night": 42}
+
+
+async def test_meters_sharing_a_client_sign_in_once(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession
+) -> None:
+    """Two calls refused on the same token renew it once, not twice over.
+
+    A login serves every meter of the account, so a gas and an electricity
+    submission can find the token expired at the same moment. Both signing in
+    would interleave two Okta flows on one cookie jar.
+    """
+    issued: list[str] = []
+
+    async def token(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        issued.append(f"t{len(issued) + 1}")
+        await asyncio.sleep(0)
+        return AiohttpClientMockResponse(method, url, json={"accessToken": issued[-1]})
+
+    async def answer(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        # Recorded just before this runs, and nothing awaits in between.
+        refused = aioclient_mock.mock_calls[-1][3]["Authorization"] == "Bearer t1"
+        await asyncio.sleep(0)
+        if refused:
+            return AiohttpClientMockResponse(
+                method, url, status=HTTPStatus.UNAUTHORIZED, json={}
+            )
+        return AiohttpClientMockResponse(method, url, json={"data": {"addresses": []}})
+
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+        access_token=token,
+    )
+    aioclient_mock.get(
+        f"{API}/accounts/{ACCOUNT}/delivery-addresses", side_effect=answer
+    )
+
+    api = client(session)
+    await api.async_login()
+    first, second = await asyncio.gather(
+        api.async_get_addresses(ACCOUNT), api.async_get_addresses(ACCOUNT)
+    )
+    assert first == second == []
+    assert issued == ["t1", "t2"]
