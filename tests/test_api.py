@@ -47,7 +47,16 @@ from custom_components.eneco_be.api import (
 )
 from homeassistant.core import HomeAssistant
 
-from .conftest import ACCOUNT, API, EAN, EMAIL, METER_NUMBER, PASSWORD, mock_login
+from .conftest import (
+    ACCOUNT,
+    API,
+    EAN,
+    EMAIL,
+    METER_NUMBER,
+    PASSWORD,
+    dashboard_page,
+    mock_login,
+)
 
 TODAY = date(2026, 8, 21)
 
@@ -114,6 +123,42 @@ async def test_dashboard_without_accounts(
     await api.async_login()
     with pytest.raises(EnecoAuthError, match="session may be gone"):
         await api.async_get_accounts()
+
+
+async def test_a_lapsed_session_is_signed_in_again_for_the_accounts(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession
+) -> None:
+    """Adding a meter can come weeks after the client signed in.
+
+    By then the web session can have lapsed, and the dashboard comes back as
+    a page that never renders. That is worth one more sign in, not an abort.
+    """
+    pages = ["<html>login</html>"]
+
+    async def dashboard(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        body = (
+            pages.pop(0)
+            if pages
+            else dashboard_page(
+                [{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}]
+            )
+        )
+        return AiohttpClientMockResponse(method, url, text=body)
+
+    aioclient_mock.get("https://eneco.be/fr/my-eneco/dashboard/", side_effect=dashboard)
+    mock_login(aioclient_mock, accounts=[])
+
+    api = client(session)
+    await api.async_login()
+    accounts = await api.async_get_accounts()
+
+    assert [a.number for a in accounts] == [ACCOUNT]
+    sign_ins = [
+        url
+        for method, url, _, _ in aioclient_mock.mock_calls
+        if method.lower() == "post" and str(url).endswith("/api/v1/authn")
+    ]
+    assert len(sign_ins) == 2
 
 
 async def test_accounts_are_parsed(

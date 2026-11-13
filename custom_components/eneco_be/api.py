@@ -95,6 +95,10 @@ class EnecoAuthError(EnecoError):
     """The credentials were rejected or the session could not be established."""
 
 
+class _SessionGoneError(EnecoAuthError):
+    """The web session behind the dashboard is no longer signed in."""
+
+
 class EnecoValidationError(EnecoError):
     """The portal rejected a meter reading.
 
@@ -438,11 +442,24 @@ class EnecoClient:
             raise EnecoConnectionError(f"{url} did not answer with JSON") from err
 
     async def async_get_accounts(self) -> list[Account]:
-        """Return the accounts the user may act on.
+        """Return the accounts the user may act on, signing in again once.
 
         No REST endpoint exposes them; they travel in the NextAuth session and
-        are rendered into the dashboard page by getServerSideProps.
+        are rendered into the dashboard page by getServerSideProps. A client
+        kept for every meter of a login can be asked for them long after it
+        signed in, by which time that session may have lapsed, and a lapsed
+        session answers with a page that never renders.
         """
+        token = self._token
+        try:
+            return await self._async_read_accounts()
+        except _SessionGoneError:
+            _LOGGER.debug("Dashboard did not render, signing in again")
+        await self._async_renew_token(token)
+        return await self._async_read_accounts()
+
+    async def _async_read_accounts(self) -> list[Account]:
+        """Read the accounts off the dashboard page."""
         try:
             async with self._session.get(
                 DASHBOARD_URL, timeout=REQUEST_TIMEOUT
@@ -454,7 +471,7 @@ class EnecoClient:
 
         match = _NEXT_DATA_RE.search(body)
         if match is None:
-            raise EnecoAuthError(
+            raise _SessionGoneError(
                 "the dashboard did not render, the session may be gone"
             )
         try:
