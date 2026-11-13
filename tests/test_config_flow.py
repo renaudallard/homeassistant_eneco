@@ -179,8 +179,14 @@ async def test_pickers_shown_when_ambiguous(
         result["flow_id"], {CONF_ADDRESS: ADDRESS}
     )
     assert result["step_id"] == "meter"
-    # The gas connection is not offered.
+    # Gas is offered alongside electricity.
     assert result["data_schema"] is not None
+    options = result["data_schema"].schema[CONF_EAN].config["options"]
+    assert [option["value"] for option in options] == [
+        EAN,
+        "541449020702479999",
+        "541449020702470000",
+    ]
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_EAN: EAN}
