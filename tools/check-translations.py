@@ -55,17 +55,20 @@ def main() -> int:
         problems += [f"{path.name}: missing {k}" for k in sorted(expected - found)]
         problems += [f"{path.name}: unknown {k}" for k in sorted(found - expected)]
 
-    # The login flow, the meter subentry flow, and the steps both share.
-    flow, subentry = (
+    # The login flow, the meter subentry flow, the steps both share, and the
+    # options flow, in that order in config_flow.py.
+    code, options = (
         (BASE / "config_flow.py")
         .read_text(encoding="utf-8")
-        .split("\nclass MeterSubentryFlow(")
+        .split("\nclass EnecoOptionsFlow(")
     )
+    flow, subentry = code.split("\nclass MeterSubentryFlow(")
     shared = (BASE / "meter_flow.py").read_text(encoding="utf-8")
     meter = strings["config_subentries"]["meter"]
     flows = (
         ("config", flow + shared, strings["config"]),
         ("config_subentries.meter", subentry + shared, meter),
+        ("options", options, strings["options"]),
     )
 
     # The literals in the code, plus the ones Home Assistant aborts with on
@@ -80,6 +83,7 @@ def main() -> int:
             "reconfigure_successful",
         },
         "config_subentries.meter": {"reconfigure_successful"},
+        "options": set(),
     }
 
     for name, code, section in flows:
@@ -91,7 +95,7 @@ def main() -> int:
         aborts = set(re.findall(r'reason="([a-z_]+)"', code)) | implicit[name]
         problems += [
             f"{name}: abort reason {r} has no strings entry"
-            for r in sorted(aborts - set(section["abort"]))
+            for r in sorted(aborts - set(section.get("abort", {})))
         ]
         errors = set(re.findall(r'errors\["base"\] = "([a-z_]+)"', code))
         problems += [

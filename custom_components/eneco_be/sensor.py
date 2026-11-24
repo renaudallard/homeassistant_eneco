@@ -22,7 +22,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-"""Sensors reporting how the last submission went."""
+"""Sensors reporting how the last submission went, and the last bill."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -35,19 +35,25 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EnecoConfigEntry
+from .bills import BillCoordinator
 from .const import ATTR_LAST_ERROR, CONF_EAN
 from .coordinator import EnecoCoordinator, EnecoState
-from .entity import EnecoEntity
+from .entity import EnecoEntity, meter_device
 
 STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
 STATUS_ALREADY_SUBMITTED = "already_submitted"
 STATUS_NOTHING_TO_SUBMIT = "nothing_to_submit"
+
+LAST_BILL = "last_bill"
+TARIFF_CARD = "tariff_card"
 
 
 def _status(state: EnecoState) -> str:
@@ -106,12 +112,30 @@ async def async_setup_entry(
     entry: EnecoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the diagnostic sensors of every meter."""
+    """Set up the sensors of every meter, the bill ones only if asked for."""
+    bills = entry.runtime_data.bills
     for subentry_id, coordinator in entry.runtime_data.coordinators.items():
-        async_add_entities(
-            (EnecoSensor(coordinator, description) for description in SENSORS),
-            config_subentry_id=subentry_id,
-        )
+        entities: list[SensorEntity] = [
+            EnecoSensor(coordinator, description) for description in SENSORS
+        ]
+        if bills is not None:
+            entities += [
+                LastBillSensor(bills, subentry_id, coordinator.meter),
+                TariffCardSensor(bills, subentry_id, coordinator.meter),
+            ]
+        async_add_entities(entities, config_subentry_id=subentry_id)
+    if bills is None:
+        _remove_bill_sensors(hass, entry)
+
+
+@callback
+def _remove_bill_sensors(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
+    """Take the bill sensors away once reading bills is turned off."""
+    registry = er.async_get(hass)
+    suffixes = (f"_{LAST_BILL}", f"_{TARIFF_CARD}")
+    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if item.domain == "sensor" and item.unique_id.endswith(suffixes):
+            registry.async_remove(item.entity_id)
 
 
 class EnecoSensor(EnecoEntity, SensorEntity):
@@ -143,3 +167,103 @@ class EnecoSensor(EnecoEntity, SensorEntity):
         if self.entity_description.key != "status":
             return None
         return {ATTR_LAST_ERROR: self.coordinator.data.error}
+
+
+class BillSensor(CoordinatorEntity[BillCoordinator], SensorEntity):
+    """What the bill coordinator read for one meter.
+
+    Available as soon as one daily read went through for the meter, and
+    from then on even on a day the portal cannot be reached: the bill does
+    not change because it could not be fetched again.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self, coordinator: BillCoordinator, subentry_id: str, meter: Any, key: str
+    ) -> None:
+        """Bind the sensor to one meter."""
+        super().__init__(coordinator)
+        self._subentry_id = subentry_id
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{meter[CONF_EAN]}_{key}"
+        self._attr_device_info = meter_device(meter)
+
+    @property
+    def _read(self) -> dict[str, Any]:
+        """Return what was read for the meter."""
+        result: dict[str, Any] = self.coordinator.data.get(self._subentry_id, {})
+        return result
+
+    @property
+    @override
+    def available(self) -> bool:
+        """Return whether anything was ever read for the meter."""
+        return self._subentry_id in self.coordinator.data
+
+
+class LastBillSensor(BillSensor):
+    """The newest settlement bill: its total before VAT, and every line."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    # ISO 4217, as a monetary sensor wants it, not the € symbol.
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+    # A bill has dozens of lines, the same until the next one a year later.
+    _unrecorded_attributes = frozenset({"lines"})
+
+    def __init__(
+        self, coordinator: BillCoordinator, subentry_id: str, meter: Any
+    ) -> None:
+        """Bind the sensor to one meter."""
+        super().__init__(coordinator, subentry_id, meter, LAST_BILL)
+
+    @property
+    @override
+    def native_value(self) -> float | None:
+        """Return what the bill charged for the meter, before VAT."""
+        bill = self._read.get("bill")
+        return bill["total"] if bill else None
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return when and what the bill billed, and why a newer one was not read."""
+        bill = self._read.get("bill") or {}
+        return {
+            "invoice_type": bill.get("invoice_type"),
+            "issued": bill.get("issued"),
+            "period_start": bill.get("period_start"),
+            "period_end": bill.get("period_end"),
+            "lines": bill.get("lines", []),
+            ATTR_LAST_ERROR: self._read.get("error"),
+        }
+
+
+class TariffCardSensor(BillSensor):
+    """The version of the tariff card the meter's contract is billed on."""
+
+    def __init__(
+        self, coordinator: BillCoordinator, subentry_id: str, meter: Any
+    ) -> None:
+        """Bind the sensor to one meter."""
+        super().__init__(coordinator, subentry_id, meter, TARIFF_CARD)
+
+    @property
+    @override
+    def native_value(self) -> str | None:
+        """Return the card version, 012210 for the first issue of 2022-10."""
+        card = self._read.get("card")
+        return card["version"] if card else None
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the month the card is for, the product and the card itself."""
+        card = self._read.get("card") or {}
+        return {
+            "card_month": card.get("month"),
+            "product": card.get("product"),
+            "product_type": card.get("product_type"),
+            "urls": card.get("urls", {}),
+        }

@@ -43,6 +43,7 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryFlow,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
@@ -56,6 +57,7 @@ from .const import (
     CONF_ADDRESS,
     CONF_EAN,
     CONF_ENERGY_TYPE,
+    CONF_READ_BILLS,
     DOMAIN,
     SUBENTRY_METER,
 )
@@ -290,6 +292,13 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
         """Return the subentries a login can have: its meters."""
         return {SUBENTRY_METER: MeterSubentryFlow}
 
+    @staticmethod
+    @callback
+    @override
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the flow that turns the optional features on and off."""
+        return EnecoOptionsFlow()
+
 
 class MeterSubentryFlow(MeterSteps[SubentryFlowResult], ConfigSubentryFlow):
     """Add a meter to a login, or change what one submits and when.
@@ -356,4 +365,26 @@ class MeterSubentryFlow(MeterSteps[SubentryFlowResult], ConfigSubentryFlow):
             )
         return self.async_create_entry(
             title=title, data=meter, unique_id=meter[CONF_EAN]
+        )
+
+
+OPTIONS_SCHEMA = vol.Schema(
+    {vol.Required(CONF_READ_BILLS, default=False): selector.BooleanSelector()}
+)
+
+
+class EnecoOptionsFlow(OptionsFlow):
+    """Turn the reading of bills on or off for every meter of the login."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the options, and store them as they are submitted."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, self.config_entry.options
+            ),
         )

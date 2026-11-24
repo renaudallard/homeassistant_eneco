@@ -171,6 +171,75 @@ sent. Eneco does not record a reading of its own every day, so
 `MeterReading.AlreadyExists` only fires when a reading already exists for that
 exact date, not as a matter of course.
 
+### `GET /accounts/{accountNumber}/delivery-addresses/{addressIdentifier}/invoices`
+
+Read from the website's `InvoiceOverview.tsx` and confirmed against a live
+account on 2026-11-24. Query: `InvoiceFromDate` and `InvoiceToDate`
+(`yyyy-MM-dd`, a two year window was accepted) and `ShowActiveContractsOnly`.
+Without the dates every invoice since the contract began came back.
+
+```json
+{ "invoices": [ { "invoiceId": "", "invoiceType": "YearlyBill",
+                  "invoiceEnergyType": "Electricity|Gas|Both|Unknown",
+                  "invoiceStatus": "Paid", "invoiceDate": "2026-04-26T00:00:00+00:00",
+                  "invoicingPeriodStartDate": "", "invoicingPeriodEndDate": "",
+                  "dueAmount": -234.09, "paidAmount": 0, "openAmount": 0,
+                  "paymentMethod": "", "dueDate": "", "paymentDate": "",
+                  "billingAccountNumber": "", "billInserts": [],
+                  "documents": [ { "documentType": "Invoice", "url": "" } ] } ] }
+```
+
+`invoiceType` is one of `AdvanceInvoice`, `MonthlyBill`, `YearlyBill`,
+`ClosingBill`, `IntermediaryInvoice`, `CorrectionInvoice`, `Invoice` and
+`CollectionLetter`. `invoicingPeriodEndDate` is the day after the last day billed.
+The website offers for download the first document whose type is not
+`DynamicBill` or `SimplifiedBill`. No amount other than the totals above is in
+the JSON: what was billed, at what price, is only in the PDF.
+
+### Bill documents
+
+A document `url` points at the website, not the API:
+`https://eneco.be/api/my-eneco/download/<id>?accountNumber=...&fileId=...`. It
+answers 308 to add the trailing slash, then serves the PDF to the NextAuth
+session cookie; the bearer token is not needed. The bill is in the customer's
+language. Its billing lines are printed one per row, in blocks of energy,
+network and taxes, each followed by its subtotal, the three repeated for each
+part of a split period:
+
+```text
+Conso. simple 01/01/2026 - 31/01/2026 195,80 kWh 15,89 €c 6% € 31,11
+Tarif prosumer plafonnement 01/01/2026 - 31/01/2026 6% € -36,92
+Total coût de l'énergie Eneco (hors TVA) € 348,51
+```
+
+Electricity bills also carry the type of each line in hidden text after it,
+in Dutch whatever the bill's language (`ItemTypeSys: Distributie variabel (per kWh)`).
+Eight settlement bills from 2023 to 2026, electricity and gas, all read this
+way and added up to the totals they print.
+
+### `GET /accounts/{accountNumber}/contracts/{contractNumber}/products`
+
+`contractNumber` is the `contractId` of a service delivery point. Read from
+`ProductDetail.tsx`, confirmed live on 2026-11-24:
+
+```json
+{ "contractId": "", "type": "Electricity", "activeFrom": "2020-01-01",
+  "tariff": { "product": "ENECO_POWER_FLEX", "productType": "Variable",
+              "isSocialTariff": false,
+              "currentTariff": [ { "startDate": "2023-01-01T00:00:00+00:00",
+                                   "tariffCardByLanguage": [
+                                     { "language": "NL", "type": "Normal",
+                                       "tariffCard": "https://cdn.eneco.be/downloads/nl/general/tk/BC_032_012210_NL_ENECO_POWER_FLEX.pdf" } ] } ] },
+  "meter": { "meterType": "Digital", "service": "CompensatedOfftake",
+             "invoiceFrequency": { "current": "Yearly" } },
+  "tariffChartStartDate": "2023-01-01", "nextRenewalDate": "2027-01-01" }
+```
+
+`tariffCard` names the card the contract is billed on: `012210` is issue 01 of
+October 2022. A Flex contract seen on 2026-11-24 was still billed on that card,
+formula and fee, for January 2026, when the card Eneco published that month
+printed another.
+
 ### Enumerations
 
 | Type | Values |

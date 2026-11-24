@@ -42,6 +42,9 @@ CONF_REGISTERS: Final = "registers"
 CONF_SOURCES: Final = "sources"
 CONF_SUBMIT_TIME: Final = "submit_time"
 
+# Entry option: read the settlement bills and tariff cards. Off by default.
+CONF_READ_BILLS: Final = "read_bills"
+
 ELECTRICITY: Final = "Electricity"
 GAS: Final = "Gas"
 

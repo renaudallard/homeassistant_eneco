@@ -132,6 +132,8 @@ Every meter creates one device, named after its EAN, with:
 | `button.*_submit_readings` | Submit the readings now |
 | `sensor.*_last_submission` | When the last submission succeeded |
 | `sensor.*_status` | How the last attempt went, with the reason as an attribute |
+| `sensor.*_last_bill` | The newest bill, line by line, with [Read bills](#reading-bills) on |
+| `sensor.*_tariff_card` | The tariff card the contract is billed on, with [Read bills](#reading-bills) on |
 
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
 `already_submitted` when the date was already done, `nothing_to_submit` when no
@@ -150,7 +152,8 @@ register mapped, is a no op rather than an error.
 
 Use *Download diagnostics* on the entry to see, for every meter, what was last
 sent, whether the last run was skipped or found nothing mapped, and how many
-attempts have failed in a row. Your email address, password, account number, EAN and address are left
+attempts have failed in a row, and with *Read bills* on, which card and bill
+were read and why a newer one was not. Your email address, password, account number, EAN and address are left
 out of it, and the account number is kept out of the log as well. The entry is
 titled with a masked form of your email address, such as `s•••@e•••.com`,
 because Home Assistant writes entry titles into its own log lines; rename it if
@@ -186,6 +189,59 @@ they are, so the new login has to reach the account of every one of them. If
 Eneco stops accepting the stored password, Home Assistant raises a
 reauthentication prompt by itself; that one asks for the password alone,
 because it is there to re-establish the login the entry already belongs to.
+
+## Reading bills
+
+Off by default. To turn it on, click *Configure* on the entry and tick *Read
+bills*. Once a day the integration then lists your invoices and reads the
+newest settlement bill of each meter: a yearly, closing, intermediary or
+monthly bill, never an advance. It is the same PDF *My Eneco > Factures* offers
+for download, and its billing lines become two more sensors per meter:
+
+| Entity | Purpose |
+| --- | --- |
+| `sensor.*_last_bill` | What the bill charged for the meter before VAT, in EUR |
+| `sensor.*_tariff_card` | The version of the card the contract is billed on, such as `012210` |
+
+`sensor.*_last_bill` has the bill's `invoice_type`, `issued`, `period_start` and
+`period_end`, and a `lines` attribute listing every billed line:
+
+```yaml
+- section: energy        # energy, network or taxes, as the bill groups them
+  label: Conso. simple
+  code: Energiecomponent ElectricityAplusTH   # printed on electricity bills only
+  start: "2026-01-01"
+  end: "2026-01-31"
+  quantity: 195.8
+  unit: kWh              # kWh or year, or the bill's own word otherwise
+  unit_price: 0.1589     # EUR per unit, before VAT
+  vat: 0.06
+  total: 31.11           # EUR, before VAT
+```
+
+`sensor.*_tariff_card` has the month of that card in `card_month` (`2022-10`
+for `012210`), the `product` and `product_type` Eneco reports, and the card's
+`urls` by language. On a variable contract that card can be years older than
+the one Eneco publishes this month, and it is the one the bill is priced on.
+
+- **Read once.** A bill is downloaded once; the daily run only lists the
+  invoices again. What was read is kept across restarts, so a day the portal
+  is down still shows the last bill, with the reason in `last_error`.
+- **All or nothing.** Only a bill printing the meter's own EAN is taken, and
+  only whole: every block of lines has to add up to the subtotal printed under
+  it. A bill that does not, or that covers more than one meter, is refused
+  rather than showing figures that may be wrong. The sensor then shows the
+  bill before it, and `last_error` names the one refused; its dates say which
+  bill you are looking at. A refused bill is not fetched again, one that would
+  not download is tried again the next day.
+- **Private.** The PDF is fetched from eneco.be with the login's own session,
+  read inside Home Assistant and sent nowhere else. The `lines` attribute is
+  not written to the history.
+- **Seen in French so far.** Only the shape of a line is relied on, not its
+  wording, but no bill in Dutch or German has been read yet. If one is
+  refused, please open an issue with its `last_error`.
+
+Turning the option off removes the two sensors and what was read.
 
 ## Upgrading from 0.3 or earlier
 
@@ -247,6 +303,10 @@ renders, so that list is read out of the page.
 Each submission first asks the portal for the meter's registers, because the
 website sends the meter number they report along with the readings. Asking every
 time rather than storing it means a replaced meter is picked up by itself.
+
+With *Read bills* on, the invoice list and the contract's product come from the
+same REST API, and the bill itself from the website route that serves it to a
+signed in browser. The text of the PDF is read with pypdf.
 
 ## Development
 

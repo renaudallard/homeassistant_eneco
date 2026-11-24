@@ -3,5 +3,7 @@
 # the two in step when bumping either.
 homeassistant==2026.8.2
 mypy==2.3.1
+# What the manifest requires, at the version Home Assistant installs today.
+pypdf==7.0.1
 pytest-homeassistant-custom-component==0.13.356
 ruff==0.16.3

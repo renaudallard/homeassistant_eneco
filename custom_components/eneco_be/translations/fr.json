@@ -137,6 +137,20 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "description": "Une fois par jour, lire la dernière facture de décompte de chaque compteur de ce compte, ainsi que la carte tarifaire sur laquelle son contrat est facturé. Désactivé par défaut. La facture est téléchargée depuis My Eneco et lue ici ; rien n'est envoyé ailleurs.",
+        "data": {
+          "read_bills": "Lire les factures"
+        },
+        "data_description": {
+          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture, avec chaque ligne facturée, et un capteur Carte tarifaire."
+        }
+      }
+    }
+  },
   "entity": {
     "button": {
       "submit": {
@@ -159,6 +173,12 @@
       },
       "next_submission": {
         "name": "Prochaine transmission"
+      },
+      "last_bill": {
+        "name": "Dernière facture"
+      },
+      "tariff_card": {
+        "name": "Carte tarifaire"
       }
     },
     "time": {

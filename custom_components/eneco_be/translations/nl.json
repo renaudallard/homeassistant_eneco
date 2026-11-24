@@ -137,6 +137,20 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opties",
+        "description": "Eén keer per dag de nieuwste afrekening van elke meter van deze login lezen, en de tariefkaart waarop het contract wordt gefactureerd. Standaard uit. De factuur wordt van My Eneco gedownload en hier gelezen; er wordt niets elders naartoe gestuurd.",
+        "data": {
+          "read_bills": "Facturen lezen"
+        },
+        "data_description": {
+          "read_bills": "Voegt aan elke meter een sensor Laatste factuur toe, met elke gefactureerde lijn, en een sensor Tariefkaart."
+        }
+      }
+    }
+  },
   "entity": {
     "button": {
       "submit": {
@@ -159,6 +173,12 @@
       },
       "next_submission": {
         "name": "Volgende doorgave"
+      },
+      "last_bill": {
+        "name": "Laatste factuur"
+      },
+      "tariff_card": {
+        "name": "Tariefkaart"
       }
     },
     "time": {

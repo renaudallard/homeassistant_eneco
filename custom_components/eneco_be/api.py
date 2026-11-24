@@ -39,6 +39,7 @@ import re
 from typing import Any, Final
 
 import aiohttp
+from yarl import URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +60,16 @@ _NEXT_DATA_RE: Final = re.compile(
 )
 
 _ACCOUNT_RE: Final = re.compile(r"/accounts/[^/]+")
+
+# A bill is a few hundred kilobytes; anything far larger is not one.
+MAX_DOCUMENT_BYTES: Final = 10 * 1024 * 1024
+
+_MAX_REDIRECTS: Final = 3
+_REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
+_SIGNED_OUT: Final = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN})
+
+# The documents the website offers that are not the bill itself.
+_NOT_THE_BILL: Final = frozenset({"DynamicBill", "SimplifiedBill"})
 
 # An error code of the portal's own, such as MeterReading.AlreadyExists, and
 # the name of a field in a request, such as Validation or [0].MeterNumber.
@@ -189,6 +200,34 @@ class ServiceDeliveryPoint:
 
     ean: str
     energy_type: str
+    contract_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Invoice:
+    """An invoice of a delivery address, without what it billed.
+
+    ``document_url`` is the bill itself, the one the website offers for
+    download, and is only fetched with the session's cookies.
+    """
+
+    identifier: str
+    kind: str
+    energy_type: str
+    issued: date | None
+    period_start: date | None
+    period_end: date | None
+    document_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TariffCard:
+    """The tariff card a contract is billed on, as its product says."""
+
+    product: str
+    product_type: str
+    # Language code -> URL of the card, for the languages it is published in.
+    urls: dict[str, str]
 
 
 def _endpoint(value: object) -> str:
@@ -201,6 +240,50 @@ def _endpoint(value: object) -> str:
     the text of its own errors.
     """
     return _ACCOUNT_RE.sub("/accounts/-", str(value))
+
+
+async def _read_capped(response: aiohttp.ClientResponse) -> bytes:
+    """Return a response body, refusing one larger than a bill can be."""
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.content.iter_chunked(65536):
+        size += len(chunk)
+        if size > MAX_DOCUMENT_BYTES:
+            raise EnecoError("the bill is too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _day(value: Any) -> date | None:
+    """Return the day of a timestamp the API sends, 2026-04-26T00:00:00+00:00."""
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _invoice(entry: dict[str, Any]) -> Invoice:
+    """Return the invoice an entry of the invoice list describes."""
+    documents = entry.get("documents")
+    url = next(
+        (
+            str(document["url"])
+            for document in (documents if isinstance(documents, list) else [])
+            if isinstance(document, dict)
+            and document.get("url")
+            and document.get("documentType") not in _NOT_THE_BILL
+        ),
+        None,
+    )
+    return Invoice(
+        identifier=str(entry["invoiceId"]),
+        kind=str(entry.get("invoiceType") or ""),
+        energy_type=str(entry.get("invoiceEnergyType") or "Unknown"),
+        issued=_day(entry.get("invoiceDate")),
+        period_start=_day(entry.get("invoicingPeriodStartDate")),
+        period_end=_day(entry.get("invoicingPeriodEndDate")),
+        document_url=url,
+    )
 
 
 def _known_register(direction: str, timeframe: str) -> Register | None:
@@ -530,6 +613,7 @@ class EnecoClient:
             ServiceDeliveryPoint(
                 ean=str(entry["ean"]),
                 energy_type=str(entry.get("type") or "Unknown"),
+                contract_id=str(entry.get("contractId") or ""),
             )
             for entry in points
             if isinstance(entry, dict) and entry.get("ean")
@@ -611,6 +695,122 @@ class EnecoClient:
                 )
             )
         return sorted(readings, key=lambda r: r.date, reverse=True)
+
+    async def async_get_invoices(
+        self, account: str, address: str, since: date, until: date
+    ) -> list[Invoice]:
+        """Return the invoices of a delivery address issued between two days."""
+        payload = await self._async_api(
+            "GET",
+            f"/accounts/{account}/delivery-addresses/{address}/invoices",
+            params={
+                "InvoiceFromDate": since.isoformat(),
+                "InvoiceToDate": until.isoformat(),
+                "ShowActiveContractsOnly": "false",
+            },
+        )
+        invoices = payload.get("invoices") if isinstance(payload, dict) else None
+        if not isinstance(invoices, list):
+            return []
+        return [
+            _invoice(entry)
+            for entry in invoices
+            if isinstance(entry, dict) and entry.get("invoiceId")
+        ]
+
+    async def async_get_tariff_card(
+        self, account: str, contract: str
+    ) -> TariffCard | None:
+        """Return the tariff card a contract is billed on, if it names one."""
+        payload = await self._async_api(
+            "GET", f"/accounts/{account}/contracts/{contract}/products"
+        )
+        tariff = payload.get("tariff") if isinstance(payload, dict) else None
+        if not isinstance(tariff, dict):
+            return None
+        current = tariff.get("currentTariff")
+        urls: dict[str, str] = {}
+        for card in current if isinstance(current, list) else []:
+            listed = (
+                card.get("tariffCardByLanguage") if isinstance(card, dict) else None
+            )
+            for entry in listed if isinstance(listed, list) else []:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("type") == "Normal"
+                    and entry.get("language")
+                    and entry.get("tariffCard")
+                ):
+                    urls.setdefault(
+                        str(entry["language"]).lower(), str(entry["tariffCard"])
+                    )
+        if not urls:
+            return None
+        return TariffCard(
+            product=str(tariff.get("product") or ""),
+            product_type=str(tariff.get("productType") or ""),
+            urls=urls,
+        )
+
+    async def async_get_document(self, url: str) -> bytes:
+        """Download a bill the invoice list links to, signing in again once.
+
+        The link is a route of the website that serves the PDF to the signed
+        in session, by its cookies, so it is only ever fetched from there, and
+        the bearer token is never sent with it. A session that has lapsed
+        answers with something other than a PDF.
+
+        A bill still refused after that is a failure of that bill alone, not
+        of the login: raised as a connection error, it does not stop the other
+        meters' bills or sign in again every day.
+        """
+        if not url.startswith(f"{WEB_HOST}/"):
+            raise EnecoError("the bill is not on the Eneco website")
+        token = self._token
+        try:
+            return await self._async_get_document_once(url)
+        except _SessionGoneError:
+            _LOGGER.debug("Bill did not download, signing in again")
+        await self._async_renew_token(token)
+        try:
+            return await self._async_get_document_once(url)
+        except _SessionGoneError as err:
+            raise EnecoConnectionError(
+                f"the website did not serve the bill: {err}"
+            ) from None
+
+    async def _async_get_document_once(self, url: str) -> bytes:
+        """Fetch one document with the session's cookies.
+
+        Redirects are followed here, and only while they stay on the website:
+        the route itself answers 308 to add the trailing slash Next.js wants.
+        """
+        for _ in range(_MAX_REDIRECTS + 1):
+            try:
+                async with self._session.get(
+                    url, timeout=REQUEST_TIMEOUT, allow_redirects=False
+                ) as response:
+                    if response.status in _REDIRECTS:
+                        location = URL(response.headers.get("Location", ""))
+                        url = str(response.url.join(location))
+                        if not url.startswith(f"{WEB_HOST}/"):
+                            raise EnecoError("the bill moved off the Eneco website")
+                        continue
+                    if response.status in _SIGNED_OUT:
+                        raise _SessionGoneError(f"HTTP {response.status}")
+                    if response.status != HTTPStatus.OK:
+                        raise EnecoConnectionError(
+                            f"the bill answered HTTP {response.status}"
+                        )
+                    body = await _read_capped(response)
+            except (aiohttp.ClientError, TimeoutError) as err:
+                raise EnecoConnectionError(
+                    f"could not download the bill: {type(err).__name__}"
+                ) from err
+            if not body.startswith(b"%PDF"):
+                raise _SessionGoneError("the bill is not a PDF")
+            return body
+        raise EnecoError("the bill redirected too often")
 
     async def async_submit_readings(
         self,

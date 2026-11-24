@@ -56,6 +56,20 @@ def _last_attempt(state: EnecoState) -> dict[str, Any]:
     }
 
 
+def _bill(read: dict[str, Any]) -> dict[str, Any]:
+    """Return what was read of one meter's bill, without its lines."""
+    bill = read.get("bill") or {}
+    card = read.get("card") or {}
+    return {
+        "card_version": card.get("version"),
+        "product": card.get("product"),
+        "invoice_type": bill.get("invoice_type"),
+        "issued": bill.get("issued"),
+        "lines": len(bill.get("lines", [])),
+        "error": read.get("error"),
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: EnecoConfigEntry
 ) -> dict[str, Any]:
@@ -67,8 +81,13 @@ async def async_get_config_entry_diagnostics(
     # matters when setup failed is the configuration itself.
     loaded = entry.state is ConfigEntryState.LOADED
     coordinators = entry.runtime_data.coordinators if loaded else {}
+    bills = entry.runtime_data.bills if loaded else None
+    read = bills.data if bills is not None else {}
     return {
-        "entry": {"data": async_redact_data(dict(entry.data), TO_REDACT)},
+        "entry": {
+            "data": async_redact_data(dict(entry.data), TO_REDACT),
+            "options": dict(entry.options),
+        },
         "state": entry.state.value,
         "meters": [
             {
@@ -78,6 +97,7 @@ async def async_get_config_entry_diagnostics(
                     if subentry_id in coordinators
                     else None
                 ),
+                "bill": _bill(read[subentry_id]) if subentry_id in read else None,
             }
             for subentry_id, subentry in entry.subentries.items()
         ],

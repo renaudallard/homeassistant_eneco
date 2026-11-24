@@ -137,6 +137,20 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Optionen",
+        "description": "Einmal am Tag die neueste Abrechnung jedes Zählers dieses Logins lesen, sowie die Tarifkarte, nach der sein Vertrag abgerechnet wird. Standardmäßig aus. Die Rechnung wird von My Eneco heruntergeladen und hier gelesen; nichts wird anderswohin gesendet.",
+        "data": {
+          "read_bills": "Rechnungen lesen"
+        },
+        "data_description": {
+          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Rechnung mit jeder abgerechneten Zeile und einen Sensor Tarifkarte hinzu."
+        }
+      }
+    }
+  },
   "entity": {
     "button": {
       "submit": {
@@ -159,6 +173,12 @@
       },
       "next_submission": {
         "name": "Nächste Übermittlung"
+      },
+      "last_bill": {
+        "name": "Letzte Rechnung"
+      },
+      "tariff_card": {
+        "name": "Tarifkarte"
       }
     },
     "time": {

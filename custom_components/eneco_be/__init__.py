@@ -30,7 +30,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
@@ -38,7 +38,8 @@ from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 
 from .api import EnecoAuthError, EnecoClient, EnecoConnectionError
-from .const import DOMAIN, SUBENTRY_METER
+from .bills import BillCoordinator
+from .const import CONF_READ_BILLS, DOMAIN, SUBENTRY_METER
 from .coordinator import EnecoCoordinator, MeterStore, repair_prefix
 from .migrate import async_migrate_entries
 
@@ -59,6 +60,9 @@ class EnecoData:
     # The credentials the client signed in with, to tell a change of those,
     # which needs a new sign in, from a change to one meter, which does not.
     credentials: dict[str, Any]
+    # The options it was set up with, and the bills it reads if they say so.
+    options: dict[str, Any]
+    bills: BillCoordinator | None = None
 
 
 type EnecoConfigEntry = ConfigEntry[EnecoData]
@@ -122,7 +126,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
     }
     for coordinator in coordinators.values():
         coordinator.async_review_repair()
-    entry.runtime_data = EnecoData(client, coordinators, dict(entry.data))
+    bills = None
+    if entry.options.get(CONF_READ_BILLS):
+        bills = BillCoordinator(hass, entry, client)
+        await bills.async_load(
+            {meter: entry.subentries[meter].data for meter in meters}
+        )
+    else:
+        # Turned off: what was read goes too, not only the sensors showing it.
+        await BillCoordinator.async_remove_for(hass, entry.entry_id)
+    entry.runtime_data = EnecoData(
+        client, coordinators, dict(entry.data), dict(entry.options), bills
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -133,20 +148,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
         # sensors, and during setup the integrations that own them are usually
         # still loading.
         entry.async_on_unload(async_at_started(hass, coordinator.async_catch_up))
+    if bills is not None:
+        # Not before Home Assistant is running, and not in the way of setup:
+        # the last bill read is already restored from the store.
+        @callback
+        def _read_bills(_hass: HomeAssistant) -> None:
+            entry.async_create_background_task(
+                hass, bills.async_refresh(), f"{DOMAIN} bills"
+            )
+
+        entry.async_on_unload(async_at_started(hass, _read_bills))
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     return True
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
-    """Reload for new credentials or meters, and pass any other change on.
+    """Reload for new credentials, meters or options, pass any other change on.
 
     Changing the sources or the time of a meter only needs its trigger armed
     again. Reloading for that would sign in anew each time, and the submit
     time control writes the subentry on every change.
     """
     data = entry.runtime_data
-    if dict(entry.data) != data.credentials or set(_meter_ids(entry)) != set(
-        data.coordinators
+    if (
+        dict(entry.data) != data.credentials
+        or dict(entry.options) != data.options
+        or set(_meter_ids(entry)) != set(data.coordinators)
     ):
         hass.config_entries.async_schedule_reload(entry.entry_id)
         return
@@ -170,7 +197,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> bo
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
-    """Drop the stored submission history along with the entry."""
+    """Drop the stored submission history and bills along with the entry."""
     # Unloading normally takes the cards down first, but an entry removed
     # while it was never loaded has them too, and they are persistent.
     prefix = repair_prefix(entry.entry_id)
@@ -178,3 +205,4 @@ async def async_remove_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> No
         if domain == DOMAIN and issue_id.startswith(prefix):
             ir.async_delete_issue(hass, DOMAIN, issue_id)
     await MeterStore.async_remove_for(hass, entry.entry_id)
+    await BillCoordinator.async_remove_for(hass, entry.entry_id)

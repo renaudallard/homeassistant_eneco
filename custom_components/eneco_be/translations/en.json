@@ -137,6 +137,20 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "description": "Once a day, read the newest settlement bill of every meter of this login and the tariff card its contract is billed on. Off by default. The bill is downloaded from My Eneco and read here; nothing is sent anywhere else.",
+        "data": {
+          "read_bills": "Read bills"
+        },
+        "data_description": {
+          "read_bills": "Adds a Last bill sensor, with every billed line, and a Tariff card sensor to each meter."
+        }
+      }
+    }
+  },
   "entity": {
     "button": {
       "submit": {
@@ -159,6 +173,12 @@
       },
       "next_submission": {
         "name": "Next submission"
+      },
+      "last_bill": {
+        "name": "Last bill"
+      },
+      "tariff_card": {
+        "name": "Tariff card"
       }
     },
     "time": {

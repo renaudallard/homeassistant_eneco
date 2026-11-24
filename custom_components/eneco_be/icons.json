@@ -14,6 +14,12 @@
       },
       "next_submission": {
         "default": "mdi:clock-outline"
+      },
+      "last_bill": {
+        "default": "mdi:file-document-outline"
+      },
+      "tariff_card": {
+        "default": "mdi:tag-text-outline"
       }
     },
     "time": {

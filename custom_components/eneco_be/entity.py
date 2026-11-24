@@ -24,12 +24,32 @@
 
 """Shared entity base for the Eneco Belgium integration."""
 
+from collections.abc import Mapping
+from typing import Any
+
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import WEB_HOST
 from .const import CONF_ADDRESS, CONF_EAN, DOMAIN
 from .coordinator import EnecoCoordinator
+
+
+def meter_device(meter: Mapping[str, Any]) -> DeviceInfo:
+    """Return the device that stands for the meter a subentry holds."""
+    ean = meter[CONF_EAN]
+    return DeviceInfo(
+        identifiers={(DOMAIN, ean)},
+        entry_type=DeviceEntryType.SERVICE,
+        manufacturer="Eneco",
+        name=f"Eneco {ean}",
+        serial_number=ean,
+        # No locale prefix: the portal picks one from the visitor's cookie.
+        configuration_url=(
+            f"{WEB_HOST}/my-eneco/usage/add-meter-readings/"
+            f"?ean={ean}&address={meter[CONF_ADDRESS]}"
+        ),
+    )
 
 
 class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
@@ -40,17 +60,4 @@ class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
     def __init__(self, coordinator: EnecoCoordinator) -> None:
         """Attach the entity to the device that stands for the meter."""
         super().__init__(coordinator)
-        meter = coordinator.meter
-        ean = meter[CONF_EAN]
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, ean)},
-            entry_type=DeviceEntryType.SERVICE,
-            manufacturer="Eneco",
-            name=f"Eneco {ean}",
-            serial_number=ean,
-            # No locale prefix: the portal picks one from the visitor's cookie.
-            configuration_url=(
-                f"{WEB_HOST}/my-eneco/usage/add-meter-readings/"
-                f"?ean={ean}&address={meter[CONF_ADDRESS]}"
-            ),
-        )
+        self._attr_device_info = meter_device(coordinator.meter)
