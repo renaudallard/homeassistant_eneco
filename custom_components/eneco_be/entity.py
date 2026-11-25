@@ -25,12 +25,13 @@
 """Shared entity base for the Eneco Belgium integration."""
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, override
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import WEB_HOST
+from .bills import BillCoordinator
 from .const import CONF_ADDRESS, CONF_EAN, DOMAIN
 from .coordinator import EnecoCoordinator
 
@@ -61,3 +62,36 @@ class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
         """Attach the entity to the device that stands for the meter."""
         super().__init__(coordinator)
         self._attr_device_info = meter_device(coordinator.meter)
+
+
+class BillEntity(CoordinatorEntity[BillCoordinator]):
+    """What the bill coordinator read for one meter.
+
+    Available as soon as one daily read went through for the meter, and
+    from then on even on a day the portal cannot be reached: the bill does
+    not change because it could not be fetched again.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self, coordinator: BillCoordinator, subentry_id: str, meter: Any, key: str
+    ) -> None:
+        """Bind the entity to one meter."""
+        super().__init__(coordinator)
+        self._subentry_id = subentry_id
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{meter[CONF_EAN]}_{key}"
+        self._attr_device_info = meter_device(meter)
+
+    @property
+    def _read(self) -> dict[str, Any]:
+        """Return what was read for the meter."""
+        result: dict[str, Any] = self.coordinator.data.get(self._subentry_id, {})
+        return result
+
+    @property
+    @override
+    def available(self) -> bool:
+        """Return whether anything was ever read for the meter."""
+        return self._subentry_id in self.coordinator.data

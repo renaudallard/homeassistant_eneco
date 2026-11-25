@@ -38,13 +38,12 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EnecoConfigEntry
 from .bills import BillCoordinator
-from .const import ATTR_LAST_ERROR, CONF_EAN, LAST_BILL
+from .const import ATTR_LAST_ERROR, BILL_DISAGREES, CONF_EAN, LAST_BILL
 from .coordinator import EnecoCoordinator, EnecoState
-from .entity import EnecoEntity, meter_device
+from .entity import BillEntity, EnecoEntity
 
 STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
@@ -133,9 +132,16 @@ async def async_setup_entry(
 def _remove_bill_sensors(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
     """Take the bill sensors away once reading bills is turned off."""
     registry = er.async_get(hass)
-    suffixes = (f"_{LAST_BILL}", f"_{TARIFF_CARD}", f"_{BILL_DIFFERENCE}")
+    suffixes = (
+        f"_{LAST_BILL}",
+        f"_{TARIFF_CARD}",
+        f"_{BILL_DIFFERENCE}",
+        f"_{BILL_DISAGREES}",
+    )
     for item in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if item.domain == "sensor" and item.unique_id.endswith(suffixes):
+        if item.domain in ("sensor", "binary_sensor") and item.unique_id.endswith(
+            suffixes
+        ):
             registry.async_remove(item.entity_id)
 
 
@@ -170,37 +176,8 @@ class EnecoSensor(EnecoEntity, SensorEntity):
         return {ATTR_LAST_ERROR: self.coordinator.data.error}
 
 
-class BillSensor(CoordinatorEntity[BillCoordinator], SensorEntity):
-    """What the bill coordinator read for one meter.
-
-    Available as soon as one daily read went through for the meter, and
-    from then on even on a day the portal cannot be reached: the bill does
-    not change because it could not be fetched again.
-    """
-
-    _attr_has_entity_name = True
-
-    def __init__(
-        self, coordinator: BillCoordinator, subentry_id: str, meter: Any, key: str
-    ) -> None:
-        """Bind the sensor to one meter."""
-        super().__init__(coordinator)
-        self._subentry_id = subentry_id
-        self._attr_translation_key = key
-        self._attr_unique_id = f"{meter[CONF_EAN]}_{key}"
-        self._attr_device_info = meter_device(meter)
-
-    @property
-    def _read(self) -> dict[str, Any]:
-        """Return what was read for the meter."""
-        result: dict[str, Any] = self.coordinator.data.get(self._subentry_id, {})
-        return result
-
-    @property
-    @override
-    def available(self) -> bool:
-        """Return whether anything was ever read for the meter."""
-        return self._subentry_id in self.coordinator.data
+class BillSensor(BillEntity, SensorEntity):
+    """A sensor of what the bill coordinator read for one meter."""
 
 
 class LastBillSensor(BillSensor):

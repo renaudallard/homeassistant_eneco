@@ -48,7 +48,12 @@ _LOGGER = logging.getLogger(__name__)
 # There is no YAML form of this integration; entries come from the config flow.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.SENSOR, Platform.TIME]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.SENSOR,
+    Platform.TIME,
+]
 
 
 @dataclass(slots=True)

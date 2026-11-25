@@ -146,12 +146,17 @@
           "read_bills": "Read bills"
         },
         "data_description": {
-          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, and a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill."
+          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, and a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill, with a Bill disagrees sensor saying when they part."
         }
       }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "bill_disagrees": {
+        "name": "Bill disagrees"
+      }
+    },
     "button": {
       "submit": {
         "name": "Submit readings"

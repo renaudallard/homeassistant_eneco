@@ -146,12 +146,17 @@
           "read_bills": "Lire les factures"
         },
         "data_description": {
-          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, un capteur Carte tarifaire et un capteur Écart de facture, qui compare l'année à une entrée de prix de l'électricité ou du gaz contrôlant la facture."
+          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, un capteur Carte tarifaire et un capteur Écart de facture, qui compare l'année à une entrée de prix de l'électricité ou du gaz contrôlant la facture, avec un capteur Facture en désaccord qui signale quand ils divergent."
         }
       }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "bill_disagrees": {
+        "name": "Facture en désaccord"
+      }
+    },
     "button": {
       "submit": {
         "name": "Transmettre les relevés"

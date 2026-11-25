@@ -146,12 +146,17 @@
           "read_bills": "Rechnungen lesen"
         },
         "data_description": {
-          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile, einen Sensor Tarifkarte und einen Sensor Rechnungsabweichung hinzu, der das Jahr mit einem Strom- oder Gaspreis-Eintrag vergleicht, der die Rechnung prüft."
+          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile, einen Sensor Tarifkarte und einen Sensor Rechnungsabweichung hinzu, der das Jahr mit einem Strom- oder Gaspreis-Eintrag vergleicht, der die Rechnung prüft, mit einem Sensor Rechnung weicht ab, der meldet, wenn beide auseinandergehen."
         }
       }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "bill_disagrees": {
+        "name": "Rechnung weicht ab"
+      }
+    },
     "button": {
       "submit": {
         "name": "Zählerstände übermitteln"

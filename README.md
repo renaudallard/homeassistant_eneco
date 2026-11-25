@@ -135,6 +135,7 @@ Every meter creates one device, named after its EAN, with:
 | `sensor.*_last_yearly_bill` | The last full year billed, line by line, with [Read bills](#reading-bills) on |
 | `sensor.*_tariff_card` | The tariff card the contract is billed on, with [Read bills](#reading-bills) on |
 | `sensor.*_bill_difference` | What the year was billed above what a price integration prices it at, with [Read bills](#reading-bills) on |
+| `binary_sensor.*_bill_disagrees` | On when the bill disagrees with that price integration, with [Read bills](#reading-bills) on |
 
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
 `already_submitted` when the date was already done, `nothing_to_submit` when no
@@ -211,6 +212,7 @@ download, and their billing lines become more sensors per meter:
 | `sensor.*_last_yearly_bill` | What the year cost for the meter, VAT included, in EUR |
 | `sensor.*_tariff_card` | The version of the card the contract is billed on, such as `012210` |
 | `sensor.*_bill_difference` | The year billed less what a price integration prices it at, VAT included, in EUR |
+| `binary_sensor.*_bill_disagrees` | Problem when the bill disagrees with that price integration, OK when it agrees |
 
 The total is each line with its own VAT rate, added up, so it can be a cent off
 what a bill prints. It is the cost of the year, not what was left to pay on the
@@ -254,6 +256,20 @@ the price integration is too old to have `bill_cost`, or when the meter's
 history in Home Assistant does not reach back over every day of the year: the
 first year it can be compared is the first one Home Assistant recorded whole.
 
+`binary_sensor.*_bill_disagrees` puts both checks in one, each held to the
+same threshold: 5 EUR or 1% of the bill, whichever is more. It is on
+(Problem) when the lines the price entry's Bill check finds billed at another
+unit price move the bill by more than that, or when the Bill difference is
+beyond it; off (OK) when neither; and unknown, with the reason in
+`last_error`, while it cannot be told. A line is weighed by its gap in unit
+price times its quantity on the bill, VAT included, so a rate a card prints a
+hair off does not make the bill disagree, and a wrong rate on a large volume
+does; one the bill does not hold cannot be weighed and counts as a
+disagreement. Its attributes give `lines_off`, each line off with the euros
+it moves (`eur`), their sum `lines_off_eur`, the `difference` and the
+`threshold` used. It follows the Bill check as it changes, so it can be put on
+a dashboard or used in an automation in place of the Repairs cards.
+
 - **Read once.** A bill is downloaded once; the daily run only lists the
   invoices again. What was read is kept across restarts, so a day the portal
   is down still shows the last year, with the reason in `last_error`.
@@ -275,7 +291,7 @@ first year it can be compared is the first one Home Assistant recorded whole.
   wording, but no bill in Dutch or German has been read yet. If one is
   refused, please open an issue with its `last_error`.
 
-Turning the option off removes the three sensors and what was read.
+Turning the option off removes the four sensors and what was read.
 
 ## Upgrading from 0.3 or earlier
 

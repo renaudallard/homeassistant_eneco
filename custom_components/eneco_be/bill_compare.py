@@ -67,6 +67,7 @@ def _result(error: str, **found: Any) -> dict[str, Any]:
         "difference": None,
         "covered": None,
         "price_entry": None,
+        "entry_id": None,
         "error": error,
     } | found
 
@@ -86,7 +87,9 @@ async def async_compare(
         return _result("no electricity or gas price entry checks this bill")
     if not hass.services.has_service(entry.domain, SERVICE):
         return _result(
-            f"{entry.title} cannot price a bill: update it", price_entry=entry.title
+            f"{entry.title} cannot price a bill: update it",
+            price_entry=entry.title,
+            entry_id=entry.entry_id,
         )
     try:
         answer = await hass.services.async_call(
@@ -105,12 +108,16 @@ async def async_compare(
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("%s did not price the bill: %r", entry.title, err)
         return _result(
-            f"{entry.title} did not price the bill: {err}", price_entry=entry.title
+            f"{entry.title} did not price the bill: {err}",
+            price_entry=entry.title,
+            entry_id=entry.entry_id,
         )
     cost = answer.get("cost") if answer is not None else None
     if answer is None or isinstance(cost, bool) or not isinstance(cost, int | float):
         return _result(
-            f"{entry.title} priced nothing for the bill", price_entry=entry.title
+            f"{entry.title} priced nothing for the bill",
+            price_entry=entry.title,
+            entry_id=entry.entry_id,
         )
     expected = round(float(cost), 2)
     if answer.get("covered") is not True:
@@ -119,11 +126,13 @@ async def async_compare(
             expected=expected,
             covered=False,
             price_entry=entry.title,
+            entry_id=entry.entry_id,
         )
     return {
         "expected": expected,
         "difference": round(year["total"] - expected, 2),
         "covered": True,
         "price_entry": entry.title,
+        "entry_id": entry.entry_id,
         "error": None,
     }

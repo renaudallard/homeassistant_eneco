@@ -146,12 +146,17 @@
           "read_bills": "Facturen lezen"
         },
         "data_description": {
-          "read_bills": "Voegt aan elke meter een sensor Laatste jaarfactuur toe, met elke lijn gefactureerd over het laatste volledige jaar, een sensor Tariefkaart en een sensor Factuurverschil, die het jaar vergelijkt met een item van elektriciteits- of gasprijzen dat de factuur controleert."
+          "read_bills": "Voegt aan elke meter een sensor Laatste jaarfactuur toe, met elke lijn gefactureerd over het laatste volledige jaar, een sensor Tariefkaart en een sensor Factuurverschil, die het jaar vergelijkt met een item van elektriciteits- of gasprijzen dat de factuur controleert, met een sensor Factuur wijkt af die zegt wanneer ze uiteenlopen."
         }
       }
     }
   },
   "entity": {
+    "binary_sensor": {
+      "bill_disagrees": {
+        "name": "Factuur wijkt af"
+      }
+    },
     "button": {
       "submit": {
         "name": "Meterstanden doorgeven"

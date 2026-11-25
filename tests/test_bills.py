@@ -41,6 +41,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from custom_components.eneco_be import api
 from custom_components.eneco_be.api import EnecoClient, EnecoError
 from custom_components.eneco_be.bills import BillCoordinator
+from custom_components.eneco_be.binary_sensor import threshold
 from custom_components.eneco_be.const import CONF_READ_BILLS, DOMAIN
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from homeassistant.config_entries import ConfigEntryState
@@ -68,6 +69,7 @@ from .conftest import (
 LAST_BILL = "sensor.eneco_541449000000000001_last_yearly_bill"
 TARIFF_CARD = "sensor.eneco_541449000000000001_tariff_card"
 BILL_DIFFERENCE = "sensor.eneco_541449000000000001_bill_difference"
+BILL_DISAGREES = "binary_sensor.eneco_541449000000000001_bill_disagrees"
 
 CONTRACT = "1-1000"
 INVOICES = f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/invoices"
@@ -735,6 +737,9 @@ async def test_intermediary_bills_alone_show_nothing(
     assert bill.attributes["last_error"] == (
         "no yearly bill closes the intermediary ones yet"
     )
+    disagrees = state_of(hass, BILL_DISAGREES)
+    assert disagrees.state == STATE_UNKNOWN
+    assert disagrees.attributes["last_error"] == "no year billed yet"
 
 
 async def test_monthly_bills_make_a_year_of_twelve(
@@ -990,6 +995,172 @@ async def test_the_difference_goes_with_the_other_bill_sensors(
     await setup(hass, entry)
     assert entity_registry.async_get(BILL_DIFFERENCE) is not None
 
+    assert entity_registry.async_get(BILL_DISAGREES) is not None
+
     hass.config_entries.async_update_entry(entry, options={CONF_READ_BILLS: False})
     await hass.async_block_till_done(wait_background_tasks=True)
     assert entity_registry.async_get(BILL_DIFFERENCE) is None
+    assert entity_registry.async_get(BILL_DISAGREES) is None
+
+
+def bill_check(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    count: str | None,
+    lines: list[dict[str, Any]] | None = None,
+) -> str:
+    """Give the price entry a Bill check sensor counting ``count`` lines off."""
+    check = er.async_get(hass).async_get_or_create(
+        "sensor", entry.domain, f"{entry.entry_id}_bill_check", config_entry=entry
+    )
+    if count is not None:
+        hass.states.async_set(check.entity_id, count, {"lines": lines or []})
+    return check.entity_id
+
+
+def off(
+    priced: Any, label: str = "Conso. simple", status: str = "off"
+) -> dict[str, Any]:
+    """Return a line of the Bill check: the bill's 334,51 kWh at 0,1735."""
+    return {
+        "label": label,
+        "section": "energy",
+        "start": "2025-02-01",
+        "end": "2025-03-31",
+        "billed": 0.1735,
+        "priced": priced,
+        "status": status,
+    }
+
+
+# The year of the tests costs 1139.28: the threshold is 1% of it, 11.39. A
+# cent a kWh off on its first line, 334,51 kWh at 6% VAT, is 3.55 EUR.
+@pytest.mark.parametrize(
+    ("cost", "covered", "count", "lines", "state", "error", "eur"),
+    [
+        (1139.28, True, "0", [], "off", None, 0.0),
+        (1127.89, True, "0", [], "off", None, 0.0),
+        (1127.88, True, "0", [], "on", None, 0.0),
+        (1150.67, True, "0", [], "off", None, 0.0),
+        (1150.68, True, "0", [], "on", None, 0.0),
+        (1139.28, True, "1", [off(0.1835)], "off", None, 3.55),
+        (1139.28, True, "1", [off(0.1635)], "off", None, 3.55),
+        (1139.28, True, "1", [off(0.2135)], "on", None, 14.18),
+        (1139.28, True, "1", [off([0.18, 0.19])], "off", None, 2.3),
+        (1139.28, True, "1", [off([0.15, 0.16])], "off", None, 4.79),
+        (1139.28, True, "1", [off(0.1835, label="Elsewhere")], "on", None, None),
+        (1139.28, True, "0", [off(0.5, status="ok")], "off", None, 0.0),
+        (
+            1100.0,
+            False,
+            "0",
+            [],
+            STATE_UNKNOWN,
+            "the meter's history does not cover every day of the bill",
+            0.0,
+        ),
+        (1100.0, False, "1", [off(0.2135)], "on", None, 14.18),
+        (
+            1100.0,
+            False,
+            "1",
+            [off(0.1835)],
+            STATE_UNKNOWN,
+            "the meter's history does not cover every day of the bill",
+            3.55,
+        ),
+        (
+            1139.28,
+            True,
+            None,
+            None,
+            STATE_UNKNOWN,
+            "the price entry's Bill check counts no lines yet",
+            None,
+        ),
+        (1100.0, True, None, None, "on", None, None),
+        (
+            1139.28,
+            True,
+            "unknown",
+            [],
+            STATE_UNKNOWN,
+            "the price entry's Bill check counts no lines yet",
+            None,
+        ),
+    ],
+)
+async def test_the_bill_disagrees_by_what_it_moves(
+    hass: HomeAssistant,
+    portal: AiohttpClientMocker,
+    cost: float,
+    covered: bool,
+    count: str | None,
+    lines: list[dict[str, Any]] | None,
+    state: str,
+    error: str | None,
+    eur: float | None,
+) -> None:
+    """Lines off count by what they move the bill, the total by its gap.
+
+    Both from 5 EUR or 1% of the bill, whichever is more. A line the bill
+    does not hold cannot be weighed, and is not taken for a small one.
+    """
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = price_entry(hass)
+    bill_check(hass, entry, count, lines)
+    bill_cost(hass, {"cost": cost, "covered": covered})
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    disagrees = state_of(hass, BILL_DISAGREES)
+    assert disagrees.state == state
+    assert disagrees.attributes["device_class"] == "problem"
+    assert disagrees.attributes["last_error"] == error
+    assert disagrees.attributes["threshold"] == 11.39
+    assert disagrees.attributes["lines_off_eur"] == eur
+
+
+async def test_the_bill_disagrees_follows_the_bill_check(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """A line found off later turns it on without waiting for a bill read."""
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = price_entry(hass)
+    check = bill_check(hass, entry, "0")
+    bill_cost(hass, {"cost": 1139.28, "covered": True})
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+    assert state_of(hass, BILL_DISAGREES).state == "off"
+
+    hass.states.async_set(check, "1", {"lines": [off(0.2135)]})
+    await hass.async_block_till_done()
+    disagrees = state_of(hass, BILL_DISAGREES)
+    assert disagrees.state == "on"
+    assert disagrees.attributes["lines_off"] == [
+        {
+            "label": "Conso. simple",
+            "start": "2025-02-01",
+            "end": "2025-03-31",
+            "eur": 14.18,
+        }
+    ]
+
+
+async def test_a_bill_unchecked_cannot_disagree(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """With no price entry checking the bill, nothing can be told."""
+    mock_bill(portal, "CN2", ELECTRICITY)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    disagrees = state_of(hass, BILL_DISAGREES)
+    assert disagrees.state == STATE_UNKNOWN
+    assert disagrees.attributes["last_error"] == (
+        "no electricity or gas price entry checks this bill"
+    )
+
+
+def test_the_threshold_is_five_euro_or_one_percent() -> None:
+    """Five euro up to a 500 EUR bill, then a hundredth of it."""
+    assert threshold(100.0) == 5.0
+    assert threshold(500.0) == 5.0
+    assert threshold(1139.28) == pytest.approx(11.3928)

@@ -1,5 +1,13 @@
 {
   "entity": {
+    "binary_sensor": {
+      "bill_disagrees": {
+        "default": "mdi:receipt-text-check-outline",
+        "state": {
+          "on": "mdi:receipt-text-remove-outline"
+        }
+      }
+    },
     "button": {
       "submit": {
         "default": "mdi:upload"

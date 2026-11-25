@@ -47,6 +47,9 @@ CONF_READ_BILLS: Final = "read_bills"
 # The key of the bill sensor of each meter, its unique_id after the EAN. The
 # electricity price integration holds a sensor it is told to check to it.
 LAST_BILL: Final = "last_bill"
+# The binary sensor saying whether the year billed disagrees with what the
+# price integration checking it prices.
+BILL_DISAGREES: Final = "bill_disagrees"
 
 ELECTRICITY: Final = "Electricity"
 GAS: Final = "Gas"
