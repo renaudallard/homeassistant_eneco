@@ -59,7 +59,15 @@ from .api import (
     TariffCard,
 )
 from .bill import BillFormatError, BillLine, parse_bill, pdf_text
-from .const import CONF_ACCOUNT, CONF_ADDRESS, CONF_EAN, CONF_ENERGY_TYPE, DOMAIN
+from .bill_compare import async_compare
+from .const import (
+    CONF_ACCOUNT,
+    CONF_ADDRESS,
+    CONF_EAN,
+    CONF_ENERGY_TYPE,
+    DOMAIN,
+    LAST_BILL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -169,7 +177,8 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Read the bills of every meter of one login, once a day.
 
     The data is keyed by meter subentry id, each holding its ``card``, its
-    last full ``year`` and the ``error`` that kept a newer one from showing.
+    last full ``year``, the ``error`` that kept a newer one from showing and
+    the ``comparison`` of the year with what a price integration prices it at.
     """
 
     config_entry: ConfigEntry
@@ -268,6 +277,18 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         data[subentry_id] = self._kept(subentry_id, str(err))
         except EnecoAuthError as err:
             raise UpdateFailed(str(err)) from err
+
+        # What the price integration checking each meter's bill prices the
+        # year at, asked afresh with every read: its cards and history move.
+        for subentry_id, read in data.items():
+            year = read.get("year")
+            read["comparison"] = (
+                await async_compare(
+                    self.hass, f"{meters[subentry_id][CONF_EAN]}_{LAST_BILL}", year
+                )
+                if year
+                else None
+            )
 
         if complete:
             self._seen = {

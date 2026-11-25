@@ -18,6 +18,9 @@
       "last_bill": {
         "default": "mdi:file-document-outline"
       },
+      "bill_difference": {
+        "default": "mdi:scale-balance"
+      },
       "tariff_card": {
         "default": "mdi:tag-text-outline"
       }

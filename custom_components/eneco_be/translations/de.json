@@ -146,7 +146,7 @@
           "read_bills": "Rechnungen lesen"
         },
         "data_description": {
-          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile und einen Sensor Tarifkarte hinzu."
+          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile, einen Sensor Tarifkarte und einen Sensor Rechnungsabweichung hinzu, der das Jahr mit einem Strom- oder Gaspreis-Eintrag vergleicht, der die Rechnung prüft."
         }
       }
     }
@@ -176,6 +176,9 @@
       },
       "last_bill": {
         "name": "Letzte Jahresrechnung"
+      },
+      "bill_difference": {
+        "name": "Rechnungsabweichung"
       },
       "tariff_card": {
         "name": "Tarifkarte"

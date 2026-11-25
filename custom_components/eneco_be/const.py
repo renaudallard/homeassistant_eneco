@@ -44,6 +44,9 @@ CONF_SUBMIT_TIME: Final = "submit_time"
 
 # Entry option: read the settlement bills and tariff cards. Off by default.
 CONF_READ_BILLS: Final = "read_bills"
+# The key of the bill sensor of each meter, its unique_id after the EAN. The
+# electricity price integration holds a sensor it is told to check to it.
+LAST_BILL: Final = "last_bill"
 
 ELECTRICITY: Final = "Electricity"
 GAS: Final = "Gas"

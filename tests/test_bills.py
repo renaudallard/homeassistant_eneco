@@ -43,9 +43,11 @@ from custom_components.eneco_be.api import EnecoClient, EnecoError
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.const import CONF_READ_BILLS, DOMAIN
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNKNOWN
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import HomeAssistant, ServiceCall, State, SupportsResponse
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
@@ -65,6 +67,7 @@ from .conftest import (
 
 LAST_BILL = "sensor.eneco_541449000000000001_last_yearly_bill"
 TARIFF_CARD = "sensor.eneco_541449000000000001_tariff_card"
+BILL_DIFFERENCE = "sensor.eneco_541449000000000001_bill_difference"
 
 CONTRACT = "1-1000"
 INVOICES = f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/invoices"
@@ -507,6 +510,11 @@ async def test_diagnostics_and_removal(
         "bills": [{"invoice_type": "YearlyBill", "issued": "2026-04-26"}],
         "lines": 11,
         "error": None,
+        "comparison": {
+            "covered": None,
+            "difference": None,
+            "error": "no electricity or gas price entry checks this bill",
+        },
     }
 
     assert await hass.config_entries.async_remove(entry.entry_id)
@@ -813,3 +821,128 @@ async def test_an_oversized_download_is_refused(
             await client.async_get_document(document("CN2"))
     finally:
         await session.close()
+
+
+def price_entry(
+    hass: HomeAssistant,
+    domain: str = "be_electricity_prices",
+    key: str = "eneco_bill",
+    checks: str = LAST_BILL,
+    state: ConfigEntryState = ConfigEntryState.LOADED,
+) -> MockConfigEntry:
+    """Add an entry of a price integration naming a bill sensor to check."""
+    entry = MockConfigEntry(domain=domain, title="Power Flex", data={key: checks})
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, state)
+    return entry
+
+
+def bill_cost(
+    hass: HomeAssistant, answer: Any, domain: str = "be_electricity_prices"
+) -> list[ServiceCall]:
+    """Register a price integration's bill_cost action answering ``answer``."""
+    calls: list[ServiceCall] = []
+
+    async def handler(call: ServiceCall) -> Any:
+        calls.append(call)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    hass.services.async_register(
+        domain, "bill_cost", handler, supports_response=SupportsResponse.ONLY
+    )
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("domain", "key"),
+    [("be_electricity_prices", "eneco_bill"), ("be_gas_prices", "bill_entity")],
+)
+async def test_the_year_is_held_against_the_entry_checking_it(
+    hass: HomeAssistant, portal: AiohttpClientMocker, domain: str, key: str
+) -> None:
+    """The price entry naming the bill sensor prices the year's days."""
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = price_entry(hass, domain, key)
+    calls = bill_cost(hass, {"cost": 1100.0, "covered": True}, domain)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    difference = state_of(hass, BILL_DIFFERENCE)
+    assert difference.state == "39.28"
+    assert difference.attributes["unit_of_measurement"] == "EUR"
+    assert difference.attributes["expected"] == 1100.0
+    assert difference.attributes["covered"] is True
+    assert difference.attributes["price_entry"] == "Power Flex"
+    assert difference.attributes["last_error"] is None
+    assert [dict(call.data) for call in calls] == [
+        {"entry_id": entry.entry_id, "start": "2025-02-01", "end": "2026-01-31"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("link", "answer", "error", "expected"),
+    [
+        (None, None, "no electricity or gas price entry checks this bill", None),
+        ("other", None, "no electricity or gas price entry checks this bill", None),
+        ("unloaded", None, "no electricity or gas price entry checks this bill", None),
+        ("bill", None, "Power Flex cannot price a bill: update it", None),
+        (
+            "bill",
+            {"cost": 1100.0, "covered": False},
+            "the meter's history does not cover every day of the bill",
+            1100.0,
+        ),
+        (
+            "bill",
+            HomeAssistantError("the recorder is busy"),
+            "Power Flex did not price the bill: the recorder is busy",
+            None,
+        ),
+        ("bill", {"cost": None}, "Power Flex priced nothing for the bill", None),
+        ("bill", {"cost": True}, "Power Flex priced nothing for the bill", None),
+    ],
+)
+async def test_a_year_not_priced_says_why(
+    hass: HomeAssistant,
+    portal: AiohttpClientMocker,
+    link: str | None,
+    answer: Any,
+    error: str,
+    expected: float | None,
+) -> None:
+    """No difference is shown unless every day of the year was priced."""
+    mock_bill(portal, "CN2", ELECTRICITY)
+    if link == "other":
+        price_entry(hass, checks="sensor.something_else")
+    elif link == "unloaded":
+        price_entry(hass, state=ConfigEntryState.NOT_LOADED)
+        bill_cost(hass, {"cost": 1100.0, "covered": True})
+    elif link == "bill":
+        price_entry(hass)
+        if answer is not None:
+            bill_cost(hass, answer)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    difference = state_of(hass, BILL_DIFFERENCE)
+    assert difference.state == STATE_UNKNOWN
+    assert difference.attributes["last_error"] == error
+    assert difference.attributes["expected"] == expected
+    # The year itself still shows.
+    assert state_of(hass, LAST_BILL).state == "1139.28"
+
+
+async def test_the_difference_goes_with_the_other_bill_sensors(
+    hass: HomeAssistant,
+    portal: AiohttpClientMocker,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Turning bills off takes the difference sensor away too."""
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    assert entity_registry.async_get(BILL_DIFFERENCE) is not None
+
+    hass.config_entries.async_update_entry(entry, options={CONF_READ_BILLS: False})
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entity_registry.async_get(BILL_DIFFERENCE) is None

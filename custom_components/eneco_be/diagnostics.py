@@ -69,6 +69,10 @@ def _bill(read: dict[str, Any]) -> dict[str, Any]:
         ],
         "lines": len(year.get("lines", [])),
         "error": read.get("error"),
+        "comparison": {
+            key: (read.get("comparison") or {}).get(key)
+            for key in ("covered", "difference", "error")
+        },
     }
 
 

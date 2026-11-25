@@ -42,7 +42,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EnecoConfigEntry
 from .bills import BillCoordinator
-from .const import ATTR_LAST_ERROR, CONF_EAN
+from .const import ATTR_LAST_ERROR, CONF_EAN, LAST_BILL
 from .coordinator import EnecoCoordinator, EnecoState
 from .entity import EnecoEntity, meter_device
 
@@ -52,8 +52,8 @@ STATUS_FAILED = "failed"
 STATUS_ALREADY_SUBMITTED = "already_submitted"
 STATUS_NOTHING_TO_SUBMIT = "nothing_to_submit"
 
-LAST_BILL = "last_bill"
 TARIFF_CARD = "tariff_card"
+BILL_DIFFERENCE = "bill_difference"
 
 
 def _status(state: EnecoState) -> str:
@@ -122,6 +122,7 @@ async def async_setup_entry(
             entities += [
                 LastBillSensor(bills, subentry_id, coordinator.meter),
                 TariffCardSensor(bills, subentry_id, coordinator.meter),
+                BillDifferenceSensor(bills, subentry_id, coordinator.meter),
             ]
         async_add_entities(entities, config_subentry_id=subentry_id)
     if bills is None:
@@ -132,7 +133,7 @@ async def async_setup_entry(
 def _remove_bill_sensors(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
     """Take the bill sensors away once reading bills is turned off."""
     registry = er.async_get(hass)
-    suffixes = (f"_{LAST_BILL}", f"_{TARIFF_CARD}")
+    suffixes = (f"_{LAST_BILL}", f"_{TARIFF_CARD}", f"_{BILL_DIFFERENCE}")
     for item in er.async_entries_for_config_entry(registry, entry.entry_id):
         if item.domain == "sensor" and item.unique_id.endswith(suffixes):
             registry.async_remove(item.entity_id)
@@ -237,6 +238,44 @@ class LastBillSensor(BillSensor):
             "bills": year.get("bills", []),
             "lines": year.get("lines", []),
             ATTR_LAST_ERROR: self._read.get("error"),
+        }
+
+
+class BillDifferenceSensor(BillSensor):
+    """What Eneco billed for the year above what it is priced at.
+
+    The price is the one the electricity or gas price entry checking the
+    bill gives the meter's own history over the same days, VAT included.
+    """
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    def __init__(
+        self, coordinator: BillCoordinator, subentry_id: str, meter: Any
+    ) -> None:
+        """Bind the sensor to one meter."""
+        super().__init__(coordinator, subentry_id, meter, BILL_DIFFERENCE)
+
+    @property
+    @override
+    def native_value(self) -> float | None:
+        """Return the year billed less the year priced, or None without both."""
+        comparison = self._read.get("comparison") or {}
+        difference: float | None = comparison.get("difference")
+        return difference
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return what the year is priced at, by which entry, or why not."""
+        comparison = self._read.get("comparison") or {}
+        return {
+            "expected": comparison.get("expected"),
+            "covered": comparison.get("covered"),
+            "price_entry": comparison.get("price_entry"),
+            ATTR_LAST_ERROR: comparison.get("error"),
         }
 
 

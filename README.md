@@ -134,6 +134,7 @@ Every meter creates one device, named after its EAN, with:
 | `sensor.*_status` | How the last attempt went, with the reason as an attribute |
 | `sensor.*_last_yearly_bill` | The last full year billed, line by line, with [Read bills](#reading-bills) on |
 | `sensor.*_tariff_card` | The tariff card the contract is billed on, with [Read bills](#reading-bills) on |
+| `sensor.*_bill_difference` | What the year was billed above what a price integration prices it at, with [Read bills](#reading-bills) on |
 
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
 `already_submitted` when the date was already done, `nothing_to_submit` when no
@@ -203,12 +204,13 @@ yearly bill that closes its year. On monthly billing the year is the last
 twelve monthly bills. Each bill has to start the day after the one before it
 ends, and no line is ever cut or spread over days, so every line shown is one
 a bill prints. Each is the same PDF *My Eneco > Factures* offers for
-download, and their billing lines become two more sensors per meter:
+download, and their billing lines become more sensors per meter:
 
 | Entity | Purpose |
 | --- | --- |
 | `sensor.*_last_yearly_bill` | What the year cost for the meter, VAT included, in EUR |
 | `sensor.*_tariff_card` | The version of the card the contract is billed on, such as `012210` |
+| `sensor.*_bill_difference` | The year billed less what a price integration prices it at, VAT included, in EUR |
 
 The total is each line with its own VAT rate, added up, so it can be a cent off
 what a bill prints. It is the cost of the year, not what was left to pay on the
@@ -238,6 +240,20 @@ for `012210`), the `product` and `product_type` Eneco reports, and the card's
 `urls` by language. On a variable contract that card can be years older than
 the one Eneco publishes this month, and it is the one the bill is priced on.
 
+`sensor.*_bill_difference` holds the year against the
+[electricity](https://github.com/renaudallard/homeassistant_be_electricity_prices)
+or [gas](https://github.com/renaudallard/homeassistant_be_gas_prices) price
+integration. Nothing is set here: an entry of theirs that checks this meter's
+bill (its *Eneco bill* setting names `sensor.*_last_yearly_bill`) is asked,
+with each daily read, what the meter's own history over the year's days costs
+on your contract, through its `bill_cost` action. The state is what Eneco
+billed above that, negative when it billed less; `expected` is the price
+integration's figure and `price_entry` the entry that gave it. It shows
+nothing, with the reason in `last_error`, when no entry checks the bill, when
+the price integration is too old to have `bill_cost`, or when the meter's
+history in Home Assistant does not reach back over every day of the year: the
+first year it can be compared is the first one Home Assistant recorded whole.
+
 - **Read once.** A bill is downloaded once; the daily run only lists the
   invoices again. What was read is kept across restarts, so a day the portal
   is down still shows the last year, with the reason in `last_error`.
@@ -259,7 +275,7 @@ the one Eneco publishes this month, and it is the one the bill is priced on.
   wording, but no bill in Dutch or German has been read yet. If one is
   refused, please open an issue with its `last_error`.
 
-Turning the option off removes the two sensors and what was read.
+Turning the option off removes the three sensors and what was read.
 
 ## Upgrading from 0.3 or earlier
 

@@ -146,7 +146,7 @@
           "read_bills": "Read bills"
         },
         "data_description": {
-          "read_bills": "Adds a Last yearly bill sensor, with every line billed over the last full year, and a Tariff card sensor to each meter."
+          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, and a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill."
         }
       }
     }
@@ -176,6 +176,9 @@
       },
       "last_bill": {
         "name": "Last yearly bill"
+      },
+      "bill_difference": {
+        "name": "Bill difference"
       },
       "tariff_card": {
         "name": "Tariff card"
