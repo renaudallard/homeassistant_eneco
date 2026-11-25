@@ -176,7 +176,9 @@ exact date, not as a matter of course.
 Read from the website's `InvoiceOverview.tsx` and confirmed against a live
 account on 2026-11-24. Query: `InvoiceFromDate` and `InvoiceToDate`
 (`yyyy-MM-dd`, a two year window was accepted) and `ShowActiveContractsOnly`.
-Without the dates every invoice since the contract began came back.
+Without the dates every invoice since the contract began came back, which is
+how the integration asks: a year of bills can reach back further than two
+years.
 
 ```json
 { "invoices": [ { "invoiceId": "", "invoiceType": "YearlyBill",

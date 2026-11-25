@@ -146,7 +146,7 @@
           "read_bills": "Rechnungen lesen"
         },
         "data_description": {
-          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Rechnung mit jeder abgerechneten Zeile und einen Sensor Tarifkarte hinzu."
+          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile und einen Sensor Tarifkarte hinzu."
         }
       }
     }
@@ -175,7 +175,7 @@
         "name": "Nächste Übermittlung"
       },
       "last_bill": {
-        "name": "Letzte Rechnung"
+        "name": "Letzte Jahresrechnung"
       },
       "tariff_card": {
         "name": "Tarifkarte"

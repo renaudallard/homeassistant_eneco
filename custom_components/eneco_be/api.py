@@ -696,18 +696,16 @@ class EnecoClient:
             )
         return sorted(readings, key=lambda r: r.date, reverse=True)
 
-    async def async_get_invoices(
-        self, account: str, address: str, since: date, until: date
-    ) -> list[Invoice]:
-        """Return the invoices of a delivery address issued between two days."""
+    async def async_get_invoices(self, account: str, address: str) -> list[Invoice]:
+        """Return every invoice of a delivery address since its contract began.
+
+        No dates are sent: the year of bills shown can reach back further than
+        any fixed window would hold.
+        """
         payload = await self._async_api(
             "GET",
             f"/accounts/{account}/delivery-addresses/{address}/invoices",
-            params={
-                "InvoiceFromDate": since.isoformat(),
-                "InvoiceToDate": until.isoformat(),
-                "ShowActiveContractsOnly": "false",
-            },
+            params={"ShowActiveContractsOnly": "false"},
         )
         invoices = payload.get("invoices") if isinstance(payload, dict) else None
         if not isinstance(invoices, list):

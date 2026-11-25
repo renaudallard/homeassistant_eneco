@@ -146,7 +146,7 @@
           "read_bills": "Facturen lezen"
         },
         "data_description": {
-          "read_bills": "Voegt aan elke meter een sensor Laatste factuur toe, met elke gefactureerde lijn, en een sensor Tariefkaart."
+          "read_bills": "Voegt aan elke meter een sensor Laatste jaarfactuur toe, met elke lijn gefactureerd over het laatste volledige jaar, en een sensor Tariefkaart."
         }
       }
     }
@@ -175,7 +175,7 @@
         "name": "Volgende doorgave"
       },
       "last_bill": {
-        "name": "Laatste factuur"
+        "name": "Laatste jaarfactuur"
       },
       "tariff_card": {
         "name": "Tariefkaart"

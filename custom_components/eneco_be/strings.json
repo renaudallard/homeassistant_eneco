@@ -146,7 +146,7 @@
           "read_bills": "Read bills"
         },
         "data_description": {
-          "read_bills": "Adds a Last bill sensor, with every billed line, and a Tariff card sensor to each meter."
+          "read_bills": "Adds a Last yearly bill sensor, with every line billed over the last full year, and a Tariff card sensor to each meter."
         }
       }
     }
@@ -175,7 +175,7 @@
         "name": "Next submission"
       },
       "last_bill": {
-        "name": "Last bill"
+        "name": "Last yearly bill"
       },
       "tariff_card": {
         "name": "Tariff card"

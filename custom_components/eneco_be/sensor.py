@@ -203,13 +203,13 @@ class BillSensor(CoordinatorEntity[BillCoordinator], SensorEntity):
 
 
 class LastBillSensor(BillSensor):
-    """The newest settlement bill: its total before VAT, and every line."""
+    """The last full year billed: its total with VAT, and every line."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
     # ISO 4217, as a monetary sensor wants it, not the € symbol.
     _attr_native_unit_of_measurement = "EUR"
     _attr_suggested_display_precision = 2
-    # A bill has dozens of lines, the same until the next one a year later.
+    # A year has dozens of lines, the same until the next bill comes.
     _unrecorded_attributes = frozenset({"lines"})
 
     def __init__(
@@ -221,21 +221,21 @@ class LastBillSensor(BillSensor):
     @property
     @override
     def native_value(self) -> float | None:
-        """Return what the bill charged for the meter, before VAT."""
-        bill = self._read.get("bill")
-        return bill["total"] if bill else None
+        """Return what the year cost for the meter, VAT included."""
+        year = self._read.get("year")
+        return year["total"] if year else None
 
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return when and what the bill billed, and why a newer one was not read."""
-        bill = self._read.get("bill") or {}
+        """Return which bills make the year, its lines, and why not a newer one."""
+        year = self._read.get("year") or {}
         return {
-            "invoice_type": bill.get("invoice_type"),
-            "issued": bill.get("issued"),
-            "period_start": bill.get("period_start"),
-            "period_end": bill.get("period_end"),
-            "lines": bill.get("lines", []),
+            "issued": year.get("issued"),
+            "period_start": year.get("period_start"),
+            "period_end": year.get("period_end"),
+            "bills": year.get("bills", []),
+            "lines": year.get("lines", []),
             ATTR_LAST_ERROR: self._read.get("error"),
         }
 

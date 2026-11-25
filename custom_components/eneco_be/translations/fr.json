@@ -146,7 +146,7 @@
           "read_bills": "Lire les factures"
         },
         "data_description": {
-          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture, avec chaque ligne facturée, et un capteur Carte tarifaire."
+          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, et un capteur Carte tarifaire."
         }
       }
     }
@@ -175,7 +175,7 @@
         "name": "Prochaine transmission"
       },
       "last_bill": {
-        "name": "Dernière facture"
+        "name": "Dernière facture annuelle"
       },
       "tariff_card": {
         "name": "Carte tarifaire"

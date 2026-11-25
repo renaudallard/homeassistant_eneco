@@ -56,13 +56,14 @@ from .conftest import (
     API,
     EAN,
     EMAIL,
+    METER_ID,
     PASSWORD,
     login_entry,
     mock_discovery,
     mock_login,
 )
 
-LAST_BILL = "sensor.eneco_541449000000000001_last_bill"
+LAST_BILL = "sensor.eneco_541449000000000001_last_yearly_bill"
 TARIFF_CARD = "sensor.eneco_541449000000000001_tariff_card"
 
 CONTRACT = "1-1000"
@@ -204,17 +205,24 @@ async def setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
 async def test_bill_and_card_read(
     hass: HomeAssistant, portal: AiohttpClientMocker
 ) -> None:
-    """The newest yearly bill of the meter is read, line by line."""
+    """A yearly bill of a full year is the year on its own, line by line."""
     mock_bill(portal, "CN2", ELECTRICITY)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
-    assert bill.state == "1074.87"
+    assert bill.state == "1139.28"
     assert bill.attributes["unit_of_measurement"] == "EUR"
-    assert bill.attributes["invoice_type"] == "YearlyBill"
     assert bill.attributes["issued"] == "2026-04-26"
     assert bill.attributes["period_start"] == "2025-02-01"
     assert bill.attributes["period_end"] == "2026-01-31"
+    assert bill.attributes["bills"] == [
+        {
+            "invoice_type": "YearlyBill",
+            "issued": "2026-04-26",
+            "period_start": "2025-02-01",
+            "period_end": "2026-01-31",
+        }
+    ]
     assert bill.attributes["last_error"] is None
     lines = bill.attributes["lines"]
     assert len(lines) == 11
@@ -257,7 +265,7 @@ async def test_a_bill_is_downloaded_once(
     ]
     assert len(listed) == 2
     assert downloads(portal, "CN2") == 1
-    assert state_of(hass, LAST_BILL).state == "1074.87"
+    assert state_of(hass, LAST_BILL).state == "1139.28"
 
 
 async def test_the_last_bill_survives_a_restart_without_portal(
@@ -283,7 +291,7 @@ async def test_the_last_bill_survives_a_restart_without_portal(
     await setup(hass, entry)
 
     bill = state_of(hass, LAST_BILL)
-    assert bill.state == "1074.87"
+    assert bill.state == "1139.28"
     assert bill.attributes["last_error"] == "the portal returned HTTP 500"
     assert state_of(hass, TARIFF_CARD).state == "012210"
 
@@ -309,7 +317,7 @@ async def test_a_failed_sign_in_keeps_the_last_bill(
     await hass.async_block_till_done(wait_background_tasks=True)
 
     assert not bills.last_update_success
-    assert state_of(hass, LAST_BILL).state == "1074.87"
+    assert state_of(hass, LAST_BILL).state == "1139.28"
     assert state_of(hass, TARIFF_CARD).state == "012210"
 
 
@@ -325,7 +333,7 @@ async def test_a_bill_of_another_meter_is_passed_over(
     mock_bill(portal, "CN1", older)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
-    assert state_of(hass, LAST_BILL).state == "1074.88"
+    assert state_of(hass, LAST_BILL).state == "1139.29"
 
 
 async def test_a_bill_naming_two_meters_is_refused(
@@ -356,7 +364,7 @@ async def test_a_refused_bill_leaves_the_one_before(
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
-    assert bill.state == "1074.87"
+    assert bill.state == "1139.28"
     assert bill.attributes["issued"] == "2025-02-11"
     assert bill.attributes["last_error"] == (
         "the bill of 2026-04-26 was not read: energy lines add up to 350.45,"
@@ -383,7 +391,7 @@ async def test_a_bill_that_will_not_download_is_tried_again(
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
-    assert bill.state == "1074.87"
+    assert bill.state == "1139.28"
     assert bill.attributes["last_error"] == (
         "the bill of 2026-04-26 was not read: the bill answered HTTP 404"
     )
@@ -431,7 +439,7 @@ async def test_options_flow_turns_it_on_and_off(
 
         assert entry.options == {CONF_READ_BILLS: value}
         if value:
-            assert state_of(hass, LAST_BILL).state == "1074.87"
+            assert state_of(hass, LAST_BILL).state == "1139.28"
             assert BillCoordinator.key_for(entry.entry_id) in hass_storage
         else:
             assert hass.states.get(LAST_BILL) is None
@@ -467,7 +475,7 @@ async def test_a_bill_moved_off_the_website_is_not_fetched(
         url for _, url, _, _ in portal.mock_calls if url.host == "elsewhere.example"
     ]
     bill = state_of(hass, LAST_BILL)
-    assert bill.state == "1074.87"
+    assert bill.state == "1139.28"
     assert "moved off the Eneco website" in bill.attributes["last_error"]
 
 
@@ -483,7 +491,7 @@ async def test_a_lapsed_session_is_signed_in_again_for_a_bill(
     portal.get(document("CN2"), side_effect=bill)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
-    assert state_of(hass, LAST_BILL).state == "1074.87"
+    assert state_of(hass, LAST_BILL).state == "1139.28"
     assert len(sign_ins(portal)) == 2
 
 
@@ -500,8 +508,7 @@ async def test_diagnostics_and_removal(
     assert report["meters"][0]["bill"] == {
         "card_version": "012210",
         "product": "ENECO_POWER_FLEX",
-        "invoice_type": "YearlyBill",
-        "issued": "2026-04-26",
+        "bills": [{"invoice_type": "YearlyBill", "issued": "2026-04-26"}],
         "lines": 11,
         "error": None,
     }
@@ -509,6 +516,132 @@ async def test_diagnostics_and_removal(
     assert await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     assert BillCoordinator.key_for(entry.entry_id) not in hass_storage
+
+
+# The bill of the tests, read early: 15/02/2025 to 31/01/2026, 351 days.
+SHORT = [row.replace("01/02/2025", "15/02/2025") for row in ELECTRICITY]
+
+
+def year_before(end: str) -> list[str]:
+    """Return the bill of the tests moved a year back, ending on ``end``."""
+    return [
+        row.replace("01/02/2025", "15/02/2024")
+        .replace("31/03/2025", "31/03/2024")
+        .replace("01/04/2025", "01/04/2024")
+        .replace("31/01/2026", end)
+        for row in ELECTRICITY
+    ]
+
+
+async def test_a_short_year_takes_the_bill_before(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """Whole bills are added until they cover a year, VAT included."""
+    mock_bill(portal, "CN2", SHORT)
+    mock_bill(portal, "CN1", year_before("14/02/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "2278.56"
+    assert bill.attributes["issued"] == "2026-04-26"
+    assert bill.attributes["period_start"] == "2024-02-15"
+    assert bill.attributes["period_end"] == "2026-01-31"
+    assert [b["issued"] for b in bill.attributes["bills"]] == [
+        "2025-02-11",
+        "2026-04-26",
+    ]
+    assert len(bill.attributes["lines"]) == 22
+    assert bill.attributes["lines"][0]["start"] == "2024-02-15"
+    assert bill.attributes["last_error"] is None
+
+
+async def test_bills_that_do_not_follow_on_are_not_added(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """A gap between two bills is named, and the year before it shows."""
+    mock_bill(portal, "CN2", SHORT)
+    mock_bill(portal, "CN1", year_before("13/02/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "1139.28"
+    assert bill.attributes["period_start"] == "2024-02-15"
+    assert bill.attributes["period_end"] == "2025-02-13"
+    assert bill.attributes["last_error"] == (
+        "the bill of 2026-04-26 was not used: it starts on 2025-02-15"
+        " and the bill before it ends on 2025-02-13"
+    )
+
+
+async def test_less_than_a_year_of_bills_shows_nothing(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """A part of a year is not shown as if it were one."""
+    mock_bill(portal, "CN2", SHORT)
+    mock_bill(portal, "CN1", [row.replace(EAN, OTHER_EAN) for row in ELECTRICITY])
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == STATE_UNKNOWN
+    assert bill.attributes["lines"] == []
+    assert bill.attributes["last_error"] == (
+        "the bills listed cover 351 days, not a year"
+    )
+
+
+async def test_the_invoices_are_listed_without_dates(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """Every invoice is listed, however far back the year has to reach."""
+    mock_bill(portal, "CN2", ELECTRICITY)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    queries = [
+        dict(url.query)
+        for _, url, _, _ in portal.mock_calls
+        if str(url).startswith(INVOICES)
+    ]
+    assert queries == [{"ShowActiveContractsOnly": "false"}]
+
+
+async def test_a_bill_stored_before_the_year_is_not_shown(
+    hass: HomeAssistant, portal: AiohttpClientMocker, hass_storage: dict[str, Any]
+) -> None:
+    """A bill kept by an older version is not shown as the year it is not."""
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    hass_storage[BillCoordinator.key_for(entry.entry_id)] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": BillCoordinator.key_for(entry.entry_id),
+        "data": {
+            "meters": {
+                METER_ID: {
+                    "card": None,
+                    "bill": {"invoice_type": "YearlyBill", "total": 1074.87},
+                    "error": None,
+                }
+            },
+            "seen": {},
+        },
+    }
+    portal.clear_requests()
+    mock_login(
+        portal,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    portal.get(INVOICES, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+    portal.get(
+        f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/service-delivery-points",
+        json={"data": {"serviceDeliveryPoints": []}},
+    )
+    await setup(hass, entry)
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == STATE_UNKNOWN
+    assert bill.attributes["last_error"] == "the portal returned HTTP 500"
+    bills = entry.runtime_data.bills
+    assert bills is not None
+    assert "bill" not in bills.data[METER_ID]
 
 
 async def test_a_link_off_the_website_is_refused(

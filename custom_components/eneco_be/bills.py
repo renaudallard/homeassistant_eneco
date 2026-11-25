@@ -25,18 +25,20 @@
 """The settlement bills and tariff cards of every meter of a login.
 
 Optional and off unless the entry's options turn it on. Once a day the
-invoices of every address are listed, and the newest settlement bill of each
-meter is read if it was not read already. A bill is only taken for a meter
-whose EAN it prints, and only as a whole (see bill.py).
+invoices of every address are listed, and each meter is shown its last full
+year: its newest settlement bill, and the ones before it as far back as it
+takes to cover a year, each read if it was not read already. A bill is only
+taken for a meter whose EAN it prints, and only as a whole (see bill.py).
 
 What was read is kept in a file of its own, along with which invoices were
 looked at and what they held, so that a PDF is downloaded once and a restart
-or a day the portal is down shows the last bill rather than nothing.
+or a day the portal is down shows the last year rather than nothing.
 """
 
 from collections import defaultdict
 from collections.abc import Mapping
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 import logging
 import re
 from typing import Any, Final, override
@@ -64,8 +66,9 @@ STORAGE_VERSION: Final = 1
 
 # Bills come once a year, or once a month for a meter billed monthly.
 REFRESH_INTERVAL: Final = timedelta(hours=24)
-# Wide enough to always hold the last yearly bill.
-INVOICE_WINDOW: Final = timedelta(days=730)
+# The days whole bills have to cover, one after the other, to make a year.
+YEAR_DAYS: Final = 365
+_CENT: Final = Decimal("0.01")
 
 # The invoices that bill what was consumed, as opposed to advances, credit
 # notes and reminders.
@@ -99,15 +102,57 @@ def card_state(card: TariffCard) -> dict[str, Any]:
 
 
 def bill_state(invoice: Invoice, lines: tuple[BillLine, ...]) -> dict[str, Any]:
-    """Return what a meter's sensor shows of a bill."""
+    """Return what was read of a bill: when, over which days, and its lines."""
     return {
         "invoice": invoice.identifier,
         "invoice_type": invoice.kind,
         "issued": invoice.issued.isoformat() if invoice.issued else None,
         "period_start": min(line.start for line in lines).isoformat(),
         "period_end": max(line.end for line in lines).isoformat(),
-        "total": round(sum(line.total for line in lines), 2),
         "lines": [line.as_dict() for line in lines],
+    }
+
+
+def _days(bills: list[dict[str, Any]]) -> int:
+    """Return the days a run of bills, newest first, covers."""
+    start = date.fromisoformat(bills[-1]["period_start"])
+    return (date.fromisoformat(bills[0]["period_end"]) - start).days + 1
+
+
+def _follows(older: dict[str, Any], newer: dict[str, Any]) -> bool:
+    """Return whether a bill ends the day before a newer one starts."""
+    end = date.fromisoformat(older["period_end"])
+    return end + timedelta(days=1) == date.fromisoformat(newer["period_start"])
+
+
+def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return what a meter's sensor shows of a run of bills, newest first.
+
+    The total is what the lines cost with their VAT, worked out line by
+    line, so it can differ by a cent from what a bill prints.
+    """
+    run = bills[::-1]
+    lines = [line for bill in run for line in bill["lines"]]
+    total = sum(
+        (
+            Decimal(str(line["total"])) * (1 + Decimal(str(line["vat"])))
+            for line in lines
+        ),
+        Decimal(0),
+    )
+    return {
+        "issued": bills[0]["issued"],
+        "period_start": run[0]["period_start"],
+        "period_end": run[-1]["period_end"],
+        "total": float(total.quantize(_CENT, ROUND_HALF_UP)),
+        "bills": [
+            {
+                key: bill[key]
+                for key in ("invoice_type", "issued", "period_start", "period_end")
+            }
+            for bill in run
+        ],
+        "lines": lines,
     }
 
 
@@ -115,7 +160,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Read the bills of every meter of one login, once a day.
 
     The data is keyed by meter subentry id, each holding its ``card``, its
-    ``bill`` and the ``error`` that kept the newest bill from being read.
+    last full ``year`` and the ``error`` that kept a newer one from showing.
     """
 
     config_entry: ConfigEntry
@@ -224,8 +269,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     def _kept(self, subentry_id: str, error: str) -> dict[str, Any]:
         """Return what was read for a meter before, with why it was not now."""
-        previous = self.data.get(subentry_id) or {"card": None, "bill": None}
-        return {**previous, "error": error}
+        previous = self.data.get(subentry_id) or {}
+        return {
+            "card": previous.get("card"),
+            "year": previous.get("year"),
+            "error": error,
+        }
 
     async def _async_list(
         self, account: str, address: str, today: date
@@ -237,9 +286,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         }
         invoices = [
             invoice
-            for invoice in await self.client.async_get_invoices(
-                account, address, today - INVOICE_WINDOW, today
-            )
+            for invoice in await self.client.async_get_invoices(account, address)
             if invoice.kind in SETTLEMENT and invoice.document_url
         ]
         invoices.sort(key=lambda i: i.issued or today, reverse=True)
@@ -252,17 +299,21 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         invoices: list[Invoice],
         point: ServiceDeliveryPoint | None,
     ) -> dict[str, Any]:
-        """Return one meter's card and the newest of its bills that reads.
+        """Return one meter's card and its last full year of bills.
 
-        A newer bill that was refused, or would not download, is named in the
-        error, and the one before it is shown: its dates say which it is. One
-        that would not download is not remembered, so it is tried again the
-        next day; one that was refused is, and is not fetched again.
+        Whole bills are taken, newest first, until they cover a year, each
+        ending the day before the next one starts. A bill that was refused or
+        would not download is named in the error and passed over: if it was
+        needed, the bills around it leave a gap. A gap or an overlap is named
+        too, and the year is made of the bills before it: its dates say which
+        it is. One that would not download is not remembered, so it is tried
+        again the next day; one that was refused is, and is not fetched again.
         """
         card = None
         if point is not None and point.contract_id:
             card = await self.client.async_get_tariff_card(account, point.contract_id)
-        bill = None
+        # The bills making up the year, newest first.
+        run: list[dict[str, Any]] = []
         error = None
         ean = meter[CONF_EAN]
         for invoice in invoices:
@@ -285,10 +336,24 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 error = error or _not_read(invoice, seen.get("error") or "no lines")
                 continue
             bill = seen["bill"]
-            break
+            if run and not _follows(bill, run[-1]):
+                # The newer bills are the ones dropped: name the one at the break.
+                error = error or (
+                    f"the bill of {run[-1]['issued']} was not used: it starts on"
+                    f" {run[-1]['period_start']} and the bill before it ends on"
+                    f" {bill['period_end']}"
+                )
+                run = []
+            run.append(bill)
+            if _days(run) >= YEAR_DAYS:
+                break
+        else:
+            if run:
+                error = error or f"the bills listed cover {_days(run)} days, not a year"
+            run = []
         return {
             "card": card_state(card) if card is not None else None,
-            "bill": bill,
+            "year": year_state(run) if run else None,
             "error": error,
         }
 

@@ -57,15 +57,17 @@ def _last_attempt(state: EnecoState) -> dict[str, Any]:
 
 
 def _bill(read: dict[str, Any]) -> dict[str, Any]:
-    """Return what was read of one meter's bill, without its lines."""
-    bill = read.get("bill") or {}
+    """Return what was read of one meter's bills, without their lines."""
+    year = read.get("year") or {}
     card = read.get("card") or {}
     return {
         "card_version": card.get("version"),
         "product": card.get("product"),
-        "invoice_type": bill.get("invoice_type"),
-        "issued": bill.get("issued"),
-        "lines": len(bill.get("lines", [])),
+        "bills": [
+            {"invoice_type": bill["invoice_type"], "issued": bill["issued"]}
+            for bill in year.get("bills", [])
+        ],
+        "lines": len(year.get("lines", [])),
         "error": read.get("error"),
     }
 

@@ -132,7 +132,7 @@ Every meter creates one device, named after its EAN, with:
 | `button.*_submit_readings` | Submit the readings now |
 | `sensor.*_last_submission` | When the last submission succeeded |
 | `sensor.*_status` | How the last attempt went, with the reason as an attribute |
-| `sensor.*_last_bill` | The newest bill, line by line, with [Read bills](#reading-bills) on |
+| `sensor.*_last_yearly_bill` | The last full year billed, line by line, with [Read bills](#reading-bills) on |
 | `sensor.*_tariff_card` | The tariff card the contract is billed on, with [Read bills](#reading-bills) on |
 
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
@@ -194,17 +194,30 @@ because it is there to re-establish the login the entry already belongs to.
 
 Off by default. To turn it on, click *Configure* on the entry and tick *Read
 bills*. Once a day the integration then lists your invoices and reads the
-newest settlement bill of each meter: a yearly, closing, intermediary or
-monthly bill, never an advance. It is the same PDF *My Eneco > Factures* offers
-for download, and its billing lines become two more sensors per meter:
+last full year billed for each meter. It takes the newest settlement bill (a
+yearly, closing, intermediary or monthly bill, never an advance) and, when that
+one covers less than 365 days, the bills before it, whole, until together they
+do. Each has to start the day after the one before it ends. A yearly bill of
+a full year is enough on its own; a shorter one, as when the meter was read a
+few weeks early, brings in the whole bill before it, so the period shown can be
+longer than a year. On monthly billing it is the last twelve or so bills. Each
+is the same PDF *My Eneco > Factures* offers for download, and their billing
+lines become two more sensors per meter:
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.*_last_bill` | What the bill charged for the meter before VAT, in EUR |
+| `sensor.*_last_yearly_bill` | What the year cost for the meter, VAT included, in EUR |
 | `sensor.*_tariff_card` | The version of the card the contract is billed on, such as `012210` |
 
-`sensor.*_last_bill` has the bill's `invoice_type`, `issued`, `period_start` and
-`period_end`, and a `lines` attribute listing every billed line:
+The total is each line with its own VAT rate, added up, so it can be a cent off
+what a bill prints. It is the cost of the year, not what was left to pay on the
+bill: the advances paid during the year are not taken off. A sensor created
+while it was still called *Last bill* keeps its entity ID, `sensor.*_last_bill`.
+
+`sensor.*_last_yearly_bill` has `period_start` and `period_end`, the first and
+last day billed, `issued`, the day the newest of the bills was issued, `bills`,
+the `invoice_type`, `issued`, `period_start` and `period_end` of each bill
+taken, oldest first, and a `lines` attribute listing every billed line of them:
 
 ```yaml
 - section: energy        # energy, network or taxes, as the bill groups them
@@ -226,13 +239,17 @@ the one Eneco publishes this month, and it is the one the bill is priced on.
 
 - **Read once.** A bill is downloaded once; the daily run only lists the
   invoices again. What was read is kept across restarts, so a day the portal
-  is down still shows the last bill, with the reason in `last_error`.
+  is down still shows the last year, with the reason in `last_error`.
 - **All or nothing.** Only a bill printing the meter's own EAN is taken, and
   only whole: every block of lines has to add up to the subtotal printed under
   it. A bill that does not, or that covers more than one meter, is refused
-  rather than showing figures that may be wrong. The sensor then shows the
-  bill before it, and `last_error` names the one refused; its dates say which
-  bill you are looking at. A refused bill is not fetched again, one that would
+  rather than showing figures that may be wrong, and so is a run of bills with
+  a gap or an overlap between two of them. The sensor then shows the year made
+  of the bills before it, and `last_error` names the bill refused or left out;
+  the dates say which year you are looking at. When the bills do not reach
+  back a year, as in the first year of a contract, the sensor shows nothing,
+  and `last_error` names the bill that kept them from it or, if none did, says
+  how many days they cover. A refused bill is not fetched again, one that would
   not download is tried again the next day.
 - **Private.** The PDF is fetched from eneco.be with the login's own session,
   read inside Home Assistant and sent nowhere else. The `lines` attribute is
