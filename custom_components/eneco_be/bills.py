@@ -26,9 +26,10 @@
 
 Optional and off unless the entry's options turn it on. Once a day the
 invoices of every address are listed, and each meter is shown its last full
-year: its newest settlement bill, and the ones before it as far back as it
-takes to cover a year, each read if it was not read already. A bill is only
-taken for a meter whose EAN it prints, and only as a whole (see bill.py).
+year: its newest yearly or closing bill with the intermediary bills of the
+same year, or its last twelve monthly bills, each read if it was not read
+already. A bill is only taken for a meter whose EAN it prints, and only as a
+whole (see bill.py).
 
 What was read is kept in a file of its own, along with which invoices were
 looked at and what they held, so that a PDF is downloaded once and a restart
@@ -66,8 +67,6 @@ STORAGE_VERSION: Final = 1
 
 # Bills come once a year, or once a month for a meter billed monthly.
 REFRESH_INTERVAL: Final = timedelta(hours=24)
-# The days whole bills have to cover, one after the other, to make a year.
-YEAR_DAYS: Final = 365
 _CENT: Final = Decimal("0.01")
 
 # The invoices that bill what was consumed, as opposed to advances, credit
@@ -75,6 +74,12 @@ _CENT: Final = Decimal("0.01")
 SETTLEMENT: Final = frozenset(
     {"YearlyBill", "ClosingBill", "IntermediaryInvoice", "MonthlyBill"}
 )
+# A meter read between two yearly ones, on a product change for one, bills
+# part of the year that the yearly bill after it closes.
+INTERMEDIARY: Final = "IntermediaryInvoice"
+MONTHLY: Final = "MonthlyBill"
+# The monthly bills that make a year, where no yearly bill closes one.
+MONTHS: Final = 12
 
 # "BC_032_012210_NL_ENECO_POWER_FLEX.pdf": issue 01 of the card of 2022-10.
 _CARD_RE: Final = re.compile(r"BC_\d+_(?P<version>\d{2}(?P<yy>\d{2})(?P<mm>\d{2}))_")
@@ -113,16 +118,20 @@ def bill_state(invoice: Invoice, lines: tuple[BillLine, ...]) -> dict[str, Any]:
     }
 
 
-def _days(bills: list[dict[str, Any]]) -> int:
-    """Return the days a run of bills, newest first, covers."""
-    start = date.fromisoformat(bills[-1]["period_start"])
-    return (date.fromisoformat(bills[0]["period_end"]) - start).days + 1
-
-
 def _follows(older: dict[str, Any], newer: dict[str, Any]) -> bool:
     """Return whether a bill ends the day before a newer one starts."""
     end = date.fromisoformat(older["period_end"])
     return end + timedelta(days=1) == date.fromisoformat(newer["period_start"])
+
+
+def _not_used(run: list[dict[str, Any]], why: str) -> str:
+    """Return why a run of bills, newest first, was not shown as the year."""
+    return f"the bills up to {run[0]['period_end']} were not used: {why}"
+
+
+def _too_few(run: list[dict[str, Any]]) -> str:
+    """Return why monthly bills, newest first, are not a year."""
+    return _not_used(run, f"{len(run)} monthly bills follow on, not {MONTHS}")
 
 
 def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
@@ -301,13 +310,18 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     ) -> dict[str, Any]:
         """Return one meter's card and its last full year of bills.
 
-        Whole bills are taken, newest first, until they cover a year, each
-        ending the day before the next one starts. A bill that was refused or
-        would not download is named in the error and passed over: if it was
-        needed, the bills around it leave a gap. A gap or an overlap is named
-        too, and the year is made of the bills before it: its dates say which
-        it is. One that would not download is not remembered, so it is tried
-        again the next day; one that was refused is, and is not fetched again.
+        The year is the one Eneco billed: the newest yearly or closing bill,
+        however many days the meter readings put in it, with the intermediary
+        bills before it, each ending the day before the next one starts. On
+        monthly billing it is the last MONTHS monthly bills. An intermediary
+        bill newer than any yearly one is part of a year not billed yet.
+
+        A bill that was refused or would not download is named in the error
+        and passed over: if it was needed, the bills around it leave a gap. A
+        gap or an overlap is named too, and the year is made of the bills
+        before it: its dates say which it is. One that would not download is
+        not remembered, so it is tried again the next day; one that was
+        refused is, and is not fetched again.
         """
         card = None
         if point is not None and point.contract_id:
@@ -315,9 +329,21 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # The bills making up the year, newest first.
         run: list[dict[str, Any]] = []
         error = None
+        # Whether an intermediary bill was passed over for want of a year.
+        waiting = False
         ean = meter[CONF_EAN]
         for invoice in invoices:
             if invoice.energy_type not in (meter[CONF_ENERGY_TYPE], "Both"):
+                continue
+            monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
+            if run and not monthly and invoice.kind != INTERMEDIARY:
+                # The bill of the year before, told from the list unread.
+                break
+            if monthly and invoice.kind != MONTHLY:
+                error = error or _too_few(run)
+                run = []
+            if not run and invoice.kind == INTERMEDIARY:
+                waiting = True
                 continue
             seen = self._seen.get(invoice.identifier)
             if seen is None:
@@ -337,20 +363,23 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 continue
             bill = seen["bill"]
             if run and not _follows(bill, run[-1]):
-                # The newer bills are the ones dropped: name the one at the break.
-                error = error or (
-                    f"the bill of {run[-1]['issued']} was not used: it starts on"
-                    f" {run[-1]['period_start']} and the bill before it ends on"
-                    f" {bill['period_end']}"
+                error = error or _not_used(
+                    run,
+                    f"they start on {run[-1]['period_start']} and the bill"
+                    f" before them ends on {bill['period_end']}",
                 )
                 run = []
+                if invoice.kind == INTERMEDIARY:
+                    continue
             run.append(bill)
-            if _days(run) >= YEAR_DAYS:
+            if run[0]["invoice_type"] == MONTHLY and len(run) == MONTHS:
                 break
         else:
-            if run:
-                error = error or f"the bills listed cover {_days(run)} days, not a year"
-            run = []
+            if run and run[0]["invoice_type"] == MONTHLY:
+                error = error or _too_few(run)
+                run = []
+            if not run and waiting:
+                error = error or "no yearly bill closes the intermediary ones yet"
         return {
             "card": card_state(card) if card is not None else None,
             "year": year_state(run) if run else None,

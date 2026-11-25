@@ -194,15 +194,16 @@ because it is there to re-establish the login the entry already belongs to.
 
 Off by default. To turn it on, click *Configure* on the entry and tick *Read
 bills*. Once a day the integration then lists your invoices and reads the
-last full year billed for each meter. It takes the newest settlement bill (a
-yearly, closing, intermediary or monthly bill, never an advance) and, when that
-one covers less than 365 days, the bills before it, whole, until together they
-do. Each has to start the day after the one before it ends. A yearly bill of
-a full year is enough on its own; a shorter one, as when the meter was read a
-few weeks early, brings in the whole bill before it, so the period shown can be
-longer than a year. On monthly billing it is the last twelve or so bills. Each
-is the same PDF *My Eneco > Factures* offers for download, and their billing
-lines become two more sensors per meter:
+last full year billed for each meter. The year is the one Eneco billed, never
+a count of days, as the meter is read whenever Eneco gets to it: the newest
+yearly or closing bill, however many days it covers, together with the
+intermediary bills of that year (one comes with a product change, for
+instance). An intermediary bill newer than the last yearly one waits for the
+yearly bill that closes its year. On monthly billing the year is the last
+twelve monthly bills. Each bill has to start the day after the one before it
+ends, and no line is ever cut or spread over days, so every line shown is one
+a bill prints. Each is the same PDF *My Eneco > Factures* offers for
+download, and their billing lines become two more sensors per meter:
 
 | Entity | Purpose |
 | --- | --- |
@@ -244,13 +245,13 @@ the one Eneco publishes this month, and it is the one the bill is priced on.
   only whole: every block of lines has to add up to the subtotal printed under
   it. A bill that does not, or that covers more than one meter, is refused
   rather than showing figures that may be wrong, and so is a run of bills with
-  a gap or an overlap between two of them. The sensor then shows the year made
-  of the bills before it, and `last_error` names the bill refused or left out;
-  the dates say which year you are looking at. When the bills do not reach
-  back a year, as in the first year of a contract, the sensor shows nothing,
-  and `last_error` names the bill that kept them from it or, if none did, says
-  how many days they cover. A refused bill is not fetched again, one that would
-  not download is tried again the next day.
+  a gap or an overlap between two of them. The sensor then shows what it can
+  without them, the year before or a yearly bill without the intermediary one
+  refused, and `last_error` names what was refused or left out; the dates and
+  `bills` say what you are looking at. With no yearly bill yet, or fewer than
+  twelve monthly ones in a row, the sensor shows nothing and `last_error` says
+  why. A refused bill is not fetched again, one that would not download is
+  tried again the next day.
 - **Private.** The PDF is fetched from eneco.be with the login's own session,
   read inside Home Assistant and sent nowhere else. The `lines` attribute is
   not written to the history.

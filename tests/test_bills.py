@@ -24,7 +24,7 @@
 
 """Tests for reading the bills and tariff cards, an option off by default."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 from http import HTTPStatus
 from typing import Any
 
@@ -73,6 +73,11 @@ DOWNLOAD = "https://eneco.be/api/my-eneco/download"
 CARD = "https://cdn.eneco.be/downloads/{lang}/general/tk/BC_032_012210_{LANG}_ENECO_POWER_FLEX.pdf"
 
 OTHER_EAN = "541449000000000099"
+# The same bill a cent dearer, to tell which of two is shown.
+DEARER = [
+    row.replace("€ 58,04", "€ 58,05").replace("€ 350,09", "€ 350,10")
+    for row in ELECTRICITY
+]
 
 
 def document(invoice: str) -> str:
@@ -326,11 +331,7 @@ async def test_a_bill_of_another_meter_is_passed_over(
 ) -> None:
     """Only a bill printing the meter's own EAN is taken for it."""
     mock_bill(portal, "CN2", [row.replace(EAN, OTHER_EAN) for row in ELECTRICITY])
-    older = [
-        row.replace("€ 58,04", "€ 58,05").replace("€ 350,09", "€ 350,10")
-        for row in ELECTRICITY
-    ]
-    mock_bill(portal, "CN1", older)
+    mock_bill(portal, "CN1", DEARER)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     assert state_of(hass, LAST_BILL).state == "1139.29"
@@ -461,12 +462,7 @@ async def test_a_bill_moved_off_the_website_is_not_fetched(
     # Served there too, so that following it would show as a bill read.
     portal.get(
         "https://elsewhere.example/bill.pdf",
-        content=make_pdf(
-            [
-                row.replace("€ 58,04", "€ 58,05").replace("€ 350,09", "€ 350,10")
-                for row in ELECTRICITY
-            ]
-        ),
+        content=make_pdf(DEARER),
     )
     mock_bill(portal, "CN1", ELECTRICITY)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
@@ -518,8 +514,8 @@ async def test_diagnostics_and_removal(
     assert BillCoordinator.key_for(entry.entry_id) not in hass_storage
 
 
-# The bill of the tests, read early: 15/02/2025 to 31/01/2026, 351 days.
-SHORT = [row.replace("01/02/2025", "15/02/2025") for row in ELECTRICITY]
+# The bill of the tests, after an intermediary one: 15/03/2025 to 31/01/2026.
+SHORT = [row.replace("01/02/2025", "15/03/2025") for row in ELECTRICITY]
 
 
 def year_before(end: str) -> list[str]:
@@ -533,12 +529,78 @@ def year_before(end: str) -> list[str]:
     ]
 
 
-async def test_a_short_year_takes_the_bill_before(
+def month_bill(start: date, end: date) -> list[str]:
+    """Return a monthly bill of one line per block."""
+    first, last = start.strftime("%d/%m/%Y"), end.strftime("%d/%m/%Y")
+    return [
+        f"EAN {EAN}",
+        f"Conso. simple {first} - {last} 100,00 kWh 10,00 €c 6% € 10,00",
+        "Total coût de l’énergie Eneco (hors TVA) € 10,00",
+        f"Distribution fixe {first} - {last} 1,00 année 5,00 € 6% € 5,00",
+        "Total des tarifs de réseau (hors TVA) € 5,00",
+        f"Redevance de raccordement {first} - {last} 100,00 kWh 1,00 €c 0% € 1,00",
+        "Total des impôts, taxes et suppléments (hors TVA) € 1,00",
+    ]
+
+
+def mock_months(
+    mocker: AiohttpClientMocker, first: date, count: int
+) -> list[dict[str, Any]]:
+    """Serve ``count`` monthly bills from ``first`` on; return them newest first."""
+    listed = []
+    for n in range(count):
+        month = first.month - 1 + n
+        start = date(first.year + month // 12, month % 12 + 1, 1)
+        month += 1
+        end = date(first.year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
+        mock_bill(mocker, f"M{n:02d}", month_bill(start, end))
+        issued = (end + timedelta(days=5)).isoformat()
+        listed.append(invoice(f"M{n:02d}", "MonthlyBill", issued))
+    return listed[::-1]
+
+
+def mock_invoices(mocker: AiohttpClientMocker, invoices: list[dict[str, Any]]) -> None:
+    """Register a portal listing the given invoices for the meter."""
+    mock_login(
+        mocker,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(mocker, points=[{"ean": EAN, "type": "Electricity"}])
+    mocker.get(INVOICES, json={"data": {"invoices": invoices}})
+
+
+async def test_a_short_yearly_bill_is_the_year(
     hass: HomeAssistant, portal: AiohttpClientMocker
 ) -> None:
-    """Whole bills are added until they cover a year, VAT included."""
+    """However many days the readings put in it, a yearly bill is the year."""
     mock_bill(portal, "CN2", SHORT)
-    mock_bill(portal, "CN1", year_before("14/02/2025"))
+    # It follows on: only its kind keeps it out.
+    mock_bill(portal, "CN1", year_before("14/03/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "1139.28"
+    assert bill.attributes["period_start"] == "2025-03-15"
+    assert len(bill.attributes["bills"]) == 1
+    assert bill.attributes["last_error"] is None
+    assert downloads(portal, "CN1") == 0
+
+
+async def test_an_intermediary_bill_is_part_of_the_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The intermediary bills before a yearly one are its year, VAT included."""
+    mock_invoices(
+        aioclient_mock,
+        [
+            invoice("CN2", "YearlyBill", "2026-04-26"),
+            invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+            invoice("CN1", "YearlyBill", "2024-02-20"),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN1", DEARER)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
@@ -546,46 +608,124 @@ async def test_a_short_year_takes_the_bill_before(
     assert bill.attributes["issued"] == "2026-04-26"
     assert bill.attributes["period_start"] == "2024-02-15"
     assert bill.attributes["period_end"] == "2026-01-31"
-    assert [b["issued"] for b in bill.attributes["bills"]] == [
-        "2025-02-11",
-        "2026-04-26",
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == [
+        "IntermediaryInvoice",
+        "YearlyBill",
     ]
     assert len(bill.attributes["lines"]) == 22
     assert bill.attributes["lines"][0]["start"] == "2024-02-15"
     assert bill.attributes["last_error"] is None
+    assert downloads(aioclient_mock, "CN1") == 0
 
 
-async def test_bills_that_do_not_follow_on_are_not_added(
-    hass: HomeAssistant, portal: AiohttpClientMocker
+async def test_an_intermediary_bill_after_the_year_waits(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    """A gap between two bills is named, and the year before it shows."""
-    mock_bill(portal, "CN2", SHORT)
-    mock_bill(portal, "CN1", year_before("13/02/2025"))
+    """One newer than any yearly bill belongs to a year not billed yet."""
+    mock_invoices(
+        aioclient_mock,
+        [
+            invoice("IN2", "IntermediaryInvoice", "2026-07-01"),
+            invoice("CN2", "YearlyBill", "2026-04-26"),
+        ],
+    )
+    mock_bill(aioclient_mock, "IN2", month_bill(date(2026, 2, 1), date(2026, 6, 30)))
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
     assert bill.state == "1139.28"
-    assert bill.attributes["period_start"] == "2024-02-15"
-    assert bill.attributes["period_end"] == "2025-02-13"
+    assert len(bill.attributes["bills"]) == 1
+    assert bill.attributes["last_error"] is None
+    assert downloads(aioclient_mock, "IN2") == 0
+
+
+async def test_bills_that_do_not_follow_on_are_not_added(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A gap in a year is named, and the year before it shows."""
+    mock_invoices(
+        aioclient_mock,
+        [
+            invoice("CN2", "YearlyBill", "2026-04-26"),
+            invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+            invoice("CN1", "YearlyBill", "2024-02-20"),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    mock_bill(aioclient_mock, "IN1", year_before("13/03/2025"))
+    mock_bill(aioclient_mock, "CN1", DEARER)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "1139.29"
+    assert bill.attributes["issued"] == "2024-02-20"
     assert bill.attributes["last_error"] == (
-        "the bill of 2026-04-26 was not used: it starts on 2025-02-15"
-        " and the bill before it ends on 2025-02-13"
+        "the bills up to 2026-01-31 were not used: they start on 2025-03-15"
+        " and the bill before them ends on 2025-03-13"
     )
 
 
-async def test_less_than_a_year_of_bills_shows_nothing(
-    hass: HomeAssistant, portal: AiohttpClientMocker
+async def test_intermediary_bills_alone_show_nothing(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
     """A part of a year is not shown as if it were one."""
-    mock_bill(portal, "CN2", SHORT)
-    mock_bill(portal, "CN1", [row.replace(EAN, OTHER_EAN) for row in ELECTRICITY])
+    mock_invoices(aioclient_mock, [invoice("IN1", "IntermediaryInvoice", "2025-04-01")])
+    mock_bill(aioclient_mock, "IN1", ELECTRICITY)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
     assert bill.state == STATE_UNKNOWN
     assert bill.attributes["lines"] == []
     assert bill.attributes["last_error"] == (
-        "the bills listed cover 351 days, not a year"
+        "no yearly bill closes the intermediary ones yet"
+    )
+
+
+async def test_monthly_bills_make_a_year_of_twelve(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The last twelve are the year, and the one before is not fetched."""
+    mock_invoices(aioclient_mock, mock_months(aioclient_mock, date(2025, 1, 1), 13))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "202.8"
+    assert bill.attributes["period_start"] == "2025-02-01"
+    assert bill.attributes["period_end"] == "2026-01-31"
+    assert len(bill.attributes["bills"]) == 12
+    assert bill.attributes["last_error"] is None
+    assert downloads(aioclient_mock, "M00") == 0
+
+
+async def test_eleven_monthly_bills_are_not_a_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Fewer than twelve show nothing, and say how many there are."""
+    mock_invoices(aioclient_mock, mock_months(aioclient_mock, date(2025, 1, 1), 11))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == STATE_UNKNOWN
+    assert bill.attributes["last_error"] == (
+        "the bills up to 2025-11-30 were not used: 11 monthly bills follow on, not 12"
+    )
+
+
+async def test_monthly_bills_after_a_yearly_one(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Until twelve have come, the yearly bill before them is the year."""
+    months = mock_months(aioclient_mock, date(2026, 2, 1), 3)
+    mock_invoices(aioclient_mock, [*months, invoice("CN2", "YearlyBill", "2026-02-05")])
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "1139.28"
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == ["YearlyBill"]
+    assert bill.attributes["last_error"] == (
+        "the bills up to 2026-04-30 were not used: 3 monthly bills follow on, not 12"
     )
 
 
