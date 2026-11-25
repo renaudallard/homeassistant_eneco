@@ -626,6 +626,53 @@ async def test_an_intermediary_bill_is_part_of_the_year(
     assert downloads(aioclient_mock, "CN1") == 0
 
 
+async def test_a_bill_of_the_meter_beside_it_does_not_end_the_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The other meter's yearly bill is read before it can end the year.
+
+    Two electricity meters at one address: the other one's yearly bill is
+    listed between this one's yearly and intermediary bills.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    invoice("NB1", "YearlyBill", "2025-06-01"),
+                    invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+                    invoice("CN1", "YearlyBill", "2024-02-20"),
+                ]
+            }
+        },
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    mock_bill(aioclient_mock, "NB1", [row.replace(EAN, OTHER_EAN) for row in DEARER])
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN1", DEARER)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "2278.56"
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == [
+        "IntermediaryInvoice",
+        "YearlyBill",
+    ]
+    assert bill.attributes["last_error"] is None
+
+
 async def test_an_intermediary_bill_after_the_year_waits(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:

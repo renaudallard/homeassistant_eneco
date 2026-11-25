@@ -132,6 +132,15 @@ def _follows(older: dict[str, Any], newer: dict[str, Any]) -> bool:
     return end + timedelta(days=1) == date.fromisoformat(newer["period_start"])
 
 
+def _ours(seen: dict[str, Any], ean: str) -> bool:
+    """Return whether a bill read may be the meter's.
+
+    One printing its EAN may, and so may a PDF that could not be read at
+    all, whose EANs are unknown.
+    """
+    return seen["eans"] is None or ean in seen["eans"]
+
+
 def _not_used(run: list[dict[str, Any]], why: str) -> str:
     """Return why a run of bills, newest first, was not shown as the year."""
     return f"the bills up to {run[0]['period_end']} were not used: {why}"
@@ -266,9 +275,15 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 listed.update(invoice.identifier for invoice in invoices)
                 for subentry_id in subentry_ids:
                     meter = meters[subentry_id]
+                    kind = meter[CONF_ENERGY_TYPE]
+                    shared = sum(p.energy_type == kind for p in points.values()) > 1
                     try:
                         data[subentry_id] = await self._async_meter(
-                            account, meter, invoices, points.get(meter[CONF_EAN])
+                            account,
+                            meter,
+                            invoices,
+                            points.get(meter[CONF_EAN]),
+                            shared=shared,
                         )
                     except EnecoAuthError:
                         raise
@@ -328,6 +343,8 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         meter: Mapping[str, Any],
         invoices: list[Invoice],
         point: ServiceDeliveryPoint | None,
+        *,
+        shared: bool = False,
     ) -> dict[str, Any]:
         """Return one meter's card and its last full year of bills.
 
@@ -343,6 +360,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         before it: its dates say which it is. One that would not download is
         not remembered, so it is tried again the next day; one that was
         refused is, and is not fetched again.
+
+        A bill's kind is told from the list, so the bill of the year before
+        ends the year unread. Where the address has another meter of the
+        same energy (``shared``), each bill is read first, since only its EAN
+        says whose it is.
         """
         card = None
         if point is not None and point.contract_id:
@@ -356,6 +378,15 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for invoice in invoices:
             if invoice.energy_type not in (meter[CONF_ENERGY_TYPE], "Both"):
                 continue
+            seen = self._seen.get(invoice.identifier)
+            if seen is None and shared:
+                got = await self._async_seen(invoice)
+                if isinstance(got, str):
+                    error = error or got
+                    continue
+                seen = got
+            if seen is not None and not _ours(seen, ean):
+                continue
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
             if run and not monthly and invoice.kind != INTERMEDIARY:
                 # The bill of the year before, told from the list unread.
@@ -366,19 +397,14 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if not run and invoice.kind == INTERMEDIARY:
                 waiting = True
                 continue
-            seen = self._seen.get(invoice.identifier)
             if seen is None:
-                try:
-                    seen = await self._async_read(invoice)
-                except EnecoAuthError:
-                    raise
-                except EnecoError as err:
-                    error = error or _not_read(invoice, str(err))
+                got = await self._async_seen(invoice)
+                if isinstance(got, str):
+                    error = error or got
                     continue
-                self._seen[invoice.identifier] = seen
-            # Unknown EANs: a PDF that could not be read at all may be ours.
-            if seen["eans"] is not None and ean not in seen["eans"]:
-                continue
+                seen = got
+                if not _ours(seen, ean):
+                    continue
             if seen.get("error") or seen.get("bill") is None:
                 error = error or _not_read(invoice, seen.get("error") or "no lines")
                 continue
@@ -406,6 +432,23 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             "year": year_state(run) if run else None,
             "error": error,
         }
+
+    async def _async_seen(self, invoice: Invoice) -> dict[str, Any] | str:
+        """Return what an invoice held, read once, or why it did not download.
+
+        One that did not download is not remembered, so it is tried again
+        the next day.
+        """
+        seen = self._seen.get(invoice.identifier)
+        if seen is None:
+            try:
+                seen = await self._async_read(invoice)
+            except EnecoAuthError:
+                raise
+            except EnecoError as err:
+                return _not_read(invoice, str(err))
+            self._seen[invoice.identifier] = seen
+        return seen
 
     async def _async_read(self, invoice: Invoice) -> dict[str, Any]:
         """Download and read one bill: the EANs it prints, its lines or why not.
