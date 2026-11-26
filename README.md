@@ -377,7 +377,9 @@ reading month too; `expected_regularisation` then says what the bill will
 ask. A period longer or shorter than a year is brought to one on the profile,
 so one holding two Januaries is not taken for a colder year. With two
 advances left a gap is shared by two months, so the amount moves more then.
-The attributes say what is behind it:
+While a newer yearly bill than the one shown is refused or not downloaded,
+the period after the one shown is over, and the sensor shows nothing, with
+the reason in `last_error`. The attributes say what is behind it:
 
 | Attribute | Meaning |
 | --- | --- |

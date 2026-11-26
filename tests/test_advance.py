@@ -81,9 +81,11 @@ from .test_bills import (
     CONSUMPTION,
     CONTRACT,
     INVOICES,
+    NEXT_YEAR,
     OTHER_EAN,
     PRODUCT,
     READINGS,
+    billed,
     bills_entry,
     invoice,
     mock_bill,
@@ -1238,3 +1240,59 @@ async def test_an_advance_of_the_period_before_is_not_kept(
         )
     assert got.get("monthly_advance") is None
     assert got["error"] == "the readings were not read: the portal returned HTTP 500"
+
+
+async def test_no_advance_is_worked_out_from_a_year_already_billed(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The newest yearly bill refused, the year shown is the one before.
+
+    The advance was worked out after it, for a period already billed, with
+    nothing said, and that bill's regularisation shown as still to come.
+    """
+    freezer.move_to("2027-11-26T09:00:00+00:00")
+    # Registered first, so it answers before the one portal() adds.
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    billed(
+                        invoice("CN3", "YearlyBill", "2027-04-26"),
+                        "2026-02-01",
+                        "2027-02-01",
+                    ),
+                    billed(
+                        invoice("CN2", "YearlyBill", "2026-04-26"),
+                        "2025-02-01",
+                        "2026-02-01",
+                    ),
+                    advance("AD1", "2027-02", "Electricity", 100.0),
+                ]
+            }
+        },
+    )
+    mock_bill(
+        aioclient_mock,
+        "CN3",
+        [row.replace("€ 58,04", "€ 58,40") for row in NEXT_YEAR],
+    )
+    portal(
+        aioclient_mock,
+        [contract("541449000000000001", "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51, "recommendedAmount": 554.43},
+        read=[
+            *READ,
+            ("2027-02-01", "Official", (9500, 13600, 10400, 6700)),
+            ("2027-11-25", "CustomerAdded", (11000, 15500, 12000, 9000)),
+        ],
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    assert meter.state == STATE_UNKNOWN
+    assert meter.attributes["last_error"] == (
+        "a newer bill than the year shown was not read"
+    )

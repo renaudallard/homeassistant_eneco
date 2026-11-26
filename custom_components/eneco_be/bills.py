@@ -58,6 +58,7 @@ from .bill_year import (
     INTERMEDIARY,
     MONTHLY,
     MONTHS,
+    SETTLEMENT,
     bill_state,
     card_state,
     follows,
@@ -699,6 +700,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         first = date.fromisoformat(newest["period_start"])
         last = date.fromisoformat(newest["period_end"])
         start = last + timedelta(days=1)
+        if any(
+            i.kind in SETTLEMENT - {INTERMEDIARY, MONTHLY}
+            and i.energy_type in (kind, "Both")
+            and i.period_start is not None
+            and i.period_start >= start
+            for i in every
+        ):
+            # The year shown is not the newest billed, one was refused or
+            # not downloaded: the period after it is over.
+            return {"error": "a newer bill than the year shown was not read"}
         kept_period = (previous or {}).get("period_start")
         if (
             isinstance(portal, str)
