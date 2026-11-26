@@ -613,3 +613,42 @@ async def test_an_address_with_nothing_left_to_add_asks_again(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "sources"
+
+
+async def test_an_address_found_full_is_offered_no_more(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Every address full: the picker came back each time, with no way out."""
+    second = "b" * 64
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    aioclient_mock.get(
+        f"{API}/accounts/{ACCOUNT}/delivery-addresses/{second}/service-delivery-points",
+        json={"data": {"serviceDeliveryPoints": [{"ean": EAN, "type": "Electricity"}]}},
+    )
+    mock_discovery(
+        aioclient_mock,
+        addresses=[
+            {"id": ADDRESS, "address": "One", "hasActiveContracts": True},
+            {"id": second, "address": "Two", "hasActiveContracts": True},
+        ],
+    )
+    entry = login_entry()
+    await setup(hass, entry)
+
+    result = await add_meter(hass, entry)
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ADDRESS: ADDRESS}
+    )
+    assert result["errors"] == {"base": "meters_configured"}
+    assert result["data_schema"] is not None
+    options = result["data_schema"].schema[CONF_ADDRESS].config["options"]
+    assert [option["value"] for option in options] == [second]
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ADDRESS: second}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "meters_configured"

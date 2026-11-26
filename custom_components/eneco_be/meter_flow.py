@@ -252,8 +252,11 @@ class MeterSteps[ResultT: (ConfigFlowResult, SubentryFlowResult)](
             return self.async_abort(reason="no_meters")
         self._points = [p for p in points if not self._meter_is_configured(p.ean)]
         if not self._points:
-            if len(self._addresses) > 1:
-                # Another address may still have one to add.
+            # Offered no more; another address may still have one to add.
+            self._addresses = [
+                a for a in self._addresses if a.identifier != self._address
+            ]
+            if self._addresses:
                 return self._address_form({"base": "meters_configured"})
             return self.async_abort(reason="meters_configured")
         return await self.async_step_meter()
