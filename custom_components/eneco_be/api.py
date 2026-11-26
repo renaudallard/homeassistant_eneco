@@ -70,7 +70,10 @@ _NEXT_DATA_RE: Final = re.compile(
     r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.DOTALL
 )
 
-_ACCOUNT_RE: Final = re.compile(r"/accounts/[^/]+")
+# The ids a REST path carries, and a query string, which carries the EAN or
+# the meter number.
+_PATH_ID_RE: Final = re.compile(r"/(accounts|delivery-addresses|contracts)/[^/?#\s]+")
+_QUERY_RE: Final = re.compile(r"\?\S*")
 
 # A bill is a few hundred kilobytes; anything far larger is not one.
 MAX_DOCUMENT_BYTES: Final = 10 * 1024 * 1024
@@ -214,15 +217,16 @@ class ServiceDeliveryPoint:
 
 
 def _endpoint(value: object) -> str:
-    """Return text with any account number in it taken out.
+    """Return text with the account, address and contract ids and any query taken out.
 
     Debug logs are what a maintainer asks for in a bug report, and every path
-    here is /accounts/<crm account number>/something. Which endpoint answered
-    is the whole point of the line; whose account it was is not. This has to
-    cover the exceptions too, because aiohttp quotes the URL it was handed in
-    the text of its own errors.
+    here is /accounts/<crm account number>/something, often with an address
+    id or an EAN after it. Which endpoint answered is the whole point of the
+    line; whose account it was is not. This has to cover the exceptions too,
+    because aiohttp quotes the URL it was handed, query included, in the text
+    of its own errors.
     """
-    return _ACCOUNT_RE.sub("/accounts/-", str(value))
+    return _QUERY_RE.sub("?-", _PATH_ID_RE.sub(r"/\1/-", str(value)))
 
 
 async def _read_capped(response: aiohttp.ClientResponse) -> bytes:

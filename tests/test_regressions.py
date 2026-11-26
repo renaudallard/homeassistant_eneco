@@ -253,6 +253,38 @@ async def test_account_number_never_reaches_the_user(
     assert ACCOUNT not in str(stored)
 
 
+async def test_an_ean_in_a_query_never_reaches_the_user(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The URL aiohttp quotes carries the query too, and there the EAN.
+
+    Only the account number was taken out of it, so the whole EAN went to
+    the interface, the store, the repair and the diagnostics.
+    """
+    url = f"{API}/accounts/{ACCOUNT}/meter-readings/registers?ean={EAN}"
+    aioclient_mock.get(
+        url, exc=aiohttp.ConnectionTimeoutError(f"Connection timeout to host {url}")
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press_failing(hass)
+
+    error = str(state_of(hass, STATUS).attributes[ATTR_LAST_ERROR])
+    assert "Connection timeout" in error
+    assert EAN not in error
+    assert ACCOUNT not in error
+    report = await async_get_config_entry_diagnostics(hass, config_entry)
+    assert EAN not in str(report)
+
+
 async def test_error_attribute_is_not_recorded(
     hass: HomeAssistant,
     mock_portal: AiohttpClientMocker,
