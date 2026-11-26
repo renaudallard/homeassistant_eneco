@@ -168,14 +168,15 @@ def _address_state(
 
 
 def _settled(
-    every: list[Invoice], kind: str, start: date, end: date
-) -> tuple[float, str | None]:
-    """Return what bills within the period already asked for, and why not.
+    every: list[Invoice], kind: str, start: date, end: date, *, shared: bool
+) -> tuple[float | None, str | None]:
+    """Return what bills within the period already asked for, or why not.
 
     An intermediary bill, on a product change, settles its days less their
     advances, so what it asked for, or paid back, is no longer owed at the
-    reading. One for both energies cannot be split, and one giving no amount
-    cannot be counted: the reason is returned instead.
+    reading. One for both energies cannot be split, one giving no amount
+    cannot be counted, and with two meters of one energy none is told apart:
+    None is returned then, with the reason.
     """
     settling = [
         i
@@ -186,9 +187,14 @@ def _settled(
         and start <= i.period_start <= end
     ]
     if any(i.energy_type == "Both" for i in settling):
-        return 0.0, "an intermediary bill for both energies settles part of the period"
+        return None, "an intermediary bill for both energies settles part of the period"
     if any(i.due is None for i in settling):
-        return 0.0, "an intermediary bill of the period gives no amount"
+        return None, "an intermediary bill of the period gives no amount"
+    if shared and settling:
+        return None, (
+            "an intermediary bill of the period is not told apart between meters"
+            " of one energy"
+        )
     return sum(i.due or 0.0 for i in settling), None
 
 
@@ -851,9 +857,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if estimated & in_period
             else "invoice"
         )
-        settled, unsettled = _settled(every, kind, start, end)
+        settled, unsettled = _settled(every, kind, start, end, shared=shared)
         expected = None
-        if coming is not None and split != "incomplete" and unsettled is None:
+        if coming is not None and split != "incomplete" and settled is not None:
             expected = round(result["period_cost"] - paid - coming - settled, 2)
         # Until the reading, what brings the regularisation to about 0. With
         # one advance left the whole gap would fall on it, too late to set and
@@ -869,7 +875,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if shared
                 else "the advances invoiced could not all be split by energy"
             )
-        elif unsettled is not None:
+        elif settled is None:
             needed = None
             error = unsettled
         else:
@@ -883,7 +889,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             "advance_now": advance_now,
             "difference": difference,
             "advances_billed": paid,
-            "settled_by_bills": round(settled, 2),
+            "settled_by_bills": None if settled is None else round(settled, 2),
             "advances_to_come": coming,
             "advances_left": left,
             "advance_split": split,

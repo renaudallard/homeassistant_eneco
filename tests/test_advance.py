@@ -1437,6 +1437,8 @@ async def test_an_intermediary_bill_of_the_period_is_counted(
         assert got["last_error"] == (
             "an intermediary bill for both energies settles part of the period"
         )
+        # Not 0, which would say it settled nothing.
+        assert got["settled_by_bills"] is None
         return
     assert got["settled_by_bills"] == due
     assert float(meter.state) == round(
