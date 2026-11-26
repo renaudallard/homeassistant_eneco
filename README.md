@@ -545,7 +545,9 @@ ENECO_EMAIL=you@example.com .venv/bin/python tools/check-portal.py
 ```
 
 The password is asked for at the prompt unless `ENECO_PASSWORD` is set as well,
-so the check needs a terminal to run in.
+so the check needs a terminal to run in. Account numbers, EANs, account names
+and addresses are masked, so the output can be pasted into an issue; `--full`
+shows them.
 
 The brand images in `custom_components/eneco_be/brand` are what HACS validates
 and what Home Assistant serves for the integration.

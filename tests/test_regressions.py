@@ -31,6 +31,7 @@ import ast
 import asyncio
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
+import importlib.util
 import json
 import logging
 from pathlib import Path
@@ -1555,3 +1556,20 @@ async def test_a_change_during_a_submission_leaves_it_alone(
 
     assert len(submissions(mock_portal)) == 1
     assert state_of(hass, STATUS).state == "success"
+
+
+def test_the_portal_check_hides_names_and_addresses() -> None:
+    """Its output is meant to be pasted, so nothing of a name may show.
+
+    Asked to keep nothing, the mask kept the whole value: ``value[-0:]``.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "check_portal", Path(__file__).parent.parent / "tools" / "check-portal.py"
+    )
+    assert spec is not None and spec.loader is not None
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+
+    assert tool.mask("Rue de la Loi 16, 1000 Bruxelles", 0) == "…"
+    assert tool.mask("1234567890", 4) == "…7890"
+    assert tool.plain("Home", 0) == "Home"

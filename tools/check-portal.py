@@ -72,10 +72,10 @@ type Formatter = Callable[[str, int], str]
 
 
 def mask(value: str, keep: int = 4) -> str:
-    """Return a value with all but its last characters hidden."""
+    """Return a value with all but its last ``keep`` characters hidden."""
     if not value:
         return "(empty)"
-    return "…" + value[-keep:] if len(value) > keep else "…"
+    return "…" + value[-keep:] if 0 < keep < len(value) else "…"
 
 
 def plain(value: str, keep: int = 4) -> str:
@@ -115,7 +115,8 @@ async def check(email: str, password: str, show: Formatter) -> int:
         print(f"accounts    : {len(accounts)}")
 
         for account in accounts:
-            print(f"  {show(account.number, 4)}  {account.alias!r}")
+            # The alias is the account number unless one was given.
+            print(f"  {show(account.number, 4)}  {show(account.alias, 0)}")
             addresses = [
                 address
                 for address in await client.async_get_addresses(account.number)
@@ -124,7 +125,7 @@ async def check(email: str, password: str, show: Formatter) -> int:
             print(f"  addresses : {len(addresses)} with an active contract")
 
             for address in addresses:
-                print(f"    {show(address.identifier, 6)}  {address.label}")
+                print(f"    {show(address.identifier, 6)}  {show(address.label, 0)}")
                 points = await client.async_get_delivery_points(
                     account.number, address.identifier
                 )
@@ -176,7 +177,9 @@ async def check(email: str, password: str, show: Formatter) -> int:
 def main() -> int:
     """Parse the arguments and run the check."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--full", action="store_true", help="do not mask identifiers")
+    parser.add_argument(
+        "--full", action="store_true", help="do not mask identifiers and addresses"
+    )
     parser.add_argument("--debug", action="store_true", help="log every request")
     args = parser.parse_args()
 
