@@ -117,6 +117,15 @@ def year_before(day: date) -> date:
     return _shift(day, -1)
 
 
+def profile_range(first: date, last: date) -> tuple[date, date]:
+    """Return the whole months to ask the portal's profile for.
+
+    The portal cuts a month at the end date it is given, so a bill ending on
+    16 December would get half of December spread as if over all of it.
+    """
+    return first.replace(day=1), last.replace(day=monthrange(last.year, last.month)[1])
+
+
 def index_volumes(
     first: Mapping[str, int], last: Mapping[str, int], factor: float = 1.0
 ) -> Volumes:

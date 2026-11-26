@@ -305,7 +305,9 @@ delivery point:
 the portal's spread of its readings: offtake follows the seasons, but
 injection is spread flat between two readings until daily ones are sent, and
 gas months do not add up to a bill's kWh where a bill starts or ends mid
-month. Good for the shape of a year, not for what a period used.
+month. Good for the shape of a year, not for what a period used. The last
+month is cut at `endDate`: asked to 16 December 2025, December came back as
+1 370 kWh, against 2 754 asked to the 31st.
 
 ### Advance invoice documents
 

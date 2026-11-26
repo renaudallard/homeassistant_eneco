@@ -37,6 +37,7 @@ from custom_components.eneco_be.provision import (
     cost,
     index_volumes,
     parts,
+    profile_range,
     project,
 )
 
@@ -578,3 +579,15 @@ def test_a_compensated_household_against_its_own_bills() -> None:
     assert got["measured_injection_kwh"] == 4786.0
     assert got["period_cost"] == pytest.approx(996, rel=0.05)
     assert got["monthly_advance"] == pytest.approx(83, rel=0.05)
+
+
+def test_the_profile_is_asked_in_whole_months() -> None:
+    """The portal cuts the last month at the end date: ask to its end."""
+    assert profile_range(date(2025, 1, 6), date(2025, 12, 16)) == (
+        date(2025, 1, 1),
+        date(2025, 12, 31),
+    )
+    assert profile_range(date(2024, 2, 1), date(2025, 2, 3)) == (
+        date(2024, 2, 1),
+        date(2025, 2, 28),
+    )

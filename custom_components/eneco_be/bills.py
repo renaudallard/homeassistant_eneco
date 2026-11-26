@@ -63,7 +63,14 @@ from .const import (
     GAS,
     LAST_BILL,
 )
-from .provision import ProvisionError, advances, period_months, project, year_after
+from .provision import (
+    ProvisionError,
+    advances,
+    period_months,
+    profile_range,
+    project,
+    year_after,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -649,7 +656,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 {}
                 if point is None
                 else await self.client.async_get_monthly_volumes(
-                    account, address, point, first.replace(day=1), last
+                    account, address, point, *profile_range(first, last)
                 )
             )
         except EnecoAuthError:
