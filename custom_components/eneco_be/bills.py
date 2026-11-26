@@ -106,7 +106,8 @@ _EAN_RE: Final = re.compile(r"(?<!\d)54\d{16}(?!\d)")
 
 def _not_read(invoice: Invoice, reason: str) -> str:
     """Return why a bill was not taken, naming it by the day it was issued."""
-    return f"the bill of {invoice.issued} was not read: {reason}"
+    name = f"the bill of {invoice.issued}" if invoice.issued else "an undated bill"
+    return f"{name} was not read: {reason}"
 
 
 def card_state(card: TariffCard) -> dict[str, Any]:

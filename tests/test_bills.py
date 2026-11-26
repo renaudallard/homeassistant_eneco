@@ -47,7 +47,7 @@ from custom_components.eneco_be.api import (
     EnecoError,
 )
 from custom_components.eneco_be.bill_compare import async_energy_rates
-from custom_components.eneco_be.bills import BillCoordinator
+from custom_components.eneco_be.bills import BillCoordinator, _not_read
 from custom_components.eneco_be.binary_sensor import threshold
 from custom_components.eneco_be.const import (
     CONF_ADJUST_ADVANCE,
@@ -1610,4 +1610,12 @@ async def test_a_bill_check_of_another_year_is_not_weighed(
     assert disagrees.state == STATE_UNKNOWN
     assert disagrees.attributes["last_error"] == (
         "the price entry's Bill check has not checked this year yet"
+    )
+
+
+def test_an_undated_bill_is_named_as_one() -> None:
+    """It was named the bill of None."""
+    undated = api_billing.invoice({"invoiceId": "X1", "invoiceType": "YearlyBill"})
+    assert _not_read(undated, "it has no document") == (
+        "an undated bill was not read: it has no document"
     )
