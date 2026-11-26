@@ -40,7 +40,12 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 )
 
 from custom_components.eneco_be import api, api_billing
-from custom_components.eneco_be.api import EnecoClient, EnecoConnectionError, EnecoError
+from custom_components.eneco_be.api import (
+    EnecoAuthError,
+    EnecoClient,
+    EnecoConnectionError,
+    EnecoError,
+)
 from custom_components.eneco_be.bill_compare import async_energy_rates
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.binary_sensor import threshold
@@ -50,7 +55,7 @@ from custom_components.eneco_be.const import (
     DOMAIN,
 )
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, ServiceCall, State, SupportsResponse
 from homeassistant.data_entry_flow import FlowResultType
@@ -1341,3 +1346,29 @@ async def test_a_card_not_read_keeps_the_last_and_the_bills_go_on(
         "the tariff card was not read: the portal returned HTTP 500"
     )
     assert state_of(hass, LAST_BILL).attributes["last_error"] is None
+
+
+async def test_a_refused_sign_in_on_the_bills_asks_for_the_password(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """A login whose meters submit nothing only signs in for its bills.
+
+    The refusal then reached nobody who could ask for a new password, and
+    the bills failed every day without a word.
+    """
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    with patch.object(
+        bills.client,
+        "async_get_invoices",
+        side_effect=EnecoAuthError("Okta requires an interactive sign in"),
+    ):
+        await bills.async_refresh()
+        await hass.async_block_till_done()
+
+    assert not bills.last_update_success
+    assert list(entry.async_get_active_flows(hass, {SOURCE_REAUTH}))
