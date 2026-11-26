@@ -188,6 +188,9 @@
       "monthly_advance": {
         "name": "Acompte mensuel nécessaire"
       },
+      "current_advance": {
+        "name": "Acompte actuel"
+      },
       "tariff_card": {
         "name": "Carte tarifaire"
       }

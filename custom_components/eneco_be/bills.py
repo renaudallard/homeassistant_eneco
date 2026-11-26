@@ -167,15 +167,22 @@ def _settlement(every: list[Invoice], today: date) -> list[Invoice]:
     return invoices
 
 
-def _address_state(portal: AdvanceAmounts | str) -> dict[str, Any]:
-    """Return what the address sensor shows of the portal's advances.
+def _address_state(
+    portal: AdvanceAmounts | str, previous: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Return what the address sensors show of the portal's advances.
 
     The portal's own expected regularisation is turned to this
-    integration's sign: positive is still to pay.
+    integration's sign: positive is still to pay. A page that could not be
+    read leaves ``previous`` standing, with why: an advance does not change
+    because it was not fetched again.
     """
     if isinstance(portal, str):
+        if previous:
+            return previous | {"error": portal}
         return {
             "eans": None,
+            "contracts": {},
             "advance_now": None,
             "portal_min": None,
             "portal_max": None,
@@ -200,6 +207,16 @@ def _address_state(portal: AdvanceAmounts | str) -> dict[str, Any]:
         )
     return {
         "eans": sorted(c.ean for c in portal.contracts),
+        "contracts": {
+            c.ean: {
+                "current": c.current,
+                "recommended": c.recommended,
+                "months_left": c.months_left,
+                "minimum": c.minimum,
+                "maximum": c.maximum,
+            }
+            for c in portal.contracts
+        },
         "advance_now": portal.current,
         "portal_min": portal.minimum,
         "portal_max": portal.maximum,
@@ -428,7 +445,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     except EnecoError as err:
                         complete = False
                         data[subentry_id] = self._kept(subentry_id, str(err))
-                self.addresses[address] = _address_state(portal)
+                self.addresses[address] = _address_state(
+                    portal, self.addresses.get(address)
+                )
         except EnecoAuthError as err:
             raise UpdateFailed(str(err)) from err
 

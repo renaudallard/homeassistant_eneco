@@ -188,6 +188,9 @@
       "monthly_advance": {
         "name": "Benodigd maandelijks voorschot"
       },
+      "current_advance": {
+        "name": "Huidig voorschot"
+      },
       "tariff_card": {
         "name": "Tariefkaart"
       }

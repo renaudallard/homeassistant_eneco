@@ -32,6 +32,8 @@ from freezegun.api import FrozenDateTimeFactory
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
+from custom_components.eneco_be.bills import _address_state
 from custom_components.eneco_be.const import CONF_READ_BILLS
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -57,6 +59,8 @@ from .test_bills import (
 TODAY = "2026-11-26T09:00:00+00:00"
 METER = "sensor.eneco_541449000000000001_monthly_advance_needed"
 ADDRESS_TOTAL = "sensor.eneco_advance_monthly_advance_needed"
+METER_NOW = "sensor.eneco_541449000000000001_current_advance"
+ADDRESS_NOW = "sensor.eneco_advance_current_advance"
 
 # The official readings that opened and closed the bill, and the last one sent.
 READ = [
@@ -266,6 +270,18 @@ async def test_the_advance_a_meter_needs(
         1663.29 - 3 * 56.51 + 920.10 - 3 * 300.0, 2
     )
 
+    # What Eneco bills now, as sensors of their own.
+    now = state_of(hass, METER_NOW)
+    assert now.state == "56.51"
+    assert now.attributes["unit_of_measurement"] == "EUR"
+    assert now.attributes["eneco_recommended"] == round(1663.29 / 3, 2)
+    assert now.attributes["eneco_months_left"] == 3
+    assert (now.attributes["portal_min"], now.attributes["portal_max"]) == (20, 2500)
+    assert now.attributes["last_error"] is None
+    address_now = state_of(hass, ADDRESS_NOW)
+    assert address_now.state == "356.51"
+    assert address_now.attributes["eneco_recommended"] == 861.13
+
 
 async def test_the_address_adds_up_its_meters(
     hass: HomeAssistant,
@@ -318,6 +334,10 @@ async def test_advances_not_read_leave_the_amount(
     total = state_of(hass, ADDRESS_TOTAL)
     assert total.state == STATE_UNKNOWN
     assert total.attributes["last_error"].startswith("the advances were not read")
+    for entity_id in (METER_NOW, ADDRESS_NOW):
+        now = state_of(hass, entity_id)
+        assert now.state == STATE_UNKNOWN
+        assert now.attributes["last_error"].startswith("the advances were not read")
 
 
 async def test_a_split_not_told_leaves_no_regularisation(
@@ -388,3 +408,19 @@ async def test_with_one_advance_left_the_next_period_shows(
     assert got["advance_split"] == "incomplete"
     assert float(meter.state) == got["after_reading"]
     assert got["last_error"] is None
+
+
+def test_an_advances_page_down_keeps_the_last_read() -> None:
+    """An advance does not change because it was not fetched again."""
+    read = _address_state(
+        AdvanceAmounts(
+            356.51,
+            861.13,
+            (ContractAdvance(EAN, "Electricity", 56.51, 554.43, 3, 1663.29),),
+        )
+    )
+    assert read["advance_now"] == 356.51
+    assert read["contracts"][EAN]["current"] == 56.51
+    kept = _address_state("the advances were not read: HTTP 500", read)
+    assert kept == read | {"error": "the advances were not read: HTTP 500"}
+    assert _address_state("down")["advance_now"] is None

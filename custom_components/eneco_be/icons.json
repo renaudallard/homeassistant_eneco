@@ -32,6 +32,9 @@
       "monthly_advance": {
         "default": "mdi:cash-clock"
       },
+      "current_advance": {
+        "default": "mdi:cash"
+      },
       "tariff_card": {
         "default": "mdi:tag-text-outline"
       }

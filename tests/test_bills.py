@@ -70,6 +70,15 @@ LAST_BILL = "sensor.eneco_541449000000000001_last_yearly_bill"
 TARIFF_CARD = "sensor.eneco_541449000000000001_tariff_card"
 BILL_DIFFERENCE = "sensor.eneco_541449000000000001_bill_difference"
 BILL_DISAGREES = "binary_sensor.eneco_541449000000000001_bill_disagrees"
+# Every entity reading bills adds, by the end of its unique id.
+BILL_SUFFIXES = (
+    "_last_bill",
+    "_tariff_card",
+    "_bill_difference",
+    "_bill_disagrees",
+    "_monthly_advance",
+    "_current_advance",
+)
 
 CONTRACT = "1-1000"
 INVOICES = f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/invoices"
@@ -471,13 +480,23 @@ async def test_options_flow_turns_it_on_and_off(
         await hass.async_block_till_done(wait_background_tasks=True)
 
         assert entry.options == {CONF_READ_BILLS: value}
+        unique_ids = [
+            item.unique_id
+            for item in er.async_entries_for_config_entry(
+                entity_registry, entry.entry_id
+            )
+        ]
+        bill_ids = [u for u in unique_ids if u.endswith(BILL_SUFFIXES)]
         if value:
             assert state_of(hass, LAST_BILL).state == "1139.28"
             assert BillCoordinator.key_for(entry.entry_id) in hass_storage
+            # The meter's six and the address's two.
+            assert len(bill_ids) == 8
         else:
             assert hass.states.get(LAST_BILL) is None
             assert entity_registry.async_get(LAST_BILL) is None
             assert entity_registry.async_get(TARIFF_CARD) is None
+            assert bill_ids == []
             # What was read goes with them.
             assert BillCoordinator.key_for(entry.entry_id) not in hass_storage
 

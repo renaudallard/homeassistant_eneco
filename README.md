@@ -216,6 +216,7 @@ download, and their billing lines become more sensors per meter:
 | `sensor.*_bill_difference` | The year billed less what a price integration prices it at, VAT included, in EUR |
 | `binary_sensor.*_bill_disagrees` | Problem when the bill disagrees with that price integration, OK when it agrees |
 | `sensor.*_monthly_advance_needed` | The monthly advance the meter needs, VAT included, in EUR |
+| `sensor.*_current_advance` | What Eneco bills the meter's contract each month now, VAT included, in EUR |
 
 and one more for each delivery address, on a device of its own named *Eneco
 advance*:
@@ -223,6 +224,7 @@ advance*:
 | Entity | Purpose |
 | --- | --- |
 | `sensor.eneco_advance_monthly_advance_needed` | The monthly advance the address needs, gas and electricity together, in EUR |
+| `sensor.eneco_advance_current_advance` | What Eneco bills the address each month now, in EUR |
 
 The total is each line with its own VAT rate, added up, so it can be a cent off
 what a bill prints. It is the cost of the year, not what was left to pay on the
@@ -375,6 +377,13 @@ on a compensated household the amount needed can be below what it accepts. It sh
 the reason in `last_error`, while a contract the portal lists at the address
 has no meter set up here or no amount yet: a total missing one would pass for
 the whole.
+
+The current advance sensors are what the portal's advances page says Eneco
+bills now, read with the rest once a day: per meter, with `portal_min` and
+`portal_max`, the range the portal accepts, `eneco_recommended`, its own
+advice, and `eneco_months_left`, its count of months to the reading; per
+address, the total with its range and advice. A day the page cannot be read
+keeps the last amount read, with the reason in `last_error`.
 
 An advance invoice for both energies prints each one's share; it is read
 once, and used only when the shares add up to what the invoice list says it

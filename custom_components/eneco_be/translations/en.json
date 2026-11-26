@@ -188,6 +188,9 @@
       "monthly_advance": {
         "name": "Monthly advance needed"
       },
+      "current_advance": {
+        "name": "Current advance"
+      },
       "tariff_card": {
         "name": "Tariff card"
       }

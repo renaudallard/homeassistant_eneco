@@ -188,6 +188,9 @@
       "monthly_advance": {
         "name": "Benötigter monatlicher Abschlag"
       },
+      "current_advance": {
+        "name": "Aktueller Abschlag"
+      },
       "tariff_card": {
         "name": "Tarifkarte"
       }
