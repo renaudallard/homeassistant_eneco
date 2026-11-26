@@ -43,7 +43,7 @@ from custom_components.eneco_be.const import (
     DOMAIN,
 )
 from custom_components.eneco_be.sensor import AddressAdvanceSensor
-from homeassistant.const import STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -926,3 +926,32 @@ async def test_readings_of_some_registers_only_give_no_advance(
     assert meter.attributes["last_error"] == (
         "the readings since the last bill do not name every register"
     )
+
+
+async def test_the_apply_button_stays_after_a_read_that_failed(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A press reads again first, so it has nothing to wait for.
+
+    Unavailable after one failed read, it could not be pressed for a day,
+    and a script pressing it was let through doing nothing.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    with patch.object(bills, "_async_update_data", side_effect=UpdateFailed("down")):
+        await bills.async_refresh()
+        await hass.async_block_till_done()
+
+    assert not bills.last_update_success
+    assert state_of(hass, APPLY).state != STATE_UNAVAILABLE

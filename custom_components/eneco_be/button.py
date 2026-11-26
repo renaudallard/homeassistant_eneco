@@ -128,6 +128,16 @@ class ApplyAdvanceButton(CoordinatorEntity[BillCoordinator], ButtonEntity):
         self._attr_unique_id = f"{entry_id}_{address}_{APPLY_ADVANCE}"
         self._attr_device_info = address_device(entry_id, address, number)
 
+    @property
+    @override
+    def available(self) -> bool:
+        """Return True: a press reads again first, and says why if that fails.
+
+        Following the last read, one that failed would keep it from being
+        pressed for a day, and a script pressing it would pass doing nothing.
+        """
+        return True
+
     @override
     async def async_press(self) -> None:
         """Set the proposed advances, and say why when none may be set."""
