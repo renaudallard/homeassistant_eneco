@@ -1187,3 +1187,54 @@ async def test_the_advance_stands_a_day_the_advances_page_is_down(
     assert after.state == before.state
     assert after.attributes["period_end"] == before.attributes["period_end"]
     assert after.attributes["last_error"].startswith("the advances were not read")
+
+
+async def test_an_advance_of_the_period_before_is_not_kept(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A new bill read the day the readings are not: the old period is over.
+
+    Its amount stood, with its dates, as if it were the running period's.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    year = {
+        "bills": [
+            {
+                "invoice_type": "YearlyBill",
+                "period_start": "2025-02-01",
+                "period_end": "2026-01-31",
+            }
+        ],
+        "lines": [],
+    }
+    previous = {"monthly_advance": 50.0, "period_start": "2025-02-01", "error": None}
+    with patch.object(
+        bills.client,
+        "async_get_readings",
+        side_effect=EnecoConnectionError("the portal returned HTTP 500"),
+    ):
+        got = await bills._async_provision(  # noqa: SLF001
+            ACCOUNT,
+            ADDRESS,
+            meter_of(entry).data,
+            ServiceDeliveryPoint(EAN, "Electricity", meter_number="M1"),
+            year,
+            [],
+            "the portal lists no advances",
+            date(2026, 11, 26),
+            previous,
+        )
+    assert got.get("monthly_advance") is None
+    assert got["error"] == "the readings were not read: the portal returned HTTP 500"

@@ -705,11 +705,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         first = date.fromisoformat(newest["period_start"])
         last = date.fromisoformat(newest["period_end"])
         start = last + timedelta(days=1)
+        kept_period = (previous or {}).get("period_start")
         if (
             isinstance(portal, str)
             and previous
             and previous.get("monthly_advance") is not None
-            and previous.get("period_start") == start.isoformat()
+            and kept_period == start.isoformat()
         ):
             # The page gives the month of the reading that ends the period,
             # and the advances paid: worked out again without it, the
@@ -741,7 +742,10 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except EnecoAuthError:
             raise
         except EnecoError as err:
-            return (previous or {}) | {"error": f"the readings were not read: {err}"}
+            # The amount of this period stands; one of the period before,
+            # a new bill being read today, is over.
+            kept = previous if previous and kept_period == start.isoformat() else {}
+            return kept | {"error": f"the readings were not read: {err}"}
         official = {r.date: r.values for r in readings if r.reading_type == "Official"}
         opened = official.get(first.isoformat())
         closed = official.get(start.isoformat())
