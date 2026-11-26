@@ -529,9 +529,10 @@ the REST API wants.
 
 Once signed in, submitting is JSON throughout: every call goes to the same REST
 endpoints the website uses. The sign in itself is neither, and the token lives
-only in memory, so the first submission after a restart posts a form to NextAuth
-and follows Okta's redirect chain before any of that. Every meter of a login
-shares that one sign in, and only one runs at a time. Setting up a meter has
+only in memory, so setting the entry up, at each start and reload, posts a form
+to NextAuth and follows Okta's redirect chain before any of that; while the
+portal cannot be reached, each retry of the setup signs in again. Every meter
+of a login shares that one sign in, and only one runs at a time. Setting up a meter has
 one more exception: no endpoint exposes the list of accounts you may act on,
 which reaches the browser only inside the `__NEXT_DATA__` payload the dashboard
 renders, so that list is read out of the page.
