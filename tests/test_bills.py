@@ -1591,26 +1591,37 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
     assert bill.attributes["last_error"].endswith("it may be another meter's")
 
 
+@pytest.mark.parametrize("same", [False, True])
 async def test_a_bill_check_of_another_year_is_not_weighed(
-    hass: HomeAssistant, portal: AiohttpClientMocker
+    hass: HomeAssistant, portal: AiohttpClientMocker, same: bool
 ) -> None:
     """Until the price entry checks the year shown, its lines are of another.
 
     A line off in that other year matched none of this one, could not be
-    weighed, and made a year priced exactly as billed a problem.
+    weighed, and made a year priced exactly as billed a problem. A check of
+    the year shown is weighed as ever.
     """
     mock_bill(portal, "CN2", ELECTRICITY)
     entry = price_entry(hass)
-    stale = off(0.1737) | {"start": "2024-02-01", "end": "2024-03-31"}
-    bill_check(hass, entry, "1", [stale], ("2024-02-01", "2025-01-31"))
+    if same:
+        line = off(0.30)
+        period = ("2025-02-01", "2026-01-31")
+    else:
+        line = off(0.1737) | {"start": "2024-02-01", "end": "2024-03-31"}
+        period = ("2024-02-01", "2025-01-31")
+    bill_check(hass, entry, "1", [line], period)
     bill_cost(hass, {"cost": 1139.28, "covered": True})
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     disagrees = state_of(hass, BILL_DISAGREES)
-    assert disagrees.state == STATE_UNKNOWN
-    assert disagrees.attributes["last_error"] == (
-        "the price entry's Bill check has not checked this year yet"
-    )
+    if same:
+        assert disagrees.state == "on"
+        assert disagrees.attributes["lines_off_eur"] > 0
+    else:
+        assert disagrees.state == STATE_UNKNOWN
+        assert disagrees.attributes["last_error"] == (
+            "the price entry's Bill check has not checked this year yet"
+        )
 
 
 def test_an_undated_bill_is_named_as_one() -> None:
