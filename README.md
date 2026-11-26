@@ -370,13 +370,15 @@ works it out from your own last yearly bill instead:
   integration](https://github.com/renaudallard/homeassistant_be_gas_prices)
   entry checks the bill (2026.11.17 or newer), since the index can move a lot
   in a year; electricity energy stays at the bill's price for now. When the
-  entry checking the bill cannot give its prices, not loaded or failing, the
-  sensor shows nothing that day, with the reason in `last_error`, rather than
-  the bill's price, which on an index can be far below today's.
+  entry checking the bill cannot give its prices, not loaded or refusing, the
+  amount of the same period stands, or none shows, with the reason in
+  `last_error`, and nothing is proposed: not the bill's price, which on an
+  index can be far below today's. A disabled entry checks nothing.
 
 The state is the advance to pay until the reading for the next regularisation
 to come to about 0: what the period will cost less the advances invoiced so
-far, divided by the advances left before the reading, never below 0. Once one
+far and what bills of the period settled already, divided by the advances
+left before the reading, never below 0. Once one
 advance or none is left before the reading, it is the next period's: a year
 like the running one at today's prices, divided by twelve, which
 `after_reading` always gives. The whole gap would otherwise fall on that last
