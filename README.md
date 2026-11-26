@@ -171,7 +171,8 @@ A wall clock trigger cannot fire while Home Assistant is down, so if the
 configured time has already gone by when it starts and today has not been
 submitted yet, the readings are sent rather than the day being lost. That
 happens once Home Assistant has finished starting, not while it is still
-loading, so the sensors it reads have had a chance to publish a value. It also
+loading, so the sensors it reads have had a chance to publish a value; the
+time going by while it loads is left to that too. It also
 means a freshly configured meter submits as soon as you finish setting it up, if
 you chose a time earlier in the day.
 

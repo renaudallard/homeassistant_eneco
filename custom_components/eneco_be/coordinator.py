@@ -39,7 +39,7 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfVolume,
 )
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change
@@ -350,6 +350,12 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         at = self.submit_time
 
         async def _submit(now: datetime) -> None:
+            if self.hass.state in (CoreState.not_running, CoreState.starting):
+                # The sources may not be loaded yet, and spending the day on
+                # them would make the catch-up stand down once Home Assistant
+                # runs. That catch-up submits for today instead.
+                _LOGGER.debug("Daily submission due while starting, left for later")
+                return
             _LOGGER.debug("Daily submission triggered at %s", now)
             self._triggered = dt_util.now().date()
             await self.async_refresh()

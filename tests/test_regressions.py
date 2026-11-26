@@ -105,6 +105,7 @@ from .conftest import (
     PASSWORD,
     coordinator_of,
     legacy_entry,
+    login_entry,
     mock_discovery,
     mock_login,
     stored_meter,
@@ -1440,3 +1441,30 @@ async def test_a_refused_login_does_not_log_the_address(
 
     assert "could not authenticate" in caplog.text
     assert EMAIL not in caplog.text
+
+
+async def test_a_trigger_while_starting_leaves_the_day_to_the_catch_up(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The time going by during startup must not cost the day.
+
+    The trigger is armed during setup, so it could fire before the sources
+    were loaded, fail on them, and then make the catch-up stand down.
+    """
+    hass.set_state(CoreState.starting)
+    # The clock of the tests reads 12:00.
+    await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "12:01:00"}))
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    set_sources(hass)
+    freezer.tick(timedelta(minutes=2))
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "success"
