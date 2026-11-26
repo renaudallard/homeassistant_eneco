@@ -1746,7 +1746,7 @@ async def test_the_same_password_confirmed_again_is_tried_again(
     okta["status"] = "LOCKED_OUT"
     lapsed["once"] = True
     await press_failing(hass)
-    assert config_entry.async_get_active_flows(hass, {SOURCE_REAUTH})
+    assert list(config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))
 
     # It opens again, and the same password is confirmed.
     okta["status"] = "SUCCESS"
