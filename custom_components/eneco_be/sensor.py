@@ -111,6 +111,9 @@ class EnecoSensorDescription(SensorEntityDescription):
     """Describes an Eneco sensor and how to read it off the state."""
 
     value_fn: Callable[[EnecoCoordinator], datetime | str | None]
+    # Read off the meter's settings rather than the last attempt, so it
+    # stays available when an attempt fails unexpectedly.
+    from_settings: bool = False
 
 
 SENSORS: tuple[EnecoSensorDescription, ...] = (
@@ -140,6 +143,7 @@ SENSORS: tuple[EnecoSensorDescription, ...] = (
         translation_key="next_submission",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=lambda coordinator: coordinator.next_submission,
+        from_settings=True,
     ),
 )
 
@@ -233,6 +237,12 @@ class EnecoSensor(EnecoEntity, SensorEntity):
         self.entity_description = description
         ean = coordinator.meter[CONF_EAN]
         self._attr_unique_id = f"{ean}_{description.key}"
+
+    @property
+    @override
+    def available(self) -> bool:
+        """Return whether the value can be read, always for a setting."""
+        return self.entity_description.from_settings or super().available
 
     @property
     @override

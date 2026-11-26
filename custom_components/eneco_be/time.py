@@ -73,6 +73,12 @@ class EnecoSubmitTime(EnecoEntity, TimeEntity):
 
     @property
     @override
+    def available(self) -> bool:
+        """Return True: the time is a setting, whatever the last attempt did."""
+        return True
+
+    @property
+    @override
     def native_value(self) -> time:
         """Return the configured submission time."""
         return self.coordinator.submit_time

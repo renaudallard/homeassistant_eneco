@@ -1653,3 +1653,30 @@ async def test_started_within_the_second_of_a_trigger_left_for_later(
     await hass.async_block_till_done()
 
     assert len(submissions(mock_portal)) == 1
+
+
+async def test_the_schedule_stays_usable_after_an_unexpected_failure(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The time and the next submission come from the meter, not the attempt.
+
+    Both went unavailable with the attempt, so the time could not be moved
+    until a submission went through again, the next day at best.
+    """
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    coordinator = coordinator_of(config_entry)
+
+    async def broken() -> EnecoState:
+        raise RuntimeError("Session is closed")
+
+    monkeypatch.setattr(coordinator, "_async_submit", broken)
+    await press(hass)
+
+    assert not coordinator.last_update_success
+    assert state_of(hass, STATUS).state == STATE_UNAVAILABLE
+    assert state_of(hass, NEXT).state != STATE_UNAVAILABLE
+    assert state_of(hass, SUBMIT_TIME).state != STATE_UNAVAILABLE
