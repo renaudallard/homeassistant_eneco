@@ -74,6 +74,7 @@ from custom_components.eneco_be.diagnostics import async_get_config_entry_diagno
 from custom_components.eneco_be.migrate import login_title
 from custom_components.eneco_be.sensor import EnecoSensor
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
     SOURCE_RECONFIGURE,
     SOURCE_USER,
     ConfigEntryDisabler,
@@ -1680,3 +1681,87 @@ async def test_the_schedule_stays_usable_after_an_unexpected_failure(
     assert state_of(hass, STATUS).state == STATE_UNAVAILABLE
     assert state_of(hass, NEXT).state != STATE_UNAVAILABLE
     assert state_of(hass, SUBMIT_TIME).state != STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize("how", ["reauth", "reconfigure"])
+async def test_the_same_password_confirmed_again_is_tried_again(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    how: str,
+) -> None:
+    """The entry's client keeps Okta's refusal until it is replaced.
+
+    Confirming the password it already had changed nothing in the entry, so
+    nothing reloaded it: once a locked account opened again, every night
+    failed without asking Okta, and asked for the password once more.
+    """
+    okta = {"status": "SUCCESS"}
+    lapsed = {"once": False}
+
+    async def authn(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        return AiohttpClientMockResponse(
+            method, url, json={"status": okta["status"], "sessionToken": "one-shot"}
+        )
+
+    async def registers(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        if lapsed["once"]:
+            lapsed["once"] = False
+            return AiohttpClientMockResponse(
+                method, url, status=HTTPStatus.UNAUTHORIZED, json={}
+            )
+        return AiohttpClientMockResponse(
+            method,
+            url,
+            json={
+                "data": {
+                    "ean": EAN,
+                    "meterNumber": METER_NUMBER,
+                    "energyType": "Electricity",
+                    "registers": [
+                        {"direction": d, "meterTimeFrameType": t}
+                        for d in ("OffTake", "Injection")
+                        for t in ("HI", "LO")
+                    ],
+                }
+            },
+        )
+
+    # Registered first, so these answer before the defaults.
+    aioclient_mock.post("https://login.eneco.be/api/v1/authn", side_effect=authn)
+    aioclient_mock.get(
+        re.compile(rf"{re.escape(API)}/accounts/{ACCOUNT}/meter-readings/registers.*"),
+        side_effect=registers,
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(aioclient_mock)
+    aioclient_mock.post(f"{API}/accounts/{ACCOUNT}/meter-readings", json={"data": None})
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+
+    # The token lapses on a night Okta has the account locked.
+    okta["status"] = "LOCKED_OUT"
+    lapsed["once"] = True
+    await press_failing(hass)
+    assert config_entry.async_get_active_flows(hass, {SOURCE_REAUTH})
+
+    # It opens again, and the same password is confirmed.
+    okta["status"] = "SUCCESS"
+    if how == "reauth":
+        (flow,) = config_entry.async_get_active_flows(hass, {SOURCE_REAUTH})
+        result = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {CONF_PASSWORD: PASSWORD}
+        )
+    else:
+        result = await config_entry.start_reconfigure_flow(hass)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
+        )
+    assert result["type"] is FlowResultType.ABORT
+    await hass.async_block_till_done()
+
+    await press(hass)
+    assert len(submissions(aioclient_mock)) == 1
