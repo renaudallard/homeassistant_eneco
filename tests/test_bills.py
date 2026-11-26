@@ -1890,3 +1890,78 @@ async def test_a_bill_not_downloaded_of_two_meters_still_ends_the_year(
     assert bill.attributes["last_error"].startswith(
         "the bill of 2025-03-01 was not read"
     )
+
+
+@pytest.mark.parametrize("broken", ["unreadable", "500"])
+async def test_the_other_meters_intermediary_does_not_reopen_the_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, broken: str
+) -> None:
+    """This meter's bill of the year before unread, the other's ending with it.
+
+    Its intermediary ending that day too kept the unread bill from closing
+    the year, which then ran on into this meter's older bills and was lost.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    billed(
+                        invoice("CN2", "YearlyBill", "2026-04-26"),
+                        "2025-02-01",
+                        "2026-02-01",
+                    ),
+                    billed(
+                        invoice("CN1", "YearlyBill", "2025-02-20"),
+                        "2024-06-01",
+                        "2025-02-01",
+                    ),
+                    billed(
+                        invoice("OI", "IntermediaryInvoice", "2025-02-10"),
+                        "2024-02-15",
+                        "2025-02-01",
+                    ),
+                    billed(
+                        invoice("IN0", "IntermediaryInvoice", "2024-06-10"),
+                        "2023-06-01",
+                        "2024-06-01",
+                    ),
+                ]
+            }
+        },
+    )
+    mock_advances(aioclient_mock)
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    if broken == "500":
+        aioclient_mock.get(document("CN1"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+    else:
+        url = document("CN1")
+        slashed = url.replace("/CN1?", "/CN1/?")
+        aioclient_mock.get(
+            url,
+            status=HTTPStatus.PERMANENT_REDIRECT,
+            headers={"Location": slashed.removeprefix("https://eneco.be")},
+        )
+        aioclient_mock.get(slashed, content=b"%PDF-1.4\\nbroken\\n")
+    mock_bill(
+        aioclient_mock,
+        "OI",
+        [row.replace(EAN, OTHER_EAN) for row in year_before("31/01/2025")],
+    )
+    mock_bill(aioclient_mock, "IN0", year_before("31/05/2024"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["issued"] == "2026-04-26"
+    assert bill.attributes["period_start"] == "2025-02-01"

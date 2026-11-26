@@ -579,53 +579,35 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Whether an intermediary bill was passed over for want of a year.
         waiting = False
         ean = meter[CONF_EAN]
-        # Where an intermediary bill ends, a year goes on: an unreadable bill
-        # ending the same day, the other meter's, is no year's end.
-        goes_on = {
-            i.period_end
-            for i in invoices
-            if i.kind == INTERMEDIARY
-            and i.energy_type in (meter[CONF_ENERGY_TYPE], "Both")
-        }
+        # Where two meters share the energy, a bill that cannot be read, or
+        # was not downloaded, may be either's, so once a year has begun it
+        # is passed over. One ending the day the year begins may be what
+        # closes it: a bill of this meter not following on then shows it was.
+        closes: Invoice | None = None
         for invoice in invoices:
             if invoice.energy_type not in (meter[CONF_ENERGY_TYPE], "Both"):
                 continue
             seen = self._seen.get(invoice.identifier)
             if seen is None and shared:
-                got = await self._async_seen(invoice)
-                if isinstance(got, str):
-                    # Not downloaded, whose it is is not known: as for one
-                    # that would not read, its days say where the year ends.
-                    error = error or got
-                    seen = {"eans": None, "error": got, "bill": None}
-                else:
-                    seen = got
-            # Only the EAN it prints says whose it is, so one that cannot be
-            # read may be either meter's.
+                seen, failed = await self._async_whose(invoice)
+                error = error or failed
             unsure = shared and seen is not None and seen["eans"] is None
             if unsure and not invoice.document_url:
-                # As before such bills were listed at all: no year is ended
-                # or named by one nothing can be read of.
+                # As before such bills were listed at all.
                 continue
-            # The day the year found so far begins, which its days tell
-            # an unreadable bill by: billing days in it, it is the other
-            # meter's; ending on it, it closes the year, whoever's it is.
-            begins = date.fromisoformat(run[-1]["period_start"]) if run else None
-            if unsure and begins and invoice.period_end and invoice.period_end > begins:
+            if unsure and run:
+                begins = date.fromisoformat(run[-1]["period_start"])
+                if invoice.kind != INTERMEDIARY and invoice.period_end in (
+                    begins,
+                    None,
+                ):
+                    closes = closes or invoice
                 continue
             if seen is not None and not ours(seen, ean):
                 continue
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
             if run and not monthly and invoice.kind != INTERMEDIARY:
                 # The bill of the year before, told from the list unread.
-                if unsure and invoice.period_end == begins in goes_on:
-                    continue
-                if unsure and invoice.period_end != begins:
-                    error = error or not_read(
-                        invoice,
-                        f"{seen.get('error') if seen else 'unread'},"
-                        " so it may be another meter's",
-                    )
                 break
             if monthly and invoice.kind != MONTHLY:
                 error = error or too_few(run)
@@ -645,6 +627,13 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 error = error or not_read(invoice, seen.get("error") or "no lines")
                 continue
             bill = seen["bill"]
+            if run and not follows(bill, run[-1]) and closes is not None:
+                # The bill that could not be read closed the year.
+                if closes.period_end is None:
+                    error = error or not_read(
+                        closes, "it could not be read, so it may be another meter's"
+                    )
+                break
             if run and not follows(bill, run[-1]):
                 error = error or not_used(
                     run,
@@ -657,6 +646,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # What it asked for is taken from today's list, not from what was
             # read of it, which a bill read before this was known lacks.
             run.append({**bill, "due": invoice.due})
+            closes = None
             if run[0]["invoice_type"] == MONTHLY and len(run) == MONTHS:
                 break
         else:
@@ -836,6 +826,17 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             "portal_max": None if contract is None else contract.maximum,
             "error": error,
         }
+
+    async def _async_whose(self, invoice: Invoice) -> tuple[dict[str, Any], str | None]:
+        """Read a bill to tell whose it is, and why it did not download.
+
+        One that did not download stands as one that would not read: whose
+        it is is not known.
+        """
+        got = await self._async_seen(invoice)
+        if isinstance(got, str):
+            return {"eans": None, "error": got, "bill": None}, got
+        return got, None
 
     async def _async_seen(self, invoice: Invoice) -> dict[str, Any] | str:
         """Return what an invoice held, read once, or why it did not download.
