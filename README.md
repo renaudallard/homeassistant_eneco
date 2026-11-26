@@ -324,9 +324,10 @@ a dashboard or used in an automation in place of the Repairs cards.
   the year, a bill whose PDF cannot be read, or that did not download that
   day, is passed over; if it ends the day the year begins and the next bill
   of this meter does not follow on, it was what closed the year, which
-  stands. One the invoice list gives no days, or an intermediary bill ending
-  as the year begins, may be missing from it, and `last_error` says it may
-  be another meter's. Monthly bills are read as for a single meter.
+  stands. An intermediary bill ending as the year begins, or one the invoice
+  list gives no days, may be missing from it: unless a bill of this meter
+  joins the year after it, `last_error` says it may be another meter's. On
+  monthly billing, a bill of another kind is passed over.
 - **Private.** The PDF is fetched from eneco.be with the login's own session,
   read inside Home Assistant and sent nowhere else. The `lines` attribute is
   not written to the history.

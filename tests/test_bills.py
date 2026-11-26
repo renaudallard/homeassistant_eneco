@@ -1655,8 +1655,8 @@ async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
     """This meter's bill of the year before, its PDF unreadable, two meters.
 
     Passed over, the year ran on into older bills and the newest was lost.
-    Ending where the year starts, it closes it, whoever's it is; with no
-    days to go by, it may be another meter's, and says so.
+    Ending where the year starts, or with no days to go by, it is what
+    closes it once this meter's next bill does not follow on.
     """
     mock_login(
         aioclient_mock,
@@ -1715,10 +1715,7 @@ async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
 
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["period_start"] == "2025-02-01"
-    if dated:
-        assert bill.attributes["last_error"] is None
-    else:
-        assert bill.attributes["last_error"].endswith("it may be another meter's")
+    assert bill.attributes["last_error"] is None
 
 
 async def test_an_old_bill_with_no_document_is_no_error_for_two_meters(
@@ -2068,12 +2065,13 @@ async def test_an_unreadable_intermediary_of_two_meters_is_named(
 
 
 @pytest.mark.parametrize("after", ["yearly", "nothing", "intermediary"])
-async def test_an_unreadable_bill_of_no_days_is_named(
+async def test_an_unreadable_yearly_bill_of_no_days_only_closes_the_year(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, after: str
 ) -> None:
-    """Whatever follows, one the list gives no days may be another meter's.
+    """A yearly bill the list gives no days can only close the year.
 
-    It was named only when an intermediary after it did not follow on.
+    Named as possibly missing from it, it set an error every day on a year
+    that was right.
     """
     listed = [
         billed(invoice("CN2", "YearlyBill", "2026-04-26"), "2025-02-01", "2026-02-01"),
@@ -2103,7 +2101,7 @@ async def test_an_unreadable_bill_of_no_days_is_named(
 
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["period_start"] == "2025-02-01"
-    assert (bill.attributes["last_error"] or "").endswith("another meter's")
+    assert bill.attributes["last_error"] is None
 
 
 def older_than_a_year_before(end: str) -> list[str]:
@@ -2115,3 +2113,91 @@ def older_than_a_year_before(end: str) -> list[str]:
         .replace("31/01/2026", end)
         for row in ELECTRICITY
     ]
+
+
+@pytest.mark.parametrize("how", ["unreadable", "failed"])
+@pytest.mark.parametrize("kind", ["YearlyBill", "IntermediaryInvoice"])
+async def test_a_monthly_meter_passes_over_the_other_meters_bad_bill(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, how: str, kind: str
+) -> None:
+    """This meter billed monthly, the other's bill of another kind unreadable.
+
+    Taken as this meter's, it broke the run of monthly bills, and the year
+    was lost every day.
+    """
+    listed = []
+    first = date(2024, 9, 1)
+    for n in range(14):
+        month = first.month - 1 + n
+        start = date(first.year + month // 12, month % 12 + 1, 1)
+        month += 1
+        nxt = date(first.year + month // 12, month % 12 + 1, 1)
+        end = nxt - timedelta(days=1)
+        ident = f"M{n:02d}"
+        mock_bill(aioclient_mock, ident, month_bill(start, end))
+        listed.append(
+            billed(
+                invoice(ident, "MonthlyBill", (end + timedelta(days=5)).isoformat()),
+                start.isoformat(),
+                nxt.isoformat(),
+            )
+        )
+    listed.append(
+        billed(invoice("OTHER", kind, "2025-06-20"), "2024-11-01", "2025-06-01")
+    )
+    if how == "unreadable":
+        unreadable_pdf(aioclient_mock, "OTHER")
+    else:
+        aioclient_mock.get(document("OTHER"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+    listed.sort(key=lambda i: i["invoicingPeriodEndDate"], reverse=True)
+    shared_portal(aioclient_mock, True, listed)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert len(bill.attributes["bills"]) == 12
+
+
+@pytest.mark.parametrize("other_later", [True, False])
+async def test_an_intermediary_of_the_other_meter_beside_this_ones_is_unsaid(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, other_later: bool
+) -> None:
+    """Both meters changed product on one day; the other's PDF is unreadable.
+
+    This meter's own intermediary follows on: its year is whole. The other's
+    was named or not depending on which was issued first.
+    """
+    shared_portal(
+        aioclient_mock,
+        True,
+        [
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-03-15", "2026-02-01"
+            ),
+            billed(
+                invoice(
+                    "OIN",
+                    "IntermediaryInvoice",
+                    "2025-04-02" if other_later else "2025-03-30",
+                ),
+                "2024-02-15",
+                "2025-03-15",
+            ),
+            billed(
+                invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+                "2024-02-15",
+                "2025-03-15",
+            ),
+            billed(
+                invoice("CN1", "YearlyBill", "2024-02-20"), "2023-02-15", "2024-02-15"
+            ),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    unreadable_pdf(aioclient_mock, "OIN")
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN1", older_than_a_year_before("14/02/2024"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2024-02-15"
+    assert bill.attributes.get("last_error") is None

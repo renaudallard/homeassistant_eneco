@@ -169,3 +169,35 @@ def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
         ],
         "lines": lines,
     }
+
+
+def pass_over(
+    invoice: Invoice,
+    reason: str,
+    run: list[dict[str, Any]],
+    closes: Invoice | None,
+    missing: tuple[Invoice, str] | None,
+) -> tuple[bool, Invoice | None, tuple[Invoice, str] | None]:
+    """Weigh a bill of two meters of one energy that cannot be read.
+
+    Return whether it is passed over, the bill that may close the year and
+    the one that may be missing from it, as they stand after it. With no
+    document, or once a yearly bill has begun the year, it is passed over:
+    whose it is cannot be told. Ending the day the year begins, a yearly or
+    closing bill may be what closes it, and an intermediary may be missing
+    from it; so may one the list gives no days. A monthly run passes over
+    any bill of another kind.
+    """
+    if not invoice.document_url:
+        return True, closes, missing
+    if not run:
+        return False, closes, missing
+    if run[0]["invoice_type"] == MONTHLY:
+        return invoice.kind != MONTHLY, closes, missing
+    begins = date.fromisoformat(run[-1]["period_start"])
+    if invoice.period_end in (begins, None):
+        if invoice.kind != INTERMEDIARY:
+            closes = closes or invoice
+        elif missing is None:
+            missing = (invoice, reason)
+    return True, closes, missing
