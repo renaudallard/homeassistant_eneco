@@ -33,6 +33,7 @@ from freezegun.api import FrozenDateTimeFactory
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.eneco_be.api import EnecoConnectionError
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
 from custom_components.eneco_be.bills import _address_state
 from custom_components.eneco_be.const import CONF_ADJUST_ADVANCE, CONF_READ_BILLS
@@ -131,8 +132,13 @@ def portal(
     contracts: list[dict[str, Any]],
     totals: Any,
     read: Sequence[tuple[str, str, tuple[int, ...]]] = READ,
+    word: str = "Elektriciteit",
 ) -> None:
-    """Register the bill of 2025-2026, three advances, readings and volumes."""
+    """Register the bill of 2025-2026, three advances, readings and volumes.
+
+    The October advance prints its split with ``word``, which is only read
+    in French.
+    """
     mock_login(
         mocker,
         accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
@@ -164,8 +170,8 @@ def portal(
     )
     mock_bill(mocker, "CN2", ELECTRICITY)
     mock_bill(mocker, "AD2", split("53,40", "179,84", "233,24"))
-    # A wording not read: split on today's advances instead.
-    mock_bill(mocker, "AD3", split("56,51", "249,20", "305,71", "Elektriciteit"))
+    # By default a wording not read: split on today's advances instead.
+    mock_bill(mocker, "AD3", split("56,51", "249,20", "305,71", word))
     if totals is None:
         mocker.get(ADVANCES, status=HTTPStatus.INTERNAL_SERVER_ERROR)
     else:
@@ -571,6 +577,59 @@ async def test_nothing_is_set_when_the_portal_cannot_be_read_again(
     with (
         patch.object(bills, "_async_update_data", side_effect=UpdateFailed("down")),
         pytest.raises(HomeAssistantError, match="could not be read again"),
+    ):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": APPLY}, blocking=True
+        )
+    assert not [
+        call
+        for call in aioclient_mock.mock_calls
+        if call[0].lower() == "post" and str(call[1]) == ADVANCES
+    ]
+
+
+@pytest.mark.parametrize(
+    ("failing", "why"),
+    [
+        ("async_get_invoices", "the invoices were not listed"),
+        ("async_get_advance_amounts", "the advances were not read"),
+        ("async_get_readings", "the readings were not read"),
+        ("async_get_tariff_card", "the portal returned HTTP 500"),
+    ],
+)
+async def test_nothing_is_set_when_part_of_the_portal_cannot_be_read_again(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    failing: str,
+    why: str,
+) -> None:
+    """A read again that keeps an earlier day's data for one part sends nothing.
+
+    Each part that fails leaves what was read before standing, so the
+    proposal would be worked out from amounts the portal may no longer hold.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+        word="Électricité",
+    )
+    aioclient_mock.post(ADVANCES, status=HTTPStatus.NO_CONTENT)
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+    assert state_of(hass, PROPOSED).attributes["changes"] == ["electricity"]
+
+    with (
+        patch.object(
+            bills.client,
+            failing,
+            side_effect=EnecoConnectionError("the portal returned HTTP 500"),
+        ),
+        pytest.raises(HomeAssistantError, match=why),
     ):
         await hass.services.async_call(
             "button", "press", {"entity_id": APPLY}, blocking=True

@@ -412,8 +412,11 @@ no amount yet, while one advance or none is left before the reading, or when
 the portal would refuse a change: payments overdue, a vacancy, an advance not
 available, or billing other than yearly.
 
-Pressing the button reads everything again first, sends nothing if that
-fails, then sets on My Eneco the advance of each contract that changes, as the
+Pressing the button reads everything again first, and sends nothing if any
+part of that fails: the invoices, the advances page or a meter's readings
+left standing from an earlier day are shown, with the reason in
+`last_error`, but never proposed. Then it sets on My Eneco the advance of
+each contract that changes, as the
 portal's own advances page does, and reads again so the sensors show what is
 billed now. Each change is logged. Eneco may take the change in for the next
 advance rather than the one being invoiced.

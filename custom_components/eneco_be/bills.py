@@ -412,6 +412,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         complete = True
         try:
             for (account, address), subentry_ids in groups.items():
+                portal: AdvanceAmounts | str
                 try:
                     points, every = await self._async_list(account, address)
                 except EnecoAuthError:
@@ -420,36 +421,41 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     complete = False
                     for subentry_id in subentry_ids:
                         data[subentry_id] = self._kept(subentry_id, str(err))
-                    continue
-                invoices = _settlement(every, today)
-                listed.update(invoice.identifier for invoice in every)
-                portal = await self._async_advance_amounts(account, address)
-                await self._async_read_advances(every, today)
-                for subentry_id in subentry_ids:
-                    meter = meters[subentry_id]
-                    kind = meter[CONF_ENERGY_TYPE]
-                    shared = sum(p.energy_type == kind for p in points.values()) > 1
-                    point = points.get(meter[CONF_EAN])
-                    try:
-                        data[subentry_id] = await self._async_meter(
-                            account, meter, invoices, point, shared=shared
-                        )
-                        data[subentry_id]["provision"] = await self._async_provision(
-                            account,
-                            address,
-                            meter,
-                            point,
-                            data[subentry_id].get("year"),
-                            every,
-                            portal,
-                            today,
-                            (self.data.get(subentry_id) or {}).get("provision"),
-                        )
-                    except EnecoAuthError:
-                        raise
-                    except EnecoError as err:
-                        complete = False
-                        data[subentry_id] = self._kept(subentry_id, str(err))
+                    # The address stands as last read, with why, and so
+                    # nothing is proposed from it.
+                    portal = f"the invoices were not listed: {err}"
+                else:
+                    invoices = _settlement(every, today)
+                    listed.update(invoice.identifier for invoice in every)
+                    portal = await self._async_advance_amounts(account, address)
+                    await self._async_read_advances(every, today)
+                    for subentry_id in subentry_ids:
+                        meter = meters[subentry_id]
+                        kind = meter[CONF_ENERGY_TYPE]
+                        shared = sum(p.energy_type == kind for p in points.values()) > 1
+                        point = points.get(meter[CONF_EAN])
+                        previous = (self.data.get(subentry_id) or {}).get("provision")
+                        try:
+                            read = await self._async_meter(
+                                account, meter, invoices, point, shared=shared
+                            )
+                            read["provision"] = await self._async_provision(
+                                account,
+                                address,
+                                meter,
+                                point,
+                                read.get("year"),
+                                every,
+                                portal,
+                                today,
+                                previous,
+                            )
+                        except EnecoAuthError:
+                            raise
+                        except EnecoError as err:
+                            complete = False
+                            read = self._kept(subentry_id, str(err))
+                        data[subentry_id] = read
                 self.addresses[address] = _address_state(
                     portal, self.addresses.get(address)
                 )
@@ -496,12 +502,17 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return data
 
     def _kept(self, subentry_id: str, error: str) -> dict[str, Any]:
-        """Return what was read for a meter before, with why it was not now."""
+        """Return what was read for a meter before, with why it was not now.
+
+        The advance it needed stands with the error too, so it is shown and
+        not proposed.
+        """
         previous = self.data.get(subentry_id) or {}
+        provision = previous.get("provision")
         return {
             "card": previous.get("card"),
             "year": previous.get("year"),
-            "provision": previous.get("provision"),
+            "provision": None if provision is None else provision | {"error": error},
             "error": error,
         }
 

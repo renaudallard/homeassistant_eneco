@@ -142,15 +142,19 @@ def address_proposal(
     """Return what the advance button would set at an address, or why nothing.
 
     ``portal`` is what bills.py keeps of the address's advances page, and
-    ``provisions`` each meter's projection by EAN.
+    ``provisions`` each meter's projection by EAN. Either carries an error
+    when today's read of it failed and an earlier one stands: nothing is
+    proposed from that.
     """
+    if portal.get("error"):
+        return _none(portal["error"])
     contracts: list[Contract] = []
     for ean, contract in (portal.get("contracts") or {}).items():
         provision = provisions.get(ean)
         if provision is None:
             return _none(f"the meter ending {ean[-4:]} is not set up here")
         need = provision.get("monthly_advance")
-        if need is None:
+        if need is None or provision.get("error"):
             return _none(provision.get("error") or "the advance needed is not known")
         if (provision.get("advances_left") or 0) <= 1:
             return _none("one advance or none is left before the reading")
@@ -167,7 +171,7 @@ def address_proposal(
             Contract(ean, provision.get("energy", ""), current, low, high, need)
         )
     if not contracts:
-        return _none(portal.get("error") or "the portal lists no contract")
+        return _none("the portal lists no contract")
     amounts, exact = propose(contracts)
     return {
         "amounts": amounts,
