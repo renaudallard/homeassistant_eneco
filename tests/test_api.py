@@ -598,3 +598,39 @@ def test_an_advance_the_portal_would_not_change(
     (contract,) = got.contracts
     assert contract.blocked == blocked
     assert contract.vacancy_until == date(2026, 12, 31)
+
+
+async def test_a_refused_password_is_not_tried_again(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession
+) -> None:
+    """Each try with a password Okta refused is one more failure on the account.
+
+    Every call waiting on the sign in tried again once it failed, and so
+    did every call after, every day, until the password was entered anew:
+    enough failures lock the account on the portal too.
+    """
+    aioclient_mock.post(
+        "https://login.eneco.be/api/v1/authn",
+        status=HTTPStatus.UNAUTHORIZED,
+        json={"errorSummary": "Authentication failed"},
+    )
+    api = client(session)
+    with pytest.raises(EnecoAuthError, match="Authentication failed"):
+        await api.async_login()
+    results = await asyncio.gather(
+        *(api.async_get_addresses(ACCOUNT) for _ in range(3)),
+        return_exceptions=True,
+    )
+    assert all(isinstance(result, EnecoAuthError) for result in results)
+    # A lapsed session answers a bill with its login page.
+    bill = "https://eneco.be/api/my-eneco/download/X"
+    aioclient_mock.get(bill, text="<html>login</html>")
+    with pytest.raises(EnecoAuthError, match="Authentication failed"):
+        await api.async_get_document(bill)
+
+    tries = [
+        url
+        for method, url, _, _ in aioclient_mock.mock_calls
+        if method.lower() == "post" and str(url).endswith("/api/v1/authn")
+    ]
+    assert len(tries) == 1

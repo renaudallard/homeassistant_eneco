@@ -121,6 +121,10 @@ class _SessionGoneError(EnecoAuthError):
     """The web session behind the dashboard is no longer signed in."""
 
 
+class _RefusedError(EnecoAuthError):
+    """Okta refused the credentials, which asking again will not change."""
+
+
 class EnecoValidationError(EnecoError):
     """The portal rejected a meter reading.
 
@@ -335,6 +339,10 @@ class EnecoClient:
         self._password = password
         self._token: str | None = None
         self._login_lock = asyncio.Lock()
+        # Why Okta refused the credentials, once it has. Each try with them
+        # is one more failure on the account, and enough of those lock it,
+        # so none is made until new ones come with a new client.
+        self._refused: str | None = None
 
     async def async_login(self) -> None:
         """Sign in and obtain a bearer token.
@@ -355,7 +363,13 @@ class EnecoClient:
 
     async def _async_login_locked(self) -> None:
         """Run the sign in chain; the caller holds the lock."""
-        session_token = await self._async_okta_session_token()
+        if self._refused is not None:
+            raise EnecoAuthError(self._refused)
+        try:
+            session_token = await self._async_okta_session_token()
+        except _RefusedError as err:
+            self._refused = str(err)
+            raise
         authorize_url = await self._async_start_oidc_flow()
         await self._async_redeem_session_token(session_token, authorize_url)
         self._token = await self._async_read_access_token()
@@ -383,7 +397,7 @@ class EnecoClient:
                     HTTPStatus.FORBIDDEN,
                     HTTPStatus.BAD_REQUEST,
                 ):
-                    raise EnecoAuthError(
+                    raise _RefusedError(
                         payload.get("errorSummary", "credentials rejected")
                         if isinstance(payload, dict)
                         else "credentials rejected"
@@ -396,7 +410,7 @@ class EnecoClient:
 
         status = payload.get("status") if isinstance(payload, dict) else None
         if status != "SUCCESS":
-            raise EnecoAuthError(
+            raise _RefusedError(
                 f"Okta requires an interactive sign in (status {status})"
             )
         token = payload.get("sessionToken")
