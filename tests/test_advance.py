@@ -34,7 +34,7 @@ from freezegun.api import FrozenDateTimeFactory
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.eneco_be.api import EnecoConnectionError
+from custom_components.eneco_be.api import EnecoConnectionError, EnecoError
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
 from custom_components.eneco_be.bills import _address_state
 from custom_components.eneco_be.const import (
@@ -869,3 +869,28 @@ async def test_a_reading_of_some_registers_only_is_passed_over(
     assert got["last_error"] is None
     # The reading of the 25th, every register in it.
     assert got["measured_until"] == "2026-11-24"
+
+
+async def test_an_address_without_meters_sets_nothing_and_says_so(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Around a reload the button can outlive the meters of its address.
+
+    The account was looked up with next() and no default, and the
+    StopIteration came out as a RuntimeError no caller catches.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    with pytest.raises(EnecoError, match="no meter is set up at the address"):
+        await bills.async_apply_advance("b" * 64)

@@ -560,10 +560,15 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             raise EnecoError(proposal["error"])
         changes = proposal.get("changes") or []
         account = next(
-            meter[CONF_ACCOUNT]
-            for meter in self._meters().values()
-            if meter[CONF_ADDRESS] == address
+            (
+                meter[CONF_ACCOUNT]
+                for meter in self._meters().values()
+                if meter[CONF_ADDRESS] == address
+            ),
+            None,
         )
+        if account is None:
+            raise EnecoError("no meter is set up at the address any more")
         done: list[str] = []
         for ean in changes:
             amount = proposal["amounts"][ean]
