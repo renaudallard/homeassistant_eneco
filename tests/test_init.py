@@ -267,7 +267,10 @@ async def test_missing_source_entity(
     await press_failing(hass)
 
     assert submissions(mock_portal) == []
-    assert state_of(hass, STATUS).state == "failed"
+    status = state_of(hass, STATUS)
+    assert status.state == "failed"
+    # That source, and not any other failure.
+    assert status.attributes["last_error"] == "no usable value from sensor.export_day"
 
 
 async def test_portal_rejection_is_reported(
