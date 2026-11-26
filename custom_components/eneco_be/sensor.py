@@ -247,13 +247,17 @@ class BillSensor(BillEntity, SensorEntity):
     """A sensor of what the bill coordinator read for one meter."""
 
 
-class MoneySensor(BillSensor):
-    """A sensor of one meter's amount in euros, VAT included."""
+class Money(SensorEntity):
+    """A sensor of an amount in euros, VAT included."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
     # ISO 4217, as a monetary sensor wants it, not the € symbol.
     _attr_native_unit_of_measurement = "EUR"
     _attr_suggested_display_precision = 2
+
+
+class MoneySensor(Money, BillSensor):
+    """A sensor of one meter's amount in euros, VAT included."""
 
 
 class LastBillSensor(MoneySensor):
@@ -363,16 +367,13 @@ class MonthlyAdvanceSensor(MoneySensor):
         }
 
 
-class AddressSensor(CoordinatorEntity[BillCoordinator], SensorEntity):
+class AddressSensor(Money, CoordinatorEntity[BillCoordinator]):
     """A sensor of one delivery address of the login, in EUR.
 
     Eneco bills one advance per address, for every energy there.
     """
 
     _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_native_unit_of_measurement = "EUR"
-    _attr_suggested_display_precision = 2
 
     def __init__(
         self,
