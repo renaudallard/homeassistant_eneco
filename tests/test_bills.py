@@ -59,7 +59,11 @@ from custom_components.eneco_be.const import (
     DOMAIN,
 )
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
-from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    ConfigEntryDisabler,
+    ConfigEntryState,
+)
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, ServiceCall, State, SupportsResponse
 from homeassistant.data_entry_flow import FlowResultType
@@ -2257,3 +2261,54 @@ async def test_an_intermediary_of_no_days_stays_named(
 
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["last_error"].startswith("the bill of 2025-06-01")
+
+
+async def test_a_disabled_gas_price_entry_leaves_the_bill_price(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """Disabled by the user, it was taken for one failing, for good.
+
+    And a disabled one listed before a loaded one naming the same bill hid
+    the loaded one.
+    """
+    unique_id = f"{EAN}_last_bill"
+    sensor = entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
+    disabled = price_entry(
+        hass,
+        "be_gas_prices",
+        "bill_entity",
+        sensor.entity_id,
+        ConfigEntryState.NOT_LOADED,
+    )
+    hass.config_entries.async_update_entry(disabled, options={})
+    disabled.disabled_by = ConfigEntryDisabler.USER
+    assert await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31") is None
+
+    price_entry(hass, "be_gas_prices", "bill_entity", sensor.entity_id)
+
+    async def handler(call: ServiceCall) -> Any:
+        return {"months": [{"month": "2026-02", "eur_per_kwh": 0.1}]}
+
+    hass.services.async_register(
+        "be_gas_prices", "energy_rate", handler, supports_response=SupportsResponse.ONLY
+    )
+    got = await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+    assert got == {"2026-02": 0.1}
+
+
+async def test_why_a_gas_price_entry_gave_no_rates_is_said(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """Only "gave no rates" was said, the entry's own reason left in a debug log."""
+    unique_id = f"{EAN}_last_bill"
+    sensor = entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
+    price_entry(hass, "be_gas_prices", "bill_entity", sensor.entity_id)
+
+    async def handler(call: ServiceCall) -> Any:
+        raise HomeAssistantError("the window starts before the product switch")
+
+    hass.services.async_register(
+        "be_gas_prices", "energy_rate", handler, supports_response=SupportsResponse.ONLY
+    )
+    with pytest.raises(RatesUnavailableError, match="before the product switch"):
+        await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")

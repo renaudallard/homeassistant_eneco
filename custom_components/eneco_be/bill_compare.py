@@ -80,14 +80,18 @@ async def async_energy_rates(
     too low.
     """
     entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, unique_id)
+    # One the user disabled is no entry checking the bill.
+    linked = [
+        entry
+        for domain, key in PRICE_LINKS.items()
+        for entry in hass.config_entries.async_entries(domain)
+        if entity_id is not None
+        and entry.data.get(key) == entity_id
+        and entry.disabled_by is None
+    ]
     entry = next(
-        (
-            entry
-            for domain, key in PRICE_LINKS.items()
-            for entry in hass.config_entries.async_entries(domain)
-            if entity_id is not None and entry.data.get(key) == entity_id
-        ),
-        None,
+        (e for e in linked if e.state is ConfigEntryState.LOADED),
+        linked[0] if linked else None,
     )
     if entry is None:
         return None
@@ -107,7 +111,7 @@ async def async_energy_rates(
     # again.
     except Exception as err:
         _LOGGER.debug("%s gave no energy rates: %r", entry.title, err)
-        raise RatesUnavailableError(f"{entry.title} gave no rates") from err
+        raise RatesUnavailableError(f"{entry.title} gave no rates: {err}") from err
     months = answer.get("months") if answer is not None else None
     rates: dict[str, float] = {}
     for row in months if isinstance(months, list) else []:
