@@ -185,6 +185,9 @@
       "bill_difference": {
         "name": "Écart de facture"
       },
+      "monthly_advance": {
+        "name": "Acompte mensuel nécessaire"
+      },
       "tariff_card": {
         "name": "Carte tarifaire"
       }

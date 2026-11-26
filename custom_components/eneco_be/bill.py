@@ -50,6 +50,7 @@ from typing import Any, Final
 from pypdf import PdfReader
 
 from .api import EnecoError
+from .const import ELECTRICITY, GAS
 
 SECTIONS: Final = ("energy", "network", "taxes")
 
@@ -72,6 +73,16 @@ _CODE_RE: Final = re.compile(r"ItemType(?:Sys|Generic):\s*(?P<code>.+?)(?=\s+txt
 
 # Subtotals are sums of lines rounded to the cent.
 _TOLERANCE: Final = 0.005
+
+# An advance invoice for both energies prints each one's share, before and
+# with VAT: "Électricité € 53,32 € 56,51", or in 2025 "Électricité € 94,35
+# hors TVA € 100,00 TVA incl.". Only French bills have been seen: another
+# wording is not guessed at.
+_ADVANCE_RE: Final = re.compile(
+    rf"(?P<energy>Électricité|Gaz) € (?P<excl>{_AMOUNT})(?: hors TVA)?"
+    rf" € (?P<incl>{_AMOUNT})(?: TVA incl\.)?"
+)
+_ADVANCE_ENERGY: Final = {"Électricité": ELECTRICITY, "Gaz": GAS}
 
 
 class BillFormatError(EnecoError):
@@ -225,3 +236,20 @@ def parse_bill(text: str) -> tuple[BillLine, ...]:
     if not blocks or blocks % len(SECTIONS):
         raise BillFormatError(f"{blocks} blocks of billing lines, not sets of 3")
     return tuple(lines)
+
+
+def parse_advance(text: str, total: float) -> dict[str, float]:
+    """Return each energy's share of an advance invoice, VAT included.
+
+    Empty unless the shares read add up to ``total``, what the invoice list
+    says the invoice asked for: a split that cannot be checked is not used.
+    The PDF's own hidden total is no help, as it is what is left to pay once
+    a refund due is taken off.
+    """
+    shares: dict[str, float] = {}
+    for row in text.splitlines():
+        if found := _ADVANCE_RE.fullmatch(row):
+            shares[_ADVANCE_ENERGY[found["energy"]]] = _number(found["incl"])
+    if not shares or abs(sum(shares.values()) - total) > _TOLERANCE:
+        return {}
+    return shares

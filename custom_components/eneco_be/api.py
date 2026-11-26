@@ -35,12 +35,22 @@ from datetime import date
 from http import HTTPStatus
 import json
 import logging
-import math
 import re
 from typing import Any, Final
 
 import aiohttp
 from yarl import URL
+
+from .api_billing import (
+    AdvanceAmounts,
+    Invoice,
+    MonthVolume,
+    TariffCard,
+    advance_amounts,
+    invoices,
+    monthly_volumes,
+    tariff_card,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,9 +78,6 @@ MAX_DOCUMENT_BYTES: Final = 10 * 1024 * 1024
 _MAX_REDIRECTS: Final = 3
 _REDIRECTS: Final = frozenset({301, 302, 303, 307, 308})
 _SIGNED_OUT: Final = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN})
-
-# The documents the website offers that are not the bill itself.
-_NOT_THE_BILL: Final = frozenset({"DynamicBill", "SimplifiedBill"})
 
 # An error code of the portal's own, such as MeterReading.AlreadyExists, and
 # the name of a field in a request, such as Validation or [0].MeterNumber.
@@ -202,36 +209,8 @@ class ServiceDeliveryPoint:
     ean: str
     energy_type: str
     contract_id: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class Invoice:
-    """An invoice of a delivery address, without what it billed.
-
-    ``document_url`` is the bill itself, the one the website offers for
-    download, and is only fetched with the session's cookies. ``due`` is
-    what the invoice asked for in EUR, VAT included: on a settlement bill,
-    what it cost less the advances it settles, negative for a refund.
-    """
-
-    identifier: str
-    kind: str
-    energy_type: str
-    issued: date | None
-    period_start: date | None
-    period_end: date | None
-    document_url: str | None
-    due: float | None
-
-
-@dataclass(frozen=True, slots=True)
-class TariffCard:
-    """The tariff card a contract is billed on, as its product says."""
-
-    product: str
-    product_type: str
-    # Language code -> URL of the card, for the languages it is published in.
-    urls: dict[str, str]
+    # What the consumption page names the meter by.
+    meter_number: str = ""
 
 
 def _endpoint(value: object) -> str:
@@ -256,46 +235,6 @@ async def _read_capped(response: aiohttp.ClientResponse) -> bytes:
             raise EnecoError("the bill is too large")
         chunks.append(chunk)
     return b"".join(chunks)
-
-
-def _day(value: Any) -> date | None:
-    """Return the day of a timestamp the API sends, 2026-04-26T00:00:00+00:00."""
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except ValueError:
-        return None
-
-
-def _amount(value: Any) -> float | None:
-    """Return an amount the API sends, or None for one it does not."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    return float(value) if math.isfinite(value) else None
-
-
-def _invoice(entry: dict[str, Any]) -> Invoice:
-    """Return the invoice an entry of the invoice list describes."""
-    documents = entry.get("documents")
-    url = next(
-        (
-            str(document["url"])
-            for document in (documents if isinstance(documents, list) else [])
-            if isinstance(document, dict)
-            and document.get("url")
-            and document.get("documentType") not in _NOT_THE_BILL
-        ),
-        None,
-    )
-    return Invoice(
-        identifier=str(entry["invoiceId"]),
-        kind=str(entry.get("invoiceType") or ""),
-        energy_type=str(entry.get("invoiceEnergyType") or "Unknown"),
-        issued=_day(entry.get("invoiceDate")),
-        period_start=_day(entry.get("invoicingPeriodStartDate")),
-        period_end=_day(entry.get("invoicingPeriodEndDate")),
-        document_url=url,
-        due=_amount(entry.get("dueAmount")),
-    )
 
 
 def _known_register(direction: str, timeframe: str) -> Register | None:
@@ -626,6 +565,7 @@ class EnecoClient:
                 ean=str(entry["ean"]),
                 energy_type=str(entry.get("type") or "Unknown"),
                 contract_id=str(entry.get("contractId") or ""),
+                meter_number=str(entry.get("meterNumber") or ""),
             )
             for entry in points
             if isinstance(entry, dict) and entry.get("ean")
@@ -714,52 +654,67 @@ class EnecoClient:
         No dates are sent: the year of bills shown can reach back further than
         any fixed window would hold.
         """
-        payload = await self._async_api(
-            "GET",
-            f"/accounts/{account}/delivery-addresses/{address}/invoices",
-            params={"ShowActiveContractsOnly": "false"},
+        return invoices(
+            await self._async_api(
+                "GET",
+                f"/accounts/{account}/delivery-addresses/{address}/invoices",
+                params={"ShowActiveContractsOnly": "false"},
+            )
         )
-        invoices = payload.get("invoices") if isinstance(payload, dict) else None
-        if not isinstance(invoices, list):
-            return []
-        return [
-            _invoice(entry)
-            for entry in invoices
-            if isinstance(entry, dict) and entry.get("invoiceId")
-        ]
 
     async def async_get_tariff_card(
         self, account: str, contract: str
     ) -> TariffCard | None:
         """Return the tariff card a contract is billed on, if it names one."""
-        payload = await self._async_api(
-            "GET", f"/accounts/{account}/contracts/{contract}/products"
-        )
-        tariff = payload.get("tariff") if isinstance(payload, dict) else None
-        if not isinstance(tariff, dict):
-            return None
-        current = tariff.get("currentTariff")
-        urls: dict[str, str] = {}
-        for card in current if isinstance(current, list) else []:
-            listed = (
-                card.get("tariffCardByLanguage") if isinstance(card, dict) else None
+        return tariff_card(
+            await self._async_api(
+                "GET", f"/accounts/{account}/contracts/{contract}/products"
             )
-            for entry in listed if isinstance(listed, list) else []:
-                if (
-                    isinstance(entry, dict)
-                    and entry.get("type") == "Normal"
-                    and entry.get("language")
-                    and entry.get("tariffCard")
-                ):
-                    urls.setdefault(
-                        str(entry["language"]).lower(), str(entry["tariffCard"])
-                    )
-        if not urls:
-            return None
-        return TariffCard(
-            product=str(tariff.get("product") or ""),
-            product_type=str(tariff.get("productType") or ""),
-            urls=urls,
+        )
+
+    async def async_get_advance_amounts(
+        self, account: str, address: str
+    ) -> AdvanceAmounts | None:
+        """Return the monthly advances of a delivery address.
+
+        A GET only: the same path takes a POST that changes the advance,
+        which this integration never sends.
+        """
+        return advance_amounts(
+            await self._async_api(
+                "GET",
+                f"/accounts/{account}/delivery-addresses/{address}/advance-amounts",
+            )
+        )
+
+    async def async_get_monthly_volumes(
+        self,
+        account: str,
+        address: str,
+        point: ServiceDeliveryPoint,
+        start: date,
+        end: date,
+    ) -> dict[str, MonthVolume]:
+        """Return the monthly volumes the consumption page shows for a meter.
+
+        They are the portal's spread of its readings over the months, good
+        for the shape of a year rather than for what a period used.
+        """
+        if not point.meter_number:
+            return {}
+        return monthly_volumes(
+            await self._async_api(
+                "GET",
+                f"/accounts/{account}/delivery-addresses/{address}/consumption",
+                params={
+                    "consumptionType": point.energy_type,
+                    "displayMode": "Consumption",
+                    "timeFrame": "Monthly",
+                    "startDate": start.isoformat(),
+                    "endDate": end.isoformat(),
+                    "meterNumber": point.meter_number,
+                },
+            )
         )
 
     async def async_get_document(self, url: str) -> bytes:

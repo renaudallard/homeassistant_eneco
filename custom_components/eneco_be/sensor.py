@@ -38,12 +38,20 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EnecoConfigEntry
 from .bills import BillCoordinator
-from .const import ATTR_LAST_ERROR, BILL_DISAGREES, CONF_EAN, LAST_BILL
+from .const import (
+    ATTR_LAST_ERROR,
+    BILL_DISAGREES,
+    CONF_ADDRESS,
+    CONF_EAN,
+    CONF_ENERGY_TYPE,
+    LAST_BILL,
+)
 from .coordinator import EnecoCoordinator, EnecoState
-from .entity import BillEntity, EnecoEntity
+from .entity import BillEntity, EnecoEntity, address_device
 
 STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
@@ -53,6 +61,28 @@ STATUS_NOTHING_TO_SUBMIT = "nothing_to_submit"
 
 TARIFF_CARD = "tariff_card"
 BILL_DIFFERENCE = "bill_difference"
+MONTHLY_ADVANCE = "monthly_advance"
+# What a meter's advance sensor shows of its projection, besides the amount.
+PROVISION_ATTRIBUTES = (
+    "advance_now",
+    "difference",
+    "year_cost",
+    "period_start",
+    "period_end",
+    "period_cost",
+    "expected_regularisation",
+    "advances_billed",
+    "advances_to_come",
+    "measured_until",
+    "offtake_kwh",
+    "injection_kwh",
+    "net_kwh",
+    "measured_offtake_kwh",
+    "measured_injection_kwh",
+    "volume_basis",
+    "energy_price",
+    "advance_split",
+)
 
 
 def _status(state: EnecoState) -> str:
@@ -122,10 +152,21 @@ async def async_setup_entry(
                 LastBillSensor(bills, subentry_id, coordinator.meter),
                 TariffCardSensor(bills, subentry_id, coordinator.meter),
                 BillDifferenceSensor(bills, subentry_id, coordinator.meter),
+                MonthlyAdvanceSensor(bills, subentry_id, coordinator.meter),
             ]
         async_add_entities(entities, config_subentry_id=subentry_id)
     if bills is None:
         _remove_bill_sensors(hass, entry)
+        return
+    addresses = sorted(
+        {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
+    )
+    async_add_entities(
+        AddressAdvanceSensor(
+            bills, entry.entry_id, address, n + 1 if len(addresses) > 1 else 0
+        )
+        for n, address in enumerate(addresses)
+    )
 
 
 @callback
@@ -137,6 +178,7 @@ def _remove_bill_sensors(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
         f"_{TARIFF_CARD}",
         f"_{BILL_DIFFERENCE}",
         f"_{BILL_DISAGREES}",
+        f"_{MONTHLY_ADVANCE}",
     )
     for item in er.async_entries_for_config_entry(registry, entry.entry_id):
         if item.domain in ("sensor", "binary_sensor") and item.unique_id.endswith(
@@ -254,6 +296,136 @@ class BillDifferenceSensor(BillSensor):
             "covered": comparison.get("covered"),
             "price_entry": comparison.get("price_entry"),
             ATTR_LAST_ERROR: comparison.get("error"),
+        }
+
+
+class MonthlyAdvanceSensor(BillSensor):
+    """The monthly advance the meter needs: a year like the running one.
+
+    Its attributes say what the running billing period will cost and what
+    the next regularisation should come to, positive still to pay.
+    """
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    def __init__(
+        self, coordinator: BillCoordinator, subentry_id: str, meter: Any
+    ) -> None:
+        """Bind the sensor to one meter."""
+        super().__init__(coordinator, subentry_id, meter, MONTHLY_ADVANCE)
+
+    @property
+    def _provision(self) -> dict[str, Any]:
+        provision: dict[str, Any] = self._read.get("provision") or {}
+        return provision
+
+    @property
+    @override
+    def native_value(self) -> float | None:
+        """Return the advance needed each month, VAT included."""
+        value: float | None = self._provision.get("monthly_advance")
+        return value
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the projection behind the amount, or why there is none."""
+        provision = self._provision
+        return {key: provision.get(key) for key in PROVISION_ATTRIBUTES} | {
+            ATTR_LAST_ERROR: provision.get("error")
+        }
+
+
+class AddressAdvanceSensor(CoordinatorEntity[BillCoordinator], SensorEntity):
+    """The monthly advance a delivery address needs, every energy together.
+
+    Eneco bills one advance per address. The amount is unknown unless each
+    contract the portal lists there has its meter set up here with an
+    amount: a total missing one would pass for the whole.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = MONTHLY_ADVANCE
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    def __init__(
+        self, coordinator: BillCoordinator, entry_id: str, address: str, number: int
+    ) -> None:
+        """Bind the sensor to one delivery address of the login."""
+        super().__init__(coordinator)
+        self._address = address
+        self._attr_unique_id = f"{entry_id}_{address}_{MONTHLY_ADVANCE}"
+        self._attr_device_info = address_device(entry_id, address, number)
+
+    @property
+    def _portal(self) -> dict[str, Any]:
+        portal: dict[str, Any] = self.coordinator.addresses.get(self._address, {})
+        return portal
+
+    def _meters(self) -> tuple[dict[str, dict[str, Any]], str | None]:
+        """Return each contract's projection by energy, or why one is missing."""
+        eans = self._portal.get("eans")
+        if not eans:
+            return {}, self._portal.get("error") or "the portal lists no contract"
+        found = {
+            subentry.data[CONF_EAN]: (subentry.data, self.coordinator.data.get(key))
+            for key, subentry in self.coordinator.config_entry.subentries.items()
+            if CONF_EAN in subentry.data
+        }
+        by_energy: dict[str, dict[str, Any]] = {}
+        for ean in eans:
+            meter, read = found.get(ean, (None, None))
+            if meter is None:
+                return by_energy, f"the meter ending {ean[-4:]} is not set up here"
+            provision = (read or {}).get("provision") or {}
+            if provision.get("monthly_advance") is None:
+                return by_energy, provision.get("error") or "not worked out yet"
+            by_energy[meter[CONF_ENERGY_TYPE].lower()] = provision
+        return by_energy, None
+
+    @property
+    @override
+    def available(self) -> bool:
+        """Return whether the address was ever read."""
+        return self._address in self.coordinator.addresses
+
+    @property
+    @override
+    def native_value(self) -> float | None:
+        """Return the advance needed each month at the address, VAT included."""
+        by_energy, error = self._meters()
+        if error is not None:
+            return None
+        return round(sum(float(p["monthly_advance"]) for p in by_energy.values()), 2)
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return each energy's share, what is paid now, and the portal's advice."""
+        by_energy, error = self._meters()
+        portal = self._portal
+        total = self.native_value
+        now = portal.get("advance_now")
+        expected = [p.get("expected_regularisation") for p in by_energy.values()]
+        return {
+            "advance_now": now,
+            "difference": None
+            if total is None or now is None
+            else round(total - now, 2),
+            "electricity": (by_energy.get("electricity") or {}).get("monthly_advance"),
+            "gas": (by_energy.get("gas") or {}).get("monthly_advance"),
+            "expected_regularisation": None
+            if error is not None or None in expected
+            else round(sum(float(e) for e in expected if e is not None), 2),
+            "eneco_recommended": portal.get("eneco_recommended"),
+            "eneco_expected_regularisation": portal.get(
+                "eneco_expected_regularisation"
+            ),
+            ATTR_LAST_ERROR: error,
         }
 
 

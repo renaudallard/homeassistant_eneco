@@ -185,6 +185,9 @@
       "bill_difference": {
         "name": "Bill difference"
       },
+      "monthly_advance": {
+        "name": "Monthly advance needed"
+      },
       "tariff_card": {
         "name": "Tariff card"
       }

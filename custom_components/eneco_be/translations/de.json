@@ -185,6 +185,9 @@
       "bill_difference": {
         "name": "Rechnungsabweichung"
       },
+      "monthly_advance": {
+        "name": "Benötigter monatlicher Abschlag"
+      },
       "tariff_card": {
         "name": "Tarifkarte"
       }

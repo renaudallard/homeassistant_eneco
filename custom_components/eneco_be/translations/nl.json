@@ -185,6 +185,9 @@
       "bill_difference": {
         "name": "Factuurverschil"
       },
+      "monthly_advance": {
+        "name": "Benodigd maandelijks voorschot"
+      },
       "tariff_card": {
         "name": "Tariefkaart"
       }

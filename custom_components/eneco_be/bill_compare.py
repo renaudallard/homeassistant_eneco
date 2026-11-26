@@ -50,6 +50,8 @@ PRICE_LINKS: Final = {
     "be_gas_prices": "bill_entity",
 }
 SERVICE: Final = "bill_cost"
+# The action giving the energy price of each month, to project a bill with.
+RATES: Final = "energy_rate"
 
 
 def _price_entry(hass: HomeAssistant, entity_id: str) -> ConfigEntry | None:
@@ -59,6 +61,45 @@ def _price_entry(hass: HomeAssistant, entity_id: str) -> ConfigEntry | None:
             if entry.data.get(key) == entity_id:
                 return entry
     return None
+
+
+async def async_energy_rates(
+    hass: HomeAssistant, unique_id: str, start: str, end: str
+) -> dict[str, float] | None:
+    """Return the energy price of each month, VAT included.
+
+    Given by the entry checking the bill sensor, or None when no entry can.
+    """
+    entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, unique_id)
+    entry = None if entity_id is None else _price_entry(hass, entity_id)
+    if entry is None or not hass.services.has_service(entry.domain, RATES):
+        return None
+    try:
+        answer = await hass.services.async_call(
+            entry.domain,
+            RATES,
+            {"entry_id": entry.entry_id, "start": start, "end": end},
+            blocking=True,
+            return_response=True,
+        )
+    # Another integration's failure, whatever it raised: the bill's own
+    # price stands in, and the next read asks again.
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("%s gave no energy rates: %r", entry.title, err)
+        return None
+    months = answer.get("months") if answer is not None else None
+    rates: dict[str, float] = {}
+    for row in months if isinstance(months, list) else []:
+        if not isinstance(row, dict):
+            return None
+        month = row.get("month")
+        rate = row.get("eur_per_kwh")
+        if not isinstance(month, str):
+            return None
+        if isinstance(rate, bool) or not isinstance(rate, int | float):
+            return None
+        rates[month] = float(rate)
+    return rates or None
 
 
 def _result(error: str, **found: Any) -> dict[str, Any]:

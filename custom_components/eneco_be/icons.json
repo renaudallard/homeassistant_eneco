@@ -29,6 +29,9 @@
       "bill_difference": {
         "default": "mdi:scale-balance"
       },
+      "monthly_advance": {
+        "default": "mdi:cash-clock"
+      },
       "tariff_card": {
         "default": "mdi:tag-text-outline"
       }

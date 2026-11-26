@@ -213,6 +213,14 @@ download, and their billing lines become more sensors per meter:
 | `sensor.*_tariff_card` | The version of the card the contract is billed on, such as `012210` |
 | `sensor.*_bill_difference` | The year billed less what a price integration prices it at, VAT included, in EUR |
 | `binary_sensor.*_bill_disagrees` | Problem when the bill disagrees with that price integration, OK when it agrees |
+| `sensor.*_monthly_advance_needed` | The monthly advance the meter needs, VAT included, in EUR |
+
+and one more for each delivery address, on a device of its own named *Eneco
+advance*:
+
+| Entity | Purpose |
+| --- | --- |
+| `sensor.eneco_advance_monthly_advance_needed` | The monthly advance the address needs, gas and electricity together, in EUR |
 
 The total is each line with its own VAT rate, added up, so it can be a cent off
 what a bill prints. It is the cost of the year, not what was left to pay on the
@@ -296,7 +304,65 @@ a dashboard or used in an automation in place of the Repairs cards.
   wording, but no bill in Dutch or German has been read yet. If one is
   refused, please open an issue with its `last_error`.
 
-Turning the option off removes the four sensors and what was read.
+### Monthly advance
+
+Eneco bills a monthly advance per address and settles it once a year. Its
+own advice on the portal, *Notre proposition*, is what it expects to be due
+by the next meter reading divided by the months left, and it does not net
+what solar panels feed back under the compensation scheme: on a compensated
+household it can ask several times too much. `sensor.*_monthly_advance_needed`
+works it out from your own last yearly bill instead:
+
+- **The billing period** runs a year from the day after the last yearly bill
+  ends.
+- **What it uses so far** is the meter's newest reading less the official
+  reading that closed that bill, the way the bill counts it.
+- **The rest of it** is the last period's volume times the share of it its
+  remaining days took: on the portal's monthly profile for what is taken,
+  and on a solar profile for what is fed back.
+- **The price** is the last bill's, line by line at its latest unit price:
+  each kWh line on the volume that bill charged it on, net (taken less fed
+  back), gross or fed back, the yearly lines by the day, and the prosumer cap
+  at what it came to per day. Gas energy is priced month by month at the
+  index of each month when a [gas price
+  integration](https://github.com/renaudallard/homeassistant_be_gas_prices)
+  entry checks the bill (2026.11.17 or newer), since the index can move a lot
+  in a year; electricity energy stays at the bill's price for now.
+
+The state is a year like the running one at today's prices, divided by
+twelve: the amount to set once, which does not swing as the reading nears.
+The attributes say what is behind it:
+
+| Attribute | Meaning |
+| --- | --- |
+| `advance_now` | What you pay for this meter today, as the portal splits it |
+| `difference` | The state less `advance_now` |
+| `year_cost` | A year like the running one at today's prices |
+| `period_start`, `period_end`, `period_cost` | The running billing period and what it will cost |
+| `expected_regularisation` | What the next yearly bill should ask, negative for a refund, like `balance` |
+| `advances_billed`, `advances_to_come` | The advances of the period invoiced so far, and those left at `advance_now` |
+| `measured_until`, `measured_offtake_kwh`, `measured_injection_kwh` | The last day the meter readings cover, and what they show since the bill |
+| `offtake_kwh`, `injection_kwh`, `net_kwh` | The whole period's volumes, measured and projected |
+| `volume_basis` | `profile`, or `days` when the portal's profile was missing and each day counted the same |
+| `energy_price` | `price_integration` or `last_bill` |
+| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be |
+
+The address sensor adds up its meters: `electricity` and `gas` are each
+one's share, `advance_now` what the portal says you pay in all, and
+`eneco_recommended` and `eneco_expected_regularisation` Eneco's own advice
+and what it expects at the reading, to compare with. It shows nothing, with
+the reason in `last_error`, while a contract the portal lists at the address
+has no meter set up here or no amount yet: a total missing one would pass for
+the whole.
+
+An advance invoice for both energies prints each one's share; it is read
+once, and used only when the shares add up to what the invoice list says it
+asked for. Only the
+French wording has been seen: on another, the advance is split on today's
+advances and `advance_split` says so. Nothing is ever sent to the advances
+page, which only answers a read.
+
+Turning the option off removes these sensors and what was read.
 
 ## Upgrading from 0.3 or earlier
 

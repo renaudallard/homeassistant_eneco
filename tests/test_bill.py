@@ -186,3 +186,49 @@ def test_unreadable_pdf_refused() -> None:
     """Bytes that are not a PDF are refused, not raised as something else."""
     with pytest.raises(BillFormatError, match="unreadable PDF"):
         pdf_text(b"%PDF-1.4 not really")
+
+
+# An advance invoice for both energies, as its PDF rows read.
+ADVANCE = [
+    "Facture d'acompte",
+    "Électricité - ORES Gas - ORES (Brabant Wallon)",
+    "Électricité € 53,32 € 56,51",
+    "Gaz € 235,11 € 249,20",
+    "Sous-total € 288,43",
+    "Total € 305,71",
+    "txtTotalAmount: 305,71",
+]
+
+
+def test_an_advance_is_split_by_energy() -> None:
+    """Each energy's share, VAT included, adding up to what it asked for."""
+    expected = {"Electricity": 56.51, "Gas": 249.2}
+    assert bill.parse_advance(_text(ADVANCE), 305.71) == expected
+    # The hidden total is what is left once a refund is taken off: ignored.
+    offset = [
+        row.replace("txtTotalAmount: 305,71", "txtTotalAmount: -0,85")
+        for row in ADVANCE
+    ]
+    assert bill.parse_advance(_text(offset), 305.71) == expected
+    # As 2025's invoices print it.
+    old = [
+        "Électricité € 94,35 hors TVA € 100,00 TVA incl.",
+        "Gaz € 188,69 hors TVA € 200,00 TVA incl.",
+    ]
+    assert bill.parse_advance(_text(old), 300.0) == {"Electricity": 100.0, "Gas": 200.0}
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        # The shares do not add up to the total: a row was misread.
+        [row.replace("€ 249,20", "€ 249,02") for row in ADVANCE],
+        # One of them was not read.
+        [row for row in ADVANCE if not row.startswith("Gaz")],
+        # A wording never seen is not guessed at.
+        [row.replace("Électricité €", "Elektriciteit €") for row in ADVANCE],
+    ],
+)
+def test_an_advance_split_that_cannot_be_checked_is_not_used(rows: list[str]) -> None:
+    """A split not checked against the total could be misread."""
+    assert bill.parse_advance(_text(rows), 305.71) == {}

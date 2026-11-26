@@ -53,6 +53,21 @@ def meter_device(meter: Mapping[str, Any]) -> DeviceInfo:
     )
 
 
+def address_device(entry_id: str, address: str, number: int) -> DeviceInfo:
+    """Return the device that stands for a delivery address of a login.
+
+    Its advance is paid for every meter there at once. ``number`` tells the
+    addresses of one login apart, 0 when it has only one.
+    """
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{entry_id}_{address}")},
+        entry_type=DeviceEntryType.SERVICE,
+        manufacturer="Eneco",
+        name="Eneco advance" + (f" {number}" if number else ""),
+        configuration_url=f"{WEB_HOST}/my-eneco/usage/",
+    )
+
+
 class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
     """An entity describing the meter a subentry submits readings for."""
 

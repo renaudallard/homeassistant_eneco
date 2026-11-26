@@ -143,6 +143,11 @@ Array of `MeterReadingResponse`:
                      "isValidated": true, "meterNumber": "", "reason": "..." } ] }
 ```
 
+The `Official` readings are the ones a yearly bill is settled between: the one
+dated the day after a bill's last day closes it. Seen on 2026-11-26, the index
+differences between two of them gave a bill's kWh to the unit, offtake and
+injection alike. A reading dated D is the index as D starts.
+
 ### `POST /accounts/{accountNumber}/meter-readings`
 
 The body is a JSON **array**, one entry per register, of `AddMeterReadingRequest`:
@@ -249,30 +254,66 @@ October 2022. A Flex contract seen on 2026-11-24 was still billed on that card,
 formula and fee, for January 2026, when the card Eneco published that month
 printed another.
 
-### Enumerations
+### `GET /accounts/{accountNumber}/delivery-addresses/{addressIdentifier}/advance-amounts`
 
-| Type | Values |
-| --- | --- |
-| `TimeframeTypeCodeDto` | `TH` single, `HI` day/peak, `LO` night/off peak, `EX` exclusive night |
-| `DirectionTypeCodeDto` | `OffTake` (import), `Injection` (export) |
-| `EnergyTypeDto` | `Electricity`, `Gas`, `Both`, `Unknown` |
-| `MeterType` | `Analogue`, `Digital`, `DigitalNightExclusive`, `Unknown` |
-| `MeterRegime` | `NotApplicable`, `Smr1`, `Smr3` |
-| `RegisterType` | `Single`, `Day`, `Night`, `ExclusiveNight` (UI form of the timeframe code) |
+The advances page. Read from the portal's `useAdvances.tsx` and called live
+on 2026-11-26:
 
-### Validation
+```json
+{ "advancePayments": [
+    { "contractDetails": { "contractNumber": "", "contractStartDate": "2020-01-01",
+                           "contractExpiryDate": null },
+      "meterDetails": { "ean": "", "meterType": "Digital|Analogue", "isBudgetMeter": false,
+                        "energyType": "Electricity", "serviceComponent": "CompensatedOfftake",
+                        "invoiceFrequency": "Yearly", "meterReadingMonth": 1,
+                        "yearlyBillMonth": 2 },
+      "details": { "currentAmount": 56.51, "minAmount": 277, "maxAmount": 2500,
+                   "recommendedAmount": 554.43, "recommendedAmountError": null,
+                   "monthsUntilMeterReadingMonth": 3,
+                   "amountDueForMeterReadingMonth": 1663.29, "isDefaulter": false,
+                   "notAvailable": false, "lastChangedOn": "" } } ],
+  "totals": { "currentAmount": 356.51, "minAmount": 430, "maxAmount": 2500,
+              "recommendedAmount": 861.13 } }
+```
 
-Client side (`ValidationSchema.tsx`): the reading date must not be in the future and not
-more than one month in the past; every value must be an integer. The page copy also warns
-that readings may not be older than one week, which the server enforces.
+`recommendedAmount` is `amountDueForMeterReadingMonth` divided by
+`monthsUntilMeterReadingMonth`, to the cent, and the portal's expected
+regularisation is `currentAmount` times those months less the amount due. On a
+`CompensatedOfftake` contract the amount due counts offtake without netting
+injection. The same path takes a POST, `{"amount": 0, "type": "Global"}`, that
+sets the advance: this integration never sends it, nor the POSTs of
+`.../advance-amounts/simulate/global`, `.../update-multiple`, `.../vacancy` or
+`/accounts/{accountNumber}/advance-amounts/recommended`.
 
-Server side validation codes, from `AddMeterReading.tsx`:
+### `GET /accounts/{accountNumber}/delivery-addresses/{addressIdentifier}/consumption`
 
-| Code | Meaning |
-| --- | --- |
-| `MeterReading.AlreadyExists` | a reading already exists for that date |
-| `MeterReading.DateIsEarlierThanContractStart` | date precedes the contract start |
-| `AddMeterReadings.Contract.NotFound` | no contract for this meter |
-| `MeterReading.AddingInjectionReadingsToConsumptionOnlyMeter` | meter has no injection register |
-| `MeterReading.NewReadingsShouldBeHigher.{TH,HI,LO}.{OffTake,Injection}` | value below the previous reading |
-| `MeterReading.NewMeterReadingsToHigh.{TH,HI,LO}.{OffTake,Injection}` | value implausibly high |
+The consumption page, read from `StandardConsumptionData.tsx`, with
+`consumptionType` (`Electricity`, `Injection`, `Gas` or `Total`),
+`displayMode=Consumption`, `timeFrame` (`Monthly`, `Yearly`, `Daily`, ...),
+`startDate`, `endDate` and `meterNumber`, the `meterNumber` of a service
+delivery point:
+
+```json
+{ "periods": [ { "startDate": "2026-06-01T00:00:00+02:00",
+                 "endDate": "2026-07-01T00:00:00+02:00",
+                 "data": [ { "energyType": "Electricity", "direction": "OffTake",
+                             "meterTimeFrameType": "HI", "basedOn": "Official",
+                             "value": 51.56, "isValidated": true } ] } ] }
+```
+
+`Electricity` and `Injection` both return the four registers. The months are
+the portal's spread of its readings: offtake follows the seasons, but
+injection is spread flat between two readings until daily ones are sent, and
+gas months do not add up to a bill's kWh where a bill starts or ends mid
+month. Good for the shape of a year, not for what a period used.
+
+### Advance invoice documents
+
+An `AdvanceInvoice` for both energies (`invoiceEnergyType` `Both`) prints each
+energy's share before and with VAT, `Électricité € 53,32 € 56,51` and
+`Gaz € 235,11 € 249,20`, or in 2025 `Électricité € 94,35 hors TVA € 100,00
+TVA incl.`. The shares add up to the invoice's `dueAmount`, which
+`McsCmBilTotalAmountInclVAT` repeats in hidden text. `txtTotalAmount` is not
+that total: it is what is left to pay once a refund due is taken off, -0,85
+on an advance of 233,24 sent with a refund of 234,09. Only French ones have
+been read.

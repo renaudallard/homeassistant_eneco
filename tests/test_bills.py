@@ -38,7 +38,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMockResponse,
 )
 
-from custom_components.eneco_be import api
+from custom_components.eneco_be import api, api_billing
 from custom_components.eneco_be.api import EnecoClient, EnecoError
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.binary_sensor import threshold
@@ -73,6 +73,9 @@ BILL_DISAGREES = "binary_sensor.eneco_541449000000000001_bill_disagrees"
 
 CONTRACT = "1-1000"
 INVOICES = f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/invoices"
+ADVANCES = f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/advance-amounts"
+CONSUMPTION = f"{API}/accounts/{ACCOUNT}/delivery-addresses/{ADDRESS}/consumption"
+READINGS = f"{API}/accounts/{ACCOUNT}/meter-readings"
 PRODUCT = f"{API}/accounts/{ACCOUNT}/contracts/{CONTRACT}/products"
 DOWNLOAD = "https://eneco.be/api/my-eneco/download"
 CARD = "https://cdn.eneco.be/downloads/{lang}/general/tk/BC_032_012210_{LANG}_ENECO_POWER_FLEX.pdf"
@@ -111,6 +114,20 @@ def invoice(
             {"documentType": "SimplifiedBill", "url": document(f"{identifier}-S")},
         ],
     }
+
+
+def mock_advances(
+    mocker: AiohttpClientMocker,
+    advances: dict[str, Any] | None = None,
+    readings: list[dict[str, Any]] | None = None,
+    volumes: dict[str, Any] | None = None,
+) -> None:
+    """Register the advances, readings and monthly volumes, empty by default."""
+    mocker.get(
+        ADVANCES, json={"data": advances or {"advancePayments": [], "totals": {}}}
+    )
+    mocker.get(READINGS, json={"data": readings or []})
+    mocker.get(CONSUMPTION, json={"data": volumes or {"periods": []}})
 
 
 def mock_bill(mocker: AiohttpClientMocker, identifier: str, rows: list[str]) -> None:
@@ -192,6 +209,7 @@ def portal(aioclient_mock: AiohttpClientMocker) -> AiohttpClientMocker:
             }
         },
     )
+    mock_advances(aioclient_mock)
     return aioclient_mock
 
 
@@ -526,6 +544,14 @@ async def test_diagnostics_and_removal(
             "difference": None,
             "error": "no electricity or gas price entry checks this bill",
         },
+        "provision": {
+            "monthly_advance": None,
+            "period_cost": None,
+            "volume_basis": None,
+            "energy_price": None,
+            "advance_split": None,
+            "error": "no official reading at both ends of the last bill",
+        },
     }
 
     assert await hass.config_entries.async_remove(entry.entry_id)
@@ -586,6 +612,7 @@ def mock_invoices(mocker: AiohttpClientMocker, invoices: list[dict[str, Any]]) -
     )
     mock_discovery(mocker, points=[{"ean": EAN, "type": "Electricity"}])
     mocker.get(INVOICES, json={"data": {"invoices": invoices}})
+    mock_advances(mocker)
 
 
 async def test_a_short_yearly_bill_is_the_year(
@@ -654,8 +681,7 @@ async def test_an_intermediary_bill_is_part_of_the_year(
 )
 def test_an_amount_is_a_finite_number(due: Any, read: float | None) -> None:
     """What an invoice asked for is a number or nothing."""
-    entry = {"invoiceId": "CN2", "dueAmount": due}
-    assert api._invoice(entry).due == read  # noqa: SLF001
+    assert api_billing.invoice({"invoiceId": "CN2", "dueAmount": due}).due == read
 
 
 async def test_a_bill_without_an_amount_leaves_no_balance(
@@ -710,6 +736,7 @@ async def test_a_bill_of_the_meter_beside_it_does_not_end_the_year(
             }
         },
     )
+    mock_advances(aioclient_mock)
     mock_bill(aioclient_mock, "CN2", SHORT)
     mock_bill(aioclient_mock, "NB1", [row.replace(EAN, OTHER_EAN) for row in DEARER])
     mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))

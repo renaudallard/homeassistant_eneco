@@ -38,6 +38,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
     AiohttpClientMockResponse,
 )
 
+from custom_components.eneco_be import api_billing
 from custom_components.eneco_be.api import (
     EnecoAuthError,
     EnecoClient,
@@ -438,3 +439,89 @@ async def test_meters_sharing_a_client_sign_in_once(
     )
     assert first == second == []
     assert issued == ["t1", "t2"]
+
+
+def test_advance_amounts_are_parsed() -> None:
+    """The portal's advances page, keeping only what has the shape it should."""
+    got = api_billing.advance_amounts(
+        {
+            "advancePayments": [
+                {
+                    "meterDetails": {
+                        "ean": "541449000000000001",
+                        "energyType": "Electricity",
+                    },
+                    "details": {
+                        "currentAmount": 56.51,
+                        "recommendedAmount": 554.43,
+                        "monthsUntilMeterReadingMonth": 3,
+                        "amountDueForMeterReadingMonth": 1663.29,
+                    },
+                },
+                {"meterDetails": {"energyType": "Gas"}, "details": {}},
+                {
+                    "meterDetails": {"ean": "541449000000000099", "energyType": "Gas"},
+                    "details": {
+                        "currentAmount": "300",
+                        "monthsUntilMeterReadingMonth": -1,
+                    },
+                },
+                "nonsense",
+            ],
+            "totals": {"currentAmount": 356.51, "recommendedAmount": 861.13},
+        }
+    )
+    assert got == api_billing.AdvanceAmounts(
+        current=356.51,
+        recommended=861.13,
+        contracts=(
+            api_billing.ContractAdvance(
+                "541449000000000001", "Electricity", 56.51, 554.43, 3, 1663.29
+            ),
+            api_billing.ContractAdvance(
+                "541449000000000099", "Gas", None, None, None, None
+            ),
+        ),
+    )
+    assert api_billing.advance_amounts(None) is None
+
+
+def test_monthly_volumes_are_parsed() -> None:
+    """Every register of a month adds to what was taken or fed back.
+
+    A month with no value is left out rather than read as nothing used.
+    """
+    got = api_billing.monthly_volumes(
+        {
+            "periods": [
+                {
+                    "startDate": "2026-06-01T00:00:00+02:00",
+                    "data": [
+                        {
+                            "direction": "OffTake",
+                            "meterTimeFrameType": "HI",
+                            "value": 51.5,
+                        },
+                        {
+                            "direction": "OffTake",
+                            "meterTimeFrameType": "LO",
+                            "value": 142.5,
+                        },
+                        {
+                            "direction": "Injection",
+                            "meterTimeFrameType": "HI",
+                            "value": 176,
+                        },
+                        {
+                            "direction": "Injection",
+                            "meterTimeFrameType": "LO",
+                            "value": None,
+                        },
+                    ],
+                },
+                {"startDate": "2026-07-01T00:00:00+02:00", "data": []},
+                {"startDate": "bad", "data": [{"value": 1}]},
+            ]
+        }
+    )
+    assert got == {"2026-06": api_billing.MonthVolume(194.0, 176.0)}

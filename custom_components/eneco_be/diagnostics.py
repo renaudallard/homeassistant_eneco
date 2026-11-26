@@ -73,6 +73,17 @@ def _bill(read: dict[str, Any]) -> dict[str, Any]:
             key: (read.get("comparison") or {}).get(key)
             for key in ("covered", "difference", "error")
         },
+        "provision": {
+            key: (read.get("provision") or {}).get(key)
+            for key in (
+                "monthly_advance",
+                "period_cost",
+                "volume_basis",
+                "energy_price",
+                "advance_split",
+                "error",
+            )
+        },
     }
 
 

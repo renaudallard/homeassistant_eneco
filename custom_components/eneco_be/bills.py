@@ -50,24 +50,20 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import (
-    EnecoAuthError,
-    EnecoClient,
-    EnecoError,
-    Invoice,
-    ServiceDeliveryPoint,
-    TariffCard,
-)
-from .bill import BillFormatError, BillLine, parse_bill, pdf_text
-from .bill_compare import async_compare
+from .api import EnecoAuthError, EnecoClient, EnecoError, ServiceDeliveryPoint
+from .api_billing import AdvanceAmounts, Invoice, TariffCard
+from .bill import BillFormatError, BillLine, parse_advance, parse_bill, pdf_text
+from .bill_compare import async_compare, async_energy_rates
 from .const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
     CONF_EAN,
     CONF_ENERGY_TYPE,
     DOMAIN,
+    GAS,
     LAST_BILL,
 )
+from .provision import ProvisionError, advances, period_months, project, year_after
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +84,10 @@ INTERMEDIARY: Final = "IntermediaryInvoice"
 MONTHLY: Final = "MonthlyBill"
 # The monthly bills that make a year, where no yearly bill closes one.
 MONTHS: Final = 12
+ADVANCE: Final = "AdvanceInvoice"
+# How far back an advance invoice for both energies is read to split it: a
+# billing period, and a little more for one billed late.
+ADVANCE_DAYS: Final = 400
 
 # "BC_032_012210_NL_ENECO_POWER_FLEX.pdf": issue 01 of the card of 2022-10.
 _CARD_RE: Final = re.compile(r"BC_\d+_(?P<version>\d{2}(?P<yy>\d{2})(?P<mm>\d{2}))_")
@@ -149,6 +149,93 @@ def _not_used(run: list[dict[str, Any]], why: str) -> str:
 def _too_few(run: list[dict[str, Any]]) -> str:
     """Return why monthly bills, newest first, are not a year."""
     return _not_used(run, f"{len(run)} monthly bills follow on, not {MONTHS}")
+
+
+def _settlement(every: list[Invoice], today: date) -> list[Invoice]:
+    """Return the settlement bills among the invoices, newest first."""
+    invoices = [i for i in every if i.kind in SETTLEMENT and i.document_url]
+    invoices.sort(key=lambda i: i.issued or today, reverse=True)
+    return invoices
+
+
+def _address_state(portal: AdvanceAmounts | str) -> dict[str, Any]:
+    """Return what the address sensor shows of the portal's advances.
+
+    The portal's own expected regularisation is turned to this
+    integration's sign: positive is still to pay.
+    """
+    if isinstance(portal, str):
+        return {
+            "eans": None,
+            "advance_now": None,
+            "eneco_recommended": None,
+            "eneco_expected_regularisation": None,
+            "error": portal,
+        }
+    expected = None
+    if (
+        all(
+            c.current is not None and c.months_left is not None and c.due is not None
+            for c in portal.contracts
+        )
+        and portal.contracts
+    ):
+        expected = round(
+            sum(
+                (c.due or 0.0) - (c.current or 0.0) * max(c.months_left or 0, 1)
+                for c in portal.contracts
+            ),
+            2,
+        )
+    return {
+        "eans": sorted(c.ean for c in portal.contracts),
+        "advance_now": portal.current,
+        "eneco_recommended": portal.recommended,
+        "eneco_expected_regularisation": expected,
+        "error": None,
+    }
+
+
+def _advance_months(
+    kind: str,
+    every: list[Invoice],
+    split: Mapping[str, dict[str, float]],
+    share: float | None,
+) -> tuple[dict[str, float], set[str], set[str]]:
+    """Return this energy's share of each month's advance, "YYYY-MM".
+
+    Also the months whose share was estimated and those it could not be told
+    for.
+
+    An invoice for this energy alone is its own; one for both is split as
+    its PDF prints it, or, where that could not be read, by ``share``, this
+    energy's part of today's advance. Without either it is left out.
+    """
+    months: dict[str, float] = {}
+    estimated: set[str] = set()
+    missing: set[str] = set()
+    for invoice in every:
+        if (
+            invoice.kind != ADVANCE
+            or invoice.period_start is None
+            or invoice.due is None
+        ):
+            continue
+        month = f"{invoice.period_start:%Y-%m}"
+        if invoice.energy_type == kind:
+            amount: float | None = invoice.due
+        elif invoice.energy_type == "Both":
+            amount = (split.get(invoice.identifier) or {}).get(kind)
+            if amount is None and share is not None:
+                amount = invoice.due * share
+                estimated.add(month)
+            elif amount is None:
+                missing.add(month)
+        else:
+            continue
+        if amount is not None:
+            months[month] = months.get(month, 0.0) + amount
+    return months, estimated, missing
 
 
 def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
@@ -224,6 +311,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Invoice id -> the EANs it prints, and its lines or why it could not
         # be read. Kept for the invoices still listed, so a PDF is read once.
         self._seen: dict[str, dict[str, Any]] = {}
+        # Advance invoice id -> each energy's share of it, empty when the PDF
+        # did not give a split that adds up. Read once, like the bills.
+        self._advances: dict[str, dict[str, float]] = {}
+        # Delivery address -> what the portal says of its monthly advance.
+        self.addresses: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def key_for(entry_id: str) -> str:
@@ -245,12 +337,21 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return
         kept = stored.get("meters")
         seen = stored.get("seen")
+        read = stored.get("advances")
+        addresses = stored.get("addresses")
         self.data = {
             key: value
             for key, value in (kept if isinstance(kept, dict) else {}).items()
             if key in meters and isinstance(value, dict)
         }
         self._seen = seen if isinstance(seen, dict) else {}
+        self._advances = read if isinstance(read, dict) else {}
+        wanted = {meter.get(CONF_ADDRESS) for meter in meters.values()}
+        self.addresses = {
+            key: value
+            for key, value in (addresses if isinstance(addresses, dict) else {}).items()
+            if key in wanted and isinstance(value, dict)
+        }
 
     def _meters(self) -> dict[str, Mapping[str, Any]]:
         """Return the meters of the entry, by subentry id."""
@@ -277,7 +378,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         try:
             for (account, address), subentry_ids in groups.items():
                 try:
-                    points, invoices = await self._async_list(account, address, today)
+                    points, every = await self._async_list(account, address)
                 except EnecoAuthError:
                     raise
                 except EnecoError as err:
@@ -285,24 +386,36 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     for subentry_id in subentry_ids:
                         data[subentry_id] = self._kept(subentry_id, str(err))
                     continue
-                listed.update(invoice.identifier for invoice in invoices)
+                invoices = _settlement(every, today)
+                listed.update(invoice.identifier for invoice in every)
+                portal = await self._async_advance_amounts(account, address)
+                await self._async_read_advances(every, today)
                 for subentry_id in subentry_ids:
                     meter = meters[subentry_id]
                     kind = meter[CONF_ENERGY_TYPE]
                     shared = sum(p.energy_type == kind for p in points.values()) > 1
+                    point = points.get(meter[CONF_EAN])
                     try:
                         data[subentry_id] = await self._async_meter(
+                            account, meter, invoices, point, shared=shared
+                        )
+                        data[subentry_id]["provision"] = await self._async_provision(
                             account,
+                            address,
                             meter,
-                            invoices,
-                            points.get(meter[CONF_EAN]),
-                            shared=shared,
+                            point,
+                            data[subentry_id].get("year"),
+                            every,
+                            portal,
+                            today,
+                            (self.data.get(subentry_id) or {}).get("provision"),
                         )
                     except EnecoAuthError:
                         raise
                     except EnecoError as err:
                         complete = False
                         data[subentry_id] = self._kept(subentry_id, str(err))
+                self.addresses[address] = _address_state(portal)
         except EnecoAuthError as err:
             raise UpdateFailed(str(err)) from err
 
@@ -322,7 +435,17 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._seen = {
                 key: value for key, value in self._seen.items() if key in listed
             }
-        await self._store.async_save({"meters": data, "seen": self._seen})
+            self._advances = {
+                key: value for key, value in self._advances.items() if key in listed
+            }
+        await self._store.async_save(
+            {
+                "meters": data,
+                "seen": self._seen,
+                "advances": self._advances,
+                "addresses": self.addresses,
+            }
+        )
         return data
 
     def _kept(self, subentry_id: str, error: str) -> dict[str, Any]:
@@ -331,24 +454,63 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return {
             "card": previous.get("card"),
             "year": previous.get("year"),
+            "provision": previous.get("provision"),
             "error": error,
         }
 
     async def _async_list(
-        self, account: str, address: str, today: date
+        self, account: str, address: str
     ) -> tuple[dict[str, ServiceDeliveryPoint], list[Invoice]]:
-        """Return the meters of an address and its settlement bills, newest first."""
+        """Return the meters of an address and all its invoices."""
         points = {
             point.ean: point
             for point in await self.client.async_get_delivery_points(account, address)
         }
-        invoices = [
-            invoice
-            for invoice in await self.client.async_get_invoices(account, address)
-            if invoice.kind in SETTLEMENT and invoice.document_url
-        ]
-        invoices.sort(key=lambda i: i.issued or today, reverse=True)
-        return points, invoices
+        return points, await self.client.async_get_invoices(account, address)
+
+    async def _async_advance_amounts(
+        self, account: str, address: str
+    ) -> AdvanceAmounts | str:
+        """Return the portal's advances of an address, or why there are none."""
+        try:
+            got = await self.client.async_get_advance_amounts(account, address)
+        except EnecoAuthError:
+            raise
+        except EnecoError as err:
+            return f"the advances were not read: {err}"
+        return got if got is not None else "the portal lists no advances"
+
+    async def _async_read_advances(self, every: list[Invoice], today: date) -> None:
+        """Read the split of each recent advance invoice for both energies.
+
+        One that would not download is not remembered, so it is tried again
+        the next day.
+        """
+        since = today - timedelta(days=ADVANCE_DAYS)
+        for invoice in every:
+            if (
+                invoice.kind != ADVANCE
+                or invoice.energy_type != "Both"
+                or not invoice.document_url
+                or invoice.identifier in self._advances
+                or invoice.due is None
+                or invoice.period_start is None
+                or invoice.period_start < since
+            ):
+                continue
+            try:
+                payload = await self.client.async_get_document(invoice.document_url)
+            except EnecoAuthError:
+                raise
+            except EnecoError as err:
+                _LOGGER.debug("Advance of %s not downloaded: %s", invoice.issued, err)
+                continue
+            try:
+                text = await self.hass.async_add_executor_job(pdf_text, payload)
+            except BillFormatError:
+                # Downloaded but unreadable: it will not read better tomorrow.
+                text = ""
+            self._advances[invoice.identifier] = parse_advance(text, invoice.due)
 
     async def _async_meter(
         self,
@@ -446,6 +608,123 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             "card": card_state(card) if card is not None else None,
             "year": year_state(run) if run else None,
             "error": error,
+        }
+
+    async def _async_provision(
+        self,
+        account: str,
+        address: str,
+        meter: Mapping[str, Any],
+        point: ServiceDeliveryPoint | None,
+        year: dict[str, Any] | None,
+        every: list[Invoice],
+        portal: AdvanceAmounts | str,
+        today: date,
+        previous: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return the monthly advance the meter needs, or why it cannot be told.
+
+        Worked out from the newest bill of the year shown, the official
+        readings that opened and closed it, the newest reading since, the
+        portal's monthly profile, and the advances invoiced. A portal that
+        does not answer leaves ``previous`` standing, with why.
+        """
+        if year is None:
+            return {"error": "no yearly bill to work from"}
+        newest = year["bills"][-1]
+        if newest["invoice_type"] == MONTHLY:
+            return {"error": "billed monthly, with no advance"}
+        ean = meter[CONF_EAN]
+        kind = meter[CONF_ENERGY_TYPE]
+        first = date.fromisoformat(newest["period_start"])
+        last = date.fromisoformat(newest["period_end"])
+        start = last + timedelta(days=1)
+        end = year_after(start) - timedelta(days=1)
+        lines = [
+            line for line in year["lines"] if line["start"] >= newest["period_start"]
+        ]
+        try:
+            readings = await self.client.async_get_readings(account, ean)
+            profile = (
+                {}
+                if point is None
+                else await self.client.async_get_monthly_volumes(
+                    account, address, point, first.replace(day=1), last
+                )
+            )
+        except EnecoAuthError:
+            raise
+        except EnecoError as err:
+            return (previous or {}) | {"error": f"the readings were not read: {err}"}
+        official = {r.date: r.values for r in readings if r.reading_type == "Official"}
+        opened = official.get(first.isoformat())
+        closed = official.get(start.isoformat())
+        if opened is None or closed is None:
+            return {"error": "no official reading at both ends of the last bill"}
+        # Not one past the period's end, the day after its last day: once the
+        # period is over and not billed yet, the days after it are the next
+        # period's, and the reading that closes it is the one to use.
+        closing = (end + timedelta(days=1)).isoformat()
+        newest_reading = next((r for r in readings if r.date <= closing), None)
+        if newest_reading is None:
+            return {"error": "no reading since the last bill"}
+        try:
+            read_on = date.fromisoformat(newest_reading.date)
+        except ValueError:
+            return {"error": "the newest reading has no date"}
+        rates = None
+        if kind == GAS:
+            rates = await async_energy_rates(
+                self.hass, f"{ean}_{LAST_BILL}", start.isoformat(), end.isoformat()
+            )
+        try:
+            result = project(
+                energy_type=kind,
+                lines=lines,
+                bill_period=(first, last),
+                bill_readings=(opened, closed),
+                latest=(read_on, newest_reading.values),
+                profile=profile,
+                rates=rates,
+            )
+        except ProvisionError as err:
+            return {"error": str(err)}
+
+        contract = (
+            None
+            if isinstance(portal, str)
+            else next((c for c in portal.contracts if c.ean == ean), None)
+        )
+        advance_now = None if contract is None else contract.current
+        share = None
+        if not isinstance(portal, str) and advance_now is not None and portal.current:
+            share = advance_now / portal.current
+        months, estimated, missing = _advance_months(kind, every, self._advances, share)
+        paid, coming = advances(
+            period=(start, end), billed=months, advance_now=advance_now, today=today
+        )
+        in_period = set(period_months(start, end))
+        split = (
+            "incomplete"
+            if missing & in_period
+            else "estimated"
+            if estimated & in_period
+            else "invoice"
+        )
+        expected = None
+        if coming is not None and split != "incomplete":
+            expected = round(result["period_cost"] - paid - coming, 2)
+        difference = None
+        if advance_now is not None:
+            difference = round(result["monthly_advance"] - advance_now, 2)
+        return result | {
+            "advance_now": advance_now,
+            "difference": difference,
+            "advances_billed": paid,
+            "advances_to_come": coming,
+            "advance_split": split,
+            "expected_regularisation": expected,
+            "error": None,
         }
 
     async def _async_seen(self, invoice: Invoice) -> dict[str, Any] | str:
