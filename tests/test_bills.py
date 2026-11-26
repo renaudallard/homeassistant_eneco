@@ -1540,9 +1540,8 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
     """With two meters of one energy, only the EAN a bill prints says whose.
 
     One whose PDF would not read may be either meter's. Taken as this one's,
-    the other meter's yearly bill ended this year with no error; passed over,
-    this meter's own bill of the year before let the year run on into older
-    ones. It ends the year, and says it may be another meter's.
+    the other meter's yearly bill ended this year with no error. Billing days
+    this year's bills bill, it can only be the other meter's.
     """
     mock_login(
         aioclient_mock,
@@ -1560,10 +1559,26 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
         json={
             "data": {
                 "invoices": [
-                    invoice("CN2", "YearlyBill", "2026-04-26"),
-                    invoice("NB1", "YearlyBill", "2025-06-01"),
-                    invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
-                    invoice("CN1", "YearlyBill", "2024-02-20"),
+                    billed(
+                        invoice("CN2", "YearlyBill", "2026-04-26"),
+                        "2025-03-15",
+                        "2026-02-01",
+                    ),
+                    billed(
+                        invoice("NB1", "YearlyBill", "2025-06-01"),
+                        "2025-02-01",
+                        "2026-02-01",
+                    ),
+                    billed(
+                        invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+                        "2024-02-15",
+                        "2025-03-15",
+                    ),
+                    billed(
+                        invoice("CN1", "YearlyBill", "2024-02-20"),
+                        "2023-02-15",
+                        "2024-02-15",
+                    ),
                 ]
             }
         },
@@ -1584,11 +1599,11 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
-    assert [b["invoice_type"] for b in bill.attributes["bills"]] == ["YearlyBill"]
-    assert bill.attributes["last_error"].startswith(
-        "the bill of 2025-06-01 was not read"
-    )
-    assert bill.attributes["last_error"].endswith("it may be another meter's")
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == [
+        "IntermediaryInvoice",
+        "YearlyBill",
+    ]
+    assert bill.attributes["last_error"] is None
 
 
 @pytest.mark.parametrize("same", [False, True])
@@ -1632,12 +1647,15 @@ def test_an_undated_bill_is_named_as_one() -> None:
     )
 
 
+@pytest.mark.parametrize("dated", [True, False])
 async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, dated: bool
 ) -> None:
     """This meter's bill of the year before, its PDF unreadable, two meters.
 
     Passed over, the year ran on into older bills and the newest was lost.
+    Ending where the year starts, it closes it, whoever's it is; with no
+    days to go by, it may be another meter's, and says so.
     """
     mock_login(
         aioclient_mock,
@@ -1655,10 +1673,27 @@ async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
         json={
             "data": {
                 "invoices": [
-                    invoice("CN2", "YearlyBill", "2026-04-26"),
-                    invoice("BAD", "YearlyBill", "2025-04-26"),
-                    invoice("IN0", "IntermediaryInvoice", "2025-03-20"),
-                    invoice("CN0", "YearlyBill", "2024-04-26"),
+                    billed(
+                        invoice("CN2", "YearlyBill", "2026-04-26"),
+                        "2025-02-01",
+                        "2026-02-01",
+                    ),
+                    billed(
+                        invoice("BAD", "YearlyBill", "2025-04-26"),
+                        "2024-02-01",
+                        "2025-02-01",
+                    )
+                    | ({} if dated else {"invoicingPeriodEndDate": None}),
+                    billed(
+                        invoice("IN0", "IntermediaryInvoice", "2025-03-20"),
+                        "2023-02-15",
+                        "2024-02-01",
+                    ),
+                    billed(
+                        invoice("CN0", "YearlyBill", "2024-04-26"),
+                        "2022-02-15",
+                        "2023-02-15",
+                    ),
                 ]
             }
         },
@@ -1679,7 +1714,10 @@ async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
 
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["period_start"] == "2025-02-01"
-    assert bill.attributes["last_error"].endswith("it may be another meter's")
+    if dated:
+        assert bill.attributes["last_error"] is None
+    else:
+        assert bill.attributes["last_error"].endswith("it may be another meter's")
 
 
 async def test_an_old_bill_with_no_document_is_no_error_for_two_meters(

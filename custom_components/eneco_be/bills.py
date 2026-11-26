@@ -715,14 +715,18 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 # As before such bills were listed at all: no year is ended
                 # or named by one nothing can be read of.
                 continue
+            # The day the year found so far begins, which its days tell
+            # an unreadable bill by: billing days in it, it is the other
+            # meter's; ending on it, it closes the year, whoever's it is.
+            begins = date.fromisoformat(run[-1]["period_start"]) if run else None
+            if unsure and begins and invoice.period_end and invoice.period_end > begins:
+                continue
             if seen is not None and not _ours(seen, ean):
                 continue
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
             if run and not monthly and invoice.kind != INTERMEDIARY:
-                # The bill of the year before, told from the list unread. One
-                # that would not read ends the year as well, and says it may
-                # be another meter's.
-                if unsure:
+                # The bill of the year before, told from the list unread.
+                if unsure and invoice.period_end != begins:
                     error = error or _not_read(
                         invoice,
                         f"{seen.get('error') if seen else 'unread'},"
