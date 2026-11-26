@@ -806,7 +806,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # period is over and not billed yet, the days after it are the next
         # period's, and the reading that closes it is the one to use.
         closing = (end + timedelta(days=1)).isoformat()
-        newest_reading = next((r for r in readings if r.date <= closing), None)
+        # Of every register the bill closed on: a meter with one unmapped
+        # sends readings of the others only.
+        newest_reading = next(
+            (
+                r
+                for r in readings
+                if r.date <= closing and r.values.keys() == closed.keys()
+            ),
+            None,
+        )
         if newest_reading is None:
             return {"error": "no reading since the last bill"}
         try:

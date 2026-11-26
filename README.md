@@ -336,8 +336,10 @@ works it out from your own last yearly bill instead:
   ends with the month the portal gives for the next meter reading, the one
   nearest a year on, or a year after it started when the portal does not
   say.
-- **What it uses so far** is the meter's newest reading less the official
-  reading that closed that bill, the way the bill counts it.
+- **What it uses so far** is the meter's newest reading of every register
+  less the official reading that closed that bill, the way the bill counts
+  it; a reading of some registers only, from one left unmapped, is passed
+  over.
 - **The rest of it** is the last period's volume times the weight its
   remaining days had a year earlier against the last period's: on the
   portal's monthly profile for what is taken, and on a solar profile for

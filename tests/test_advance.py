@@ -138,7 +138,7 @@ def portal(
     mocker: AiohttpClientMocker,
     contracts: list[dict[str, Any]],
     totals: Any,
-    read: Sequence[tuple[str, str, tuple[int, ...]]] = READ,
+    read: Sequence[tuple[str, str, tuple[int | None, ...]]] = READ,
     word: str = "Elektriciteit",
     others: Sequence[dict[str, Any]] = (),
 ) -> None:
@@ -204,6 +204,8 @@ def portal(
                     "indexValues": [
                         {"direction": d, "meterTimeFrameType": t, "value": v}
                         for (d, t), v in zip(keys, values, strict=True)
+                        # None for a register the reading does not name.
+                        if v is not None
                     ],
                 }
                 for day, kind, values in read
@@ -841,3 +843,29 @@ def test_the_address_total_says_why_it_was_not_read_again(
     assert sensor.extra_state_attributes["last_error"] == (
         provision_error or portal_error
     )
+
+
+async def test_a_reading_of_some_registers_only_is_passed_over(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A meter with a register left unmapped only sends the others.
+
+    The newest reading was taken whatever it named, and naming fewer
+    registers than the one that closed the bill, it gave no advance at all.
+    """
+    freezer.move_to(TODAY)
+    read = [*READ, ("2026-11-26", "CustomerAdded", (9320, 13310, None, None))]
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+        read,
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    got = state_of(hass, METER).attributes
+    assert got["last_error"] is None
+    # The reading of the 25th, every register in it.
+    assert got["measured_until"] == "2026-11-24"
