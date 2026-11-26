@@ -1586,15 +1586,7 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
     )
     mock_advances(aioclient_mock)
     mock_bill(aioclient_mock, "CN2", SHORT)
-    # Served the way the website does, but not a PDF that reads.
-    url = document("NB1")
-    slashed = url.replace("/NB1?", "/NB1/?")
-    aioclient_mock.get(
-        url,
-        status=HTTPStatus.PERMANENT_REDIRECT,
-        headers={"Location": slashed.removeprefix("https://eneco.be")},
-    )
-    aioclient_mock.get(slashed, content=b"%PDF-1.4\nbroken\n")
+    unreadable_pdf(aioclient_mock, "NB1")
     mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
     mock_bill(aioclient_mock, "CN1", DEARER)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
@@ -1701,14 +1693,7 @@ async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
     )
     mock_advances(aioclient_mock)
     mock_bill(aioclient_mock, "CN2", ELECTRICITY)
-    url = document("BAD")
-    slashed = url.replace("/BAD?", "/BAD/?")
-    aioclient_mock.get(
-        url,
-        status=HTTPStatus.PERMANENT_REDIRECT,
-        headers={"Location": slashed.removeprefix("https://eneco.be")},
-    )
-    aioclient_mock.get(slashed, content=b"%PDF-1.4\\nbroken\\n")
+    unreadable_pdf(aioclient_mock, "BAD")
     mock_bill(aioclient_mock, "IN0", year_before("14/03/2025"))
     mock_bill(aioclient_mock, "CN0", year_before("31/01/2025"))
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
@@ -1807,14 +1792,7 @@ async def test_an_intermediary_comes_before_a_bill_ending_the_same_day(
     )
     mock_advances(aioclient_mock)
     mock_bill(aioclient_mock, "CN2", SHORT)
-    url = document("NB1")
-    slashed = url.replace("/NB1?", "/NB1/?")
-    aioclient_mock.get(
-        url,
-        status=HTTPStatus.PERMANENT_REDIRECT,
-        headers={"Location": slashed.removeprefix("https://eneco.be")},
-    )
-    aioclient_mock.get(slashed, content=b"%PDF-1.4\\nbroken\\n")
+    unreadable_pdf(aioclient_mock, "NB1")
     mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
     mock_bill(aioclient_mock, "CN1", DEARER)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
@@ -1943,14 +1921,7 @@ async def test_the_other_meters_intermediary_does_not_reopen_the_year(
     if broken == "500":
         aioclient_mock.get(document("CN1"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
     else:
-        url = document("CN1")
-        slashed = url.replace("/CN1?", "/CN1/?")
-        aioclient_mock.get(
-            url,
-            status=HTTPStatus.PERMANENT_REDIRECT,
-            headers={"Location": slashed.removeprefix("https://eneco.be")},
-        )
-        aioclient_mock.get(slashed, content=b"%PDF-1.4\\nbroken\\n")
+        unreadable_pdf(aioclient_mock, "CN1")
     mock_bill(
         aioclient_mock,
         "OI",
