@@ -39,7 +39,6 @@ or a day the portal is down shows the last year rather than nothing.
 from collections import defaultdict
 from collections.abc import Mapping
 from datetime import date, timedelta
-from decimal import ROUND_HALF_UP, Decimal
 import logging
 import re
 from typing import Any, Final, override
@@ -52,9 +51,23 @@ from homeassistant.util import dt as dt_util
 
 from .advice import address_proposal, no_proposal
 from .api import EnecoAuthError, EnecoClient, EnecoError, ServiceDeliveryPoint
-from .api_billing import AdvanceAmounts, Invoice, TariffCard
-from .bill import BillFormatError, BillLine, parse_advance, parse_bill, pdf_text
+from .api_billing import AdvanceAmounts, Invoice
+from .bill import BillFormatError, parse_advance, parse_bill, pdf_text
 from .bill_compare import async_compare, async_energy_rates
+from .bill_year import (
+    INTERMEDIARY,
+    MONTHLY,
+    MONTHS,
+    bill_state,
+    card_state,
+    follows,
+    not_read,
+    not_used,
+    ours,
+    settlement,
+    too_few,
+    year_state,
+)
 from .const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
@@ -81,100 +94,12 @@ STORAGE_VERSION: Final = 1
 
 # Bills come once a year, or once a month for a meter billed monthly.
 REFRESH_INTERVAL: Final = timedelta(hours=24)
-_CENT: Final = Decimal("0.01")
-
-# The invoices that bill what was consumed, as opposed to advances, credit
-# notes and reminders.
-SETTLEMENT: Final = frozenset(
-    {"YearlyBill", "ClosingBill", "IntermediaryInvoice", "MonthlyBill"}
-)
-# A meter read between two yearly ones, on a product change for one, bills
-# part of the year that the yearly bill after it closes.
-INTERMEDIARY: Final = "IntermediaryInvoice"
-MONTHLY: Final = "MonthlyBill"
-# The monthly bills that make a year, where no yearly bill closes one.
-MONTHS: Final = 12
 ADVANCE: Final = "AdvanceInvoice"
 # How far back an advance invoice for both energies is read to split it: a
 # billing period, and a little more for one billed late.
 ADVANCE_DAYS: Final = 400
 
-# "BC_032_012210_NL_ENECO_POWER_FLEX.pdf": issue 01 of the card of 2022-10.
-_CARD_RE: Final = re.compile(r"BC_\d+_(?P<version>\d{2}(?P<yy>\d{2})(?P<mm>\d{2}))_")
 _EAN_RE: Final = re.compile(r"(?<!\d)54\d{16}(?!\d)")
-
-
-def _not_read(invoice: Invoice, reason: str) -> str:
-    """Return why a bill was not taken, naming it by the day it was issued."""
-    name = f"the bill of {invoice.issued}" if invoice.issued else "an undated bill"
-    return f"{name} was not read: {reason}"
-
-
-def card_state(card: TariffCard) -> dict[str, Any]:
-    """Return what a meter's sensor shows of its tariff card."""
-    match = next(
-        (found for url in card.urls.values() if (found := _CARD_RE.search(url))),
-        None,
-    )
-    return {
-        "version": match["version"] if match else None,
-        "month": f"20{match['yy']}-{match['mm']}" if match else None,
-        "product": card.product,
-        "product_type": card.product_type,
-        "urls": dict(card.urls),
-    }
-
-
-def bill_state(invoice: Invoice, lines: tuple[BillLine, ...]) -> dict[str, Any]:
-    """Return what was read of a bill: when, over which days, and its lines."""
-    return {
-        "invoice": invoice.identifier,
-        "invoice_type": invoice.kind,
-        "issued": invoice.issued.isoformat() if invoice.issued else None,
-        "period_start": min(line.start for line in lines).isoformat(),
-        "period_end": max(line.end for line in lines).isoformat(),
-        "lines": [line.as_dict() for line in lines],
-    }
-
-
-def _follows(older: dict[str, Any], newer: dict[str, Any]) -> bool:
-    """Return whether a bill ends the day before a newer one starts."""
-    end = date.fromisoformat(older["period_end"])
-    return end + timedelta(days=1) == date.fromisoformat(newer["period_start"])
-
-
-def _ours(seen: dict[str, Any], ean: str) -> bool:
-    """Return whether a bill read may be the meter's.
-
-    One printing its EAN may, and so may a PDF that could not be read at
-    all, whose EANs are unknown.
-    """
-    return seen["eans"] is None or ean in seen["eans"]
-
-
-def _not_used(run: list[dict[str, Any]], why: str) -> str:
-    """Return why a run of bills, newest first, was not shown as the year."""
-    return f"the bills up to {run[0]['period_end']} were not used: {why}"
-
-
-def _too_few(run: list[dict[str, Any]]) -> str:
-    """Return why monthly bills, newest first, are not a year."""
-    return _not_used(run, f"{len(run)} monthly bills follow on, not {MONTHS}")
-
-
-def _settlement(every: list[Invoice], today: date) -> list[Invoice]:
-    """Return the settlement bills among the invoices, newest first.
-
-    Newest by the days billed, then by when issued: a bill issued late, or
-    with no date, would otherwise come before the bills it precedes and
-    break the year they make.
-    """
-    invoices = [i for i in every if i.kind in SETTLEMENT]
-    invoices.sort(
-        key=lambda i: (i.period_end or i.issued or today, i.issued or today),
-        reverse=True,
-    )
-    return invoices
 
 
 def _address_state(
@@ -286,50 +211,6 @@ def _advance_months(
         if amount is not None:
             months[month] = months.get(month, 0.0) + amount
     return months, estimated, missing
-
-
-def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
-    """Return what a meter's sensor shows of a run of bills, newest first.
-
-    The total is what the lines cost with their VAT, worked out line by
-    line, so it can differ by a cent from what a bill prints. The balance is
-    what the bills asked for once the advances were taken off, added up as
-    the invoice list gives them, or None if one of them gives none.
-    """
-    run = bills[::-1]
-    lines = [line for bill in run for line in bill["lines"]]
-    total = sum(
-        (
-            Decimal(str(line["total"])) * (1 + Decimal(str(line["vat"])))
-            for line in lines
-        ),
-        Decimal(0),
-    )
-    dues = [bill.get("due") for bill in run]
-    balance = (
-        None
-        if None in dues
-        else float(
-            sum((Decimal(str(due)) for due in dues), Decimal(0)).quantize(
-                _CENT, ROUND_HALF_UP
-            )
-        )
-    )
-    return {
-        "issued": bills[0]["issued"],
-        "period_start": run[0]["period_start"],
-        "period_end": run[-1]["period_end"],
-        "total": float(total.quantize(_CENT, ROUND_HALF_UP)),
-        "balance": balance,
-        "bills": [
-            {
-                key: bill[key]
-                for key in ("invoice_type", "issued", "period_start", "period_end")
-            }
-            for bill in run
-        ],
-        "lines": lines,
-    }
 
 
 class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -445,7 +326,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     # nothing is proposed from it.
                     portal = f"the invoices were not listed: {err}"
                 else:
-                    invoices = _settlement(every, today)
+                    invoices = settlement(every, today)
                     listed.update(invoice.identifier for invoice in every)
                     portal = await self._async_advance_amounts(account, address)
                     await self._async_read_advances(every, today)
@@ -721,20 +602,20 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             begins = date.fromisoformat(run[-1]["period_start"]) if run else None
             if unsure and begins and invoice.period_end and invoice.period_end > begins:
                 continue
-            if seen is not None and not _ours(seen, ean):
+            if seen is not None and not ours(seen, ean):
                 continue
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
             if run and not monthly and invoice.kind != INTERMEDIARY:
                 # The bill of the year before, told from the list unread.
                 if unsure and invoice.period_end != begins:
-                    error = error or _not_read(
+                    error = error or not_read(
                         invoice,
                         f"{seen.get('error') if seen else 'unread'},"
                         " so it may be another meter's",
                     )
                 break
             if monthly and invoice.kind != MONTHLY:
-                error = error or _too_few(run)
+                error = error or too_few(run)
                 run = []
             if not run and invoice.kind == INTERMEDIARY:
                 waiting = True
@@ -745,14 +626,14 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     error = error or got
                     continue
                 seen = got
-                if not _ours(seen, ean):
+                if not ours(seen, ean):
                     continue
             if seen.get("error") or seen.get("bill") is None:
-                error = error or _not_read(invoice, seen.get("error") or "no lines")
+                error = error or not_read(invoice, seen.get("error") or "no lines")
                 continue
             bill = seen["bill"]
-            if run and not _follows(bill, run[-1]):
-                error = error or _not_used(
+            if run and not follows(bill, run[-1]):
+                error = error or not_used(
                     run,
                     f"they start on {run[-1]['period_start']} and the bill"
                     f" before them ends on {bill['period_end']}",
@@ -767,7 +648,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 break
         else:
             if run and run[0]["invoice_type"] == MONTHLY:
-                error = error or _too_few(run)
+                error = error or too_few(run)
                 run = []
             if not run and waiting:
                 error = error or "no yearly bill closes the intermediary ones yet"
@@ -956,7 +837,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except EnecoAuthError:
                 raise
             except EnecoError as err:
-                return _not_read(invoice, str(err))
+                return not_read(invoice, str(err))
             # One with no document may be given one later.
             if invoice.document_url:
                 self._seen[invoice.identifier] = seen
