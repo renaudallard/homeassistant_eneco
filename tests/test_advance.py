@@ -1501,3 +1501,22 @@ async def test_two_meters_of_one_energy_set_up_here_are_shared(
     ):
         await bills.async_refresh()
     assert [call.kwargs["shared"] for call in provision.await_args_list] == [True, True]
+
+
+async def test_an_advance_worked_out_without_the_advances_page_says_so(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The page down on a first read: no amount of the period stands.
+
+    One is worked out on a year from the last bill, without the reading
+    month or today's advance, and it showed as if nothing was missing.
+    """
+    freezer.move_to(TODAY)
+    portal(aioclient_mock, [], None, word="Électricité")
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    assert meter.attributes["period_end_basis"] == "anniversary"
+    assert meter.attributes["last_error"].startswith("the advances were not read")

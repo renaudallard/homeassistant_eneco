@@ -910,7 +910,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             "expected_regularisation": expected,
             "portal_min": None if contract is None else contract.minimum,
             "portal_max": None if contract is None else contract.maximum,
-            "error": error,
+            # Worked out without the advances page, nothing of the period
+            # standing: without its reading month or today's advance.
+            "error": error or (portal if isinstance(portal, str) else None),
         }
 
     async def _async_whose(self, invoice: Invoice) -> tuple[dict[str, Any], str | None]:
