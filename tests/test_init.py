@@ -398,13 +398,14 @@ async def test_submission_time_is_adjustable_from_the_device(
     await hass.services.async_call(
         TIME_DOMAIN,
         SERVICE_SET_VALUE,
-        {ATTR_ENTITY_ID: SUBMIT_TIME, "time": "06:30:00"},
+        # After the 12:00 of the tests and the old time: nothing is caught up.
+        {ATTR_ENTITY_ID: SUBMIT_TIME, "time": "23:55:00"},
         blocking=True,
     )
     await hass.async_block_till_done()
 
-    assert state_of(hass, SUBMIT_TIME).state == "06:30:00"
-    assert meter_of(config_entry).data[CONF_SUBMIT_TIME] == "06:30:00"
+    assert state_of(hass, SUBMIT_TIME).state == "23:55:00"
+    assert meter_of(config_entry).data[CONF_SUBMIT_TIME] == "23:55:00"
 
     # The old moment must no longer fire, the new one must.
     now = dt_util.now()
@@ -415,7 +416,7 @@ async def test_submission_time_is_adjustable_from_the_device(
     await hass.async_block_till_done()
     assert submissions(mock_portal) == []
 
-    new = now.replace(hour=6, minute=30, second=0, microsecond=0)
+    new = now.replace(hour=23, minute=55, second=0, microsecond=0)
     while new <= dt_util.now():
         new += timedelta(days=1)
     async_fire_time_changed(hass, dt_util.as_utc(new))

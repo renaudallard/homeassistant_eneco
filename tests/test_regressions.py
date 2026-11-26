@@ -115,6 +115,7 @@ from .test_init import (
     LAST,
     NEXT,
     STATUS,
+    SUBMIT_TIME,
     press,
     press_failing,
     set_sources,
@@ -1464,6 +1465,92 @@ async def test_a_trigger_while_starting_leaves_the_day_to_the_catch_up(
     freezer.tick(timedelta(minutes=2))
     hass.set_state(CoreState.running)
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "success"
+
+
+async def test_sources_fixed_after_a_failed_day_catch_it_up(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Fixing a source the same day used to wait for tomorrow.
+
+    Changing the sources only armed the trigger again, so the day the fix
+    was for was lost unless the button was pressed.
+    """
+    # The clock of the tests reads 12:00, and the sources have no value.
+    entry = await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "12:01:00"}))
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert state_of(hass, STATUS).state == "failed"
+
+    freezer.tick(timedelta(minutes=5))
+    set_sources(hass)
+    update_meter(hass, entry, **{CONF_SOURCES: {"offtake_day": "sensor.import_day"}})
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
+    assert state_of(hass, STATUS).state == "success"
+
+
+async def test_a_time_moved_before_now_catches_up_today(
+    hass: HomeAssistant, mock_portal: AiohttpClientMocker
+) -> None:
+    """As a meter set up after its time does, not tomorrow."""
+    set_sources(hass)
+    await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "13:00:00"}))
+    assert submissions(mock_portal) == []
+
+    await hass.services.async_call(
+        "time",
+        "set_value",
+        {"entity_id": SUBMIT_TIME, "time": "11:00:00"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
+
+
+async def test_a_change_during_a_submission_leaves_it_alone(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The submission running reads the meter as it was, and goes through.
+
+    A catch-up queued behind it would find the day done and report it as
+    already submitted, over the success it just had.
+    """
+    set_sources(hass)
+    entry = await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "13:00:00"}))
+    coordinator = coordinator_of(entry)
+    real = coordinator.client.async_submit_readings
+    release = asyncio.Event()
+
+    async def held(*args: Any, **kwargs: Any) -> None:
+        await release.wait()
+        await real(*args, **kwargs)
+
+    monkeypatch.setattr(coordinator.client, "async_submit_readings", held)
+    lock = coordinator._store.lock(coordinator.subentry_id)  # noqa: SLF001
+    # As the daily trigger starts it, so nothing waits on it.
+    running = asyncio.create_task(coordinator.async_refresh())
+    for _ in range(100):
+        if lock.locked():
+            break
+        await asyncio.sleep(0)
+    assert lock.locked()
+
+    update_meter(hass, entry, **{CONF_SUBMIT_TIME: "11:00:00"})
+    for _ in range(100):
+        await asyncio.sleep(0)
+    release.set()
+    await running
     await hass.async_block_till_done()
 
     assert len(submissions(mock_portal)) == 1

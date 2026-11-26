@@ -284,10 +284,24 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
 
     @callback
     def async_update_meter(self, meter: Mapping[str, Any]) -> None:
-        """Take on a changed subentry: new sources, or a new time to submit."""
+        """Take on a changed subentry: new sources, or a new time to submit.
+
+        Today is caught up if its time has gone by and nothing went through,
+        as for a meter just set up: a source fixed after a failed attempt,
+        or a time moved before now, would otherwise wait for tomorrow. Not
+        while a submission is running, which reads the meter as it was.
+        """
         self.meter = meter
         self.async_schedule()
         self.async_update_listeners()
+        if (
+            self.hass.state is CoreState.running
+            and not self._store.lock(self.subentry_id).locked()
+        ):
+            # Whatever the trigger ran today is over: a day it got through
+            # is skipped, and one it did not is tried again.
+            self._triggered = None
+            self.async_catch_up(self.hass)
 
     @property
     def _is_current(self) -> bool:

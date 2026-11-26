@@ -188,6 +188,10 @@ asked of Eneco again, so a replaced meter shows the ones it has now, and the
 form comes up prefilled with your current mapping and time. Neither this nor
 moving the time signs in again.
 
+Either change submits straight away when the time has already gone by today
+and today's readings have not gone through, so a source fixed after a failed
+attempt, or a time moved before now, does not wait for tomorrow.
+
 *Reconfigure*, on the entry, changes the credentials, which is what you want if
 the email address you sign in to Eneco with has changed. The meters stay as
 they are, so the new login has to reach the account of every one of them. If
