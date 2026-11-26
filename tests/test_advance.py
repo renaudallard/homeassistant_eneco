@@ -35,6 +35,7 @@ from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.eneco_be.api import (
@@ -43,13 +44,19 @@ from custom_components.eneco_be.api import (
     ServiceDeliveryPoint,
 )
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
-from custom_components.eneco_be.bills import _address_state
+from custom_components.eneco_be.bills import BillCoordinator, _address_state
 from custom_components.eneco_be.const import (
+    CONF_ACCOUNT,
+    CONF_ADDRESS,
     CONF_ADJUST_ADVANCE,
+    CONF_EAN,
+    CONF_ENERGY_TYPE,
     CONF_READ_BILLS,
     DOMAIN,
+    SUBENTRY_METER,
 )
 from custom_components.eneco_be.sensor import AddressAdvanceSensor
+from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -1052,3 +1059,70 @@ async def test_a_bill_shorter_than_a_year_asks_the_profile_a_year_back(
     # A year before the period that starts on 1 February 2026.
     assert start == date(2025, 2, 1)
     assert end == date(2026, 1, 31)
+
+
+async def test_two_accounts_at_one_address_set_nothing(hass: HomeAssistant) -> None:
+    """The address state is kept by address, not by account and address.
+
+    The second account's read replaced the first's, and the press sent its
+    contract under the first account, whose meter came first.
+    """
+    address = "f" * 64
+
+    def meter(account: str, ean: str, energy: str) -> ConfigSubentryData:
+        return ConfigSubentryData(
+            data={
+                CONF_ACCOUNT: account,
+                CONF_ADDRESS: address,
+                CONF_EAN: ean,
+                CONF_ENERGY_TYPE: energy,
+            },
+            subentry_type=SUBENTRY_METER,
+            title=ean,
+            unique_id=ean,
+        )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        subentries_data=[
+            meter("A", EAN, "Electricity"),
+            meter("B", OTHER_EAN, "Gas"),
+        ],
+    )
+    entry.add_to_hass(hass)
+    client = SimpleNamespace(async_set_advance=AsyncMock(), refused=False)
+    bills = BillCoordinator(hass, entry, client)  # type: ignore[arg-type]
+
+    async def amounts(account: str, address: str) -> AdvanceAmounts:
+        ean, energy = (EAN, "Electricity") if account == "A" else (OTHER_EAN, "Gas")
+        return AdvanceAmounts(
+            50.0,
+            None,
+            (ContractAdvance(ean, energy, 50.0, None, 3, None, 1, 20.0, 2500.0),),
+        )
+
+    async def provision(account: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"monthly_advance": 100.0, "advances_left": 3, "error": None}
+
+    with (
+        patch.object(bills, "_async_list", AsyncMock(return_value=({}, []))),
+        patch.object(bills, "_async_advance_amounts", amounts),
+        patch.object(bills, "_async_read_advances", AsyncMock()),
+        patch.object(
+            bills,
+            "_async_meter",
+            AsyncMock(
+                return_value={
+                    "card": None,
+                    "card_error": None,
+                    "year": None,
+                    "error": None,
+                }
+            ),
+        ),
+        patch.object(bills, "_async_provision", provision),
+        pytest.raises(EnecoError, match="two accounts"),
+    ):
+        await bills.async_apply_advance(address)
+    client.async_set_advance.assert_not_awaited()

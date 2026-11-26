@@ -147,31 +147,33 @@ def address_proposal(
     proposed from that.
     """
     if portal.get("error"):
-        return _none(portal["error"])
+        return no_proposal(portal["error"])
     contracts: list[Contract] = []
     for ean, contract in (portal.get("contracts") or {}).items():
         provision = provisions.get(ean)
         if provision is None:
-            return _none(f"the meter ending {ean[-4:]} is not set up here")
+            return no_proposal(f"the meter ending {ean[-4:]} is not set up here")
         need = provision.get("monthly_advance")
         if need is None or provision.get("error"):
-            return _none(provision.get("error") or "the advance needed is not known")
+            return no_proposal(
+                provision.get("error") or "the advance needed is not known"
+            )
         if (provision.get("advances_left") or 0) <= 1:
-            return _none("one advance or none is left before the reading")
+            return no_proposal("one advance or none is left before the reading")
         if contract.get("blocked"):
-            return _none(f"the portal would not change it: {contract['blocked']}")
+            return no_proposal(f"the portal would not change it: {contract['blocked']}")
         until = contract.get("vacancy_until")
         if until and date.fromisoformat(until) >= today:
-            return _none("the advance is suspended for a vacancy")
+            return no_proposal("the advance is suspended for a vacancy")
         values = [contract.get(k) for k in ("current", "minimum", "maximum")]
         if any(v is None for v in values):
-            return _none("the portal gives no range for the advance")
+            return no_proposal("the portal gives no range for the advance")
         current, low, high = (float(v) for v in values)
         contracts.append(
             Contract(ean, provision.get("energy", ""), current, low, high, need)
         )
     if not contracts:
-        return _none("the portal lists no contract")
+        return no_proposal("the portal lists no contract")
     amounts, exact = propose(contracts)
     return {
         "amounts": amounts,
@@ -185,7 +187,8 @@ def address_proposal(
     }
 
 
-def _none(why: str) -> dict[str, Any]:
+def no_proposal(why: str) -> dict[str, Any]:
+    """Return a proposal of nothing, with why."""
     return {
         "amounts": {},
         "energies": {},

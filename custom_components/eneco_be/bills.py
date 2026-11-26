@@ -50,7 +50,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .advice import address_proposal
+from .advice import address_proposal, no_proposal
 from .api import EnecoAuthError, EnecoClient, EnecoError, ServiceDeliveryPoint
 from .api_billing import AdvanceAmounts, Invoice, TariffCard
 from .bill import BillFormatError, BillLine, parse_advance, parse_bill, pdf_text
@@ -419,6 +419,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         meters = self._meters()
         for subentry_id, meter in meters.items():
             groups[(meter[CONF_ACCOUNT], meter[CONF_ADDRESS])].append(subentry_id)
+        # What is shown and set is kept by address: one that two accounts of
+        # the login share would show one of them and set the other's.
+        accounts: defaultdict[str, set[str]] = defaultdict(set)
+        for account, address in groups:
+            accounts[address].add(account)
 
         data: dict[str, dict[str, Any]] = {}
         listed: set[str] = set()
@@ -480,15 +485,19 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.addresses[address] = _address_state(
                     portal, self.addresses.get(address)
                 )
-                self.addresses[address]["proposal"] = address_proposal(
-                    self.addresses[address],
-                    {
-                        meters[key][CONF_EAN]: (data[key].get("provision") or {})
-                        | {"energy": meters[key][CONF_ENERGY_TYPE]}
-                        for key in subentry_ids
-                        if key in data
-                    },
-                    today,
+                self.addresses[address]["proposal"] = (
+                    no_proposal("two accounts of the login share the address")
+                    if len(accounts[address]) > 1
+                    else address_proposal(
+                        self.addresses[address],
+                        {
+                            meters[key][CONF_EAN]: (data[key].get("provision") or {})
+                            | {"energy": meters[key][CONF_ENERGY_TYPE]}
+                            for key in subentry_ids
+                            if key in data
+                        },
+                        today,
+                    )
                 )
         except EnecoAuthError as err:
             # A login whose meters submit nothing only signs in here, and

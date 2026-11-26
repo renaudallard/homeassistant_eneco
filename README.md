@@ -434,7 +434,8 @@ The sensor's state is the total proposed, with `electricity` and `gas`, each
 contract's proposed advance, `changes`, the energies that would change,
 `exact`, whether the total is exactly what is needed, and `last_error`. It
 proposes nothing while a contract of the address has no meter set up here or
-no amount yet, while one advance or none is left before the reading, or when
+no amount yet, while one advance or none is left before the reading, while
+two accounts of the login share the address, or when
 the portal would refuse a change: payments overdue, a vacancy, an advance not
 available, billing other than yearly, or an error the portal reports without
 a name this integration knows.
