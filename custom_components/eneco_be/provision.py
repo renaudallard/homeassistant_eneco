@@ -108,8 +108,15 @@ def _shift(day: date, years: int) -> date:
 
 
 def year_after(day: date) -> date:
-    """Return the same day a year later."""
-    return _shift(day, 1)
+    """Return the same day a year later, 1 March for a 29 February.
+
+    Not 28 February: a period from 29 February would then end a day short
+    of a year, before the reading of 1 March that closes it.
+    """
+    try:
+        return day.replace(year=day.year + 1)
+    except ValueError:
+        return date(day.year + 1, 3, 1)
 
 
 def year_before(day: date) -> date:

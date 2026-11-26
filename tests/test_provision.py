@@ -705,3 +705,12 @@ def test_gas_is_spread_by_days_where_the_profile_cannot_say(
     assert got == pytest.approx(
         {"2026-02": 590.0 * 28 / 59, "2026-03": 590.0 * 31 / 59}
     )
+
+
+def test_a_period_from_29_february_runs_a_whole_year() -> None:
+    """A year on from 29 February was taken as 28 February, a day short.
+
+    The period then ended on the 27th, and the reading of 1 March that
+    closes it fell outside.
+    """
+    assert reading_end(date(2024, 2, 29), None) == (date(2025, 2, 28), "anniversary")
