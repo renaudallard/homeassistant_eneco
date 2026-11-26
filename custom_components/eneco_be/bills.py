@@ -699,6 +699,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         first = date.fromisoformat(newest["period_start"])
         last = date.fromisoformat(newest["period_end"])
         start = last + timedelta(days=1)
+        if (
+            isinstance(portal, str)
+            and previous
+            and previous.get("monthly_advance") is not None
+            and previous.get("period_start") == start.isoformat()
+        ):
+            # The page gives the month of the reading that ends the period,
+            # and the advances paid: worked out again without it, the
+            # period would move for a day. The amount of this period stands.
+            return previous | {"error": portal}
         end, end_basis = reading_end(
             start, contract.reading_month if contract else None
         )

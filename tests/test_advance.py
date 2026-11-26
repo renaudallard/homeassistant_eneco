@@ -1155,3 +1155,35 @@ def test_the_proposal_adds_up_two_contracts_of_one_energy() -> None:
     assert attributes["electricity"] == 150.0
     assert attributes["gas"] is None
     assert attributes["changes"] == ["electricity"]
+
+
+async def test_the_advance_stands_a_day_the_advances_page_is_down(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Without the page there is no reading month, and the period moved.
+
+    The amount was worked out again on a year from the last bill instead,
+    another figure for a day, with no error.
+    """
+    freezer.move_to(TODAY)
+    march = contract(EAN, "Electricity", 56.51, 1663.29)
+    march["meterDetails"]["meterReadingMonth"] = 3
+    portal(aioclient_mock, [march], {"currentAmount": 56.51}, word="Électricité")
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    before = state_of(hass, METER)
+    assert before.attributes["period_end_basis"] == "reading_month"
+
+    aioclient_mock.clear_requests()
+    portal(aioclient_mock, [], None, word="Électricité")
+    bills = entry.runtime_data.bills
+    assert bills is not None
+    await bills.async_refresh()
+    await hass.async_block_till_done()
+
+    after = state_of(hass, METER)
+    assert after.state == before.state
+    assert after.attributes["period_end"] == before.attributes["period_end"]
+    assert after.attributes["last_error"].startswith("the advances were not read")
