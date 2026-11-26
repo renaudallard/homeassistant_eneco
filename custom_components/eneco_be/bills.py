@@ -746,17 +746,18 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # refused or not downloaded: the period after it is over. One
             # read and printing another EAN is another meter's.
             return {"error": "a newer bill than the year shown was not read"}
-        kept_period = (previous or {}).get("period_start")
-        if (
-            isinstance(portal, str)
-            and previous
-            and previous.get("monthly_advance") is not None
-            and kept_period == start.isoformat()
-        ):
+        # What stands of this period on a day part of it cannot be read; an
+        # amount of the period before, a new bill read today, is over.
+        kept = (
+            previous
+            if previous and previous.get("period_start") == start.isoformat()
+            else {}
+        )
+        if isinstance(portal, str) and kept.get("monthly_advance") is not None:
             # The page gives the month of the reading that ends the period,
             # and the advances paid: worked out again without it, the
             # period would move for a day. The amount of this period stands.
-            return previous | {"error": portal}
+            return kept | {"error": portal}
         end, end_basis = reading_end(
             start, contract.reading_month if contract else None
         )
@@ -783,9 +784,6 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except EnecoAuthError:
             raise
         except EnecoError as err:
-            # The amount of this period stands; one of the period before,
-            # a new bill being read today, is over.
-            kept = previous if previous and kept_period == start.isoformat() else {}
             return kept | {"error": f"the readings were not read: {err}"}
         official = {r.date: r.values for r in readings if r.reading_type == "Official"}
         opened = official.get(first.isoformat())
@@ -823,7 +821,6 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except RatesUnavailableError as err:
                 # Not the bill's price instead: on an indexed contract it can
                 # be far below today's, and the advance set far too low.
-                kept = previous if previous and kept_period == start.isoformat() else {}
                 return kept | {"error": f"the gas prices were not read: {err}"}
         try:
             result = project(
