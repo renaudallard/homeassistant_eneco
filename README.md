@@ -430,7 +430,7 @@ once, and used only when the shares add up to what the invoice list says it
 asked for. Only the
 French wording has been seen: on another, the advance is split on today's
 advances and `advance_split` says so. Nothing is sent to the advances page
-unless the advance button below is pressed.
+unless the advance button above is pressed.
 
 Turning the option off removes these sensors and what was read.
 
