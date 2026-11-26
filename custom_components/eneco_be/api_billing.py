@@ -132,7 +132,12 @@ def amount(value: Any) -> float | None:
     """Return an amount the API sends, or None for one it does not."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    return float(value) if math.isfinite(value) else None
+    try:
+        number = float(value)
+    except OverflowError:
+        # An int past what a float holds, as JSON can give.
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _months(value: Any) -> int | None:

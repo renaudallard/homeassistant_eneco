@@ -716,3 +716,12 @@ async def test_a_session_closed_by_a_reload_is_a_portal_error() -> None:
         await api.async_login()
     with pytest.raises(EnecoConnectionError, match="session"):
         await api.async_get_document("https://eneco.be/api/my-eneco/download/X")
+
+
+@pytest.mark.parametrize("value", [10**400, -(10**400)])
+def test_an_integer_past_a_float_is_no_amount(value: int) -> None:
+    """JSON reads one as an int, and isfinite raised OverflowError on it.
+
+    No caller catches that: a dueAmount like it failed the whole bill read.
+    """
+    assert api_billing.amount(value) is None
