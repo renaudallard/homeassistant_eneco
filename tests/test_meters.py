@@ -37,6 +37,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 )
 
 from custom_components.eneco_be.const import (
+    CONF_ADDRESS,
     CONF_EAN,
     CONF_ENERGY_TYPE,
     CONF_REGISTERS,
@@ -60,6 +61,7 @@ from homeassistant.util import dt as dt_util
 
 from .conftest import (
     ACCOUNT,
+    ADDRESS,
     API,
     EAN,
     METER_ID,
@@ -569,3 +571,45 @@ async def test_a_meter_added_twice_at_once_says_so(
         ).read_text(encoding="utf-8")
     )
     assert late["reason"] in strings["config_subentries"]["meter"]["abort"]
+
+
+async def test_an_address_with_nothing_left_to_add_asks_again(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Picking it ended the flow, to be started again and the other guessed."""
+    second = "b" * 64
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    aioclient_mock.get(
+        f"{API}/accounts/{ACCOUNT}/delivery-addresses/{second}/service-delivery-points",
+        json={"data": {"serviceDeliveryPoints": [{"ean": GAS_EAN, "type": "Gas"}]}},
+    )
+    mock_discovery(
+        aioclient_mock,
+        addresses=[
+            {"id": ADDRESS, "address": "One", "hasActiveContracts": True},
+            {"id": second, "address": "Two", "hasActiveContracts": True},
+        ],
+        registers=[{"direction": "OffTake", "meterTimeFrameType": "TH"}],
+        ean=GAS_EAN,
+        energy_type="Gas",
+    )
+    entry = login_entry()
+    await setup(hass, entry)
+
+    result = await add_meter(hass, entry)
+    assert result["step_id"] == "address"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ADDRESS: ADDRESS}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "address"
+    assert result["errors"] == {"base": "meters_configured"}
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {CONF_ADDRESS: second}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "sources"

@@ -76,7 +76,8 @@
       "invalid_auth": "Eneco rejected these credentials.",
       "sign_in_failed": "Eneco took the password, but the portal did not finish the sign in. Try again later.",
       "no_accounts": "Signed in, but this login has no Eneco account that can submit meter readings.",
-      "cannot_connect": "Could not reach the Eneco portal."
+      "cannot_connect": "Could not reach the Eneco portal.",
+      "meters_configured": "Every meter at this address is already set up."
     },
     "abort": {
       "accounts_missing": "This login cannot reach the account of every meter set up on it. Remove those meters first, or sign in with the login they belong to.",
@@ -149,6 +150,9 @@
         "no_meters": "There is no electricity or gas meter at this address.",
         "no_registers": "Eneco does not accept meter readings for this meter.",
         "reconfigure_successful": "Configuration updated."
+      },
+      "error": {
+        "meters_configured": "Every meter at this address is already set up."
       }
     }
   },

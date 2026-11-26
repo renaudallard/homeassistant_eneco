@@ -76,7 +76,8 @@
       "invalid_auth": "Eneco a refusé ces identifiants.",
       "sign_in_failed": "Eneco a accepté le mot de passe, mais le portail n'a pas terminé la connexion. Réessayez plus tard.",
       "no_accounts": "Connexion réussie, mais aucun compte Eneco pouvant encoder des relevés n'est lié à ces identifiants.",
-      "cannot_connect": "Impossible de joindre le portail Eneco."
+      "cannot_connect": "Impossible de joindre le portail Eneco.",
+      "meters_configured": "Tous les compteurs à cette adresse sont déjà configurés."
     },
     "abort": {
       "accounts_missing": "Cette connexion n'a pas accès au compte de chaque compteur configuré. Supprimez d'abord ces compteurs, ou connectez-vous avec la connexion à laquelle ils appartiennent.",
@@ -149,6 +150,9 @@
         "no_meters": "Il n'y a ni compteur électricité ni compteur gaz à cette adresse.",
         "no_registers": "Eneco n'accepte pas de relevés pour ce compteur.",
         "reconfigure_successful": "Configuration mise à jour."
+      },
+      "error": {
+        "meters_configured": "Tous les compteurs à cette adresse sont déjà configurés."
       }
     }
   },

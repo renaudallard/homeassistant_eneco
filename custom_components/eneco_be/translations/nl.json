@@ -76,7 +76,8 @@
       "invalid_auth": "Eneco heeft deze gegevens geweigerd.",
       "sign_in_failed": "Eneco heeft het wachtwoord aanvaard, maar het portaal heeft de aanmelding niet afgerond. Probeer het later opnieuw.",
       "no_accounts": "Aangemeld, maar deze login heeft geen Eneco-account dat meterstanden kan doorgeven.",
-      "cannot_connect": "Kan het Eneco-portaal niet bereiken."
+      "cannot_connect": "Kan het Eneco-portaal niet bereiken.",
+      "meters_configured": "Elke meter op dit adres is al ingesteld."
     },
     "abort": {
       "accounts_missing": "Deze login heeft geen toegang tot het account van elke ingestelde meter. Verwijder die meters eerst, of meld je aan met de login waartoe ze behoren.",
@@ -149,6 +150,9 @@
         "no_meters": "Op dit adres staat geen elektriciteits- of gasmeter.",
         "no_registers": "Eneco aanvaardt geen meterstanden voor deze meter.",
         "reconfigure_successful": "Configuratie bijgewerkt."
+      },
+      "error": {
+        "meters_configured": "Elke meter op dit adres is al ingesteld."
       }
     }
   },

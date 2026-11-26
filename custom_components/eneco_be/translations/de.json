@@ -76,7 +76,8 @@
       "invalid_auth": "Eneco hat diese Zugangsdaten abgelehnt.",
       "sign_in_failed": "Eneco hat das Passwort angenommen, aber das Portal hat die Anmeldung nicht abgeschlossen. Versuchen Sie es später erneut.",
       "no_accounts": "Anmeldung erfolgreich, aber zu diesen Zugangsdaten gehört kein Eneco Konto, für das Zählerstände eingereicht werden können.",
-      "cannot_connect": "Das Eneco Portal war nicht erreichbar."
+      "cannot_connect": "Das Eneco Portal war nicht erreichbar.",
+      "meters_configured": "Jeder Zähler an dieser Adresse ist bereits eingerichtet."
     },
     "abort": {
       "accounts_missing": "Dieser Login erreicht nicht das Konto jedes eingerichteten Zählers. Entfernen Sie diese Zähler zuerst, oder melden Sie sich mit dem Login an, zu dem sie gehören.",
@@ -149,6 +150,9 @@
         "no_meters": "An dieser Adresse gibt es weder einen Strom- noch einen Gaszähler.",
         "no_registers": "Eneco nimmt für diesen Zähler keine Zählerstände entgegen.",
         "reconfigure_successful": "Konfiguration aktualisiert."
+      },
+      "error": {
+        "meters_configured": "Jeder Zähler an dieser Adresse ist bereits eingerichtet."
       }
     }
   },

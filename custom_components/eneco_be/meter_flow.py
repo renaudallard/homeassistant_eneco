@@ -200,26 +200,31 @@ class MeterSteps[ResultT: (ConfigFlowResult, SubentryFlowResult)](
         elif len(self._addresses) == 1:
             self._address = self._addresses[0].identifier
         else:
-            return self.async_show_form(
-                step_id="address",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_ADDRESS): selector.SelectSelector(
-                            selector.SelectSelectorConfig(
-                                options=[
-                                    selector.SelectOptionDict(
-                                        value=address.identifier, label=address.label
-                                    )
-                                    for address in self._addresses
-                                ],
-                                mode=selector.SelectSelectorMode.LIST,
-                            )
-                        )
-                    }
-                ),
-            )
+            return self._address_form()
 
         return await self._async_load_meters()
+
+    def _address_form(self, errors: dict[str, str] | None = None) -> ResultT:
+        """Return the form picking one of the account's addresses."""
+        return self.async_show_form(
+            step_id="address",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ADDRESS): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=address.identifier, label=address.label
+                                )
+                                for address in self._addresses
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
 
     async def _async_load_meters(self) -> ResultT:
         """Fetch the meters at the chosen address that nobody submits for yet.
@@ -247,6 +252,9 @@ class MeterSteps[ResultT: (ConfigFlowResult, SubentryFlowResult)](
             return self.async_abort(reason="no_meters")
         self._points = [p for p in points if not self._meter_is_configured(p.ean)]
         if not self._points:
+            if len(self._addresses) > 1:
+                # Another address may still have one to add.
+                return self._address_form({"base": "meters_configured"})
             return self.async_abort(reason="meters_configured")
         return await self.async_step_meter()
 
