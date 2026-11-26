@@ -247,3 +247,19 @@ def test_a_cent_lost_to_rounding_is_given_back() -> None:
     assert exact
     assert round(sum(amounts.values()), 2) == 0.10
     assert sorted(amounts.values()) == [0.0, 0.03, 0.03, 0.04]
+
+
+def test_a_cent_given_back_stays_in_its_range() -> None:
+    """Three contracts: what rounding lost went to the last one changed.
+
+    That one sat on its maximum, and was proposed a cent past it.
+    """
+    contracts = [
+        Contract("e0", "Electricity", 1214.61, 326, 1321, 545.9),
+        Contract("e1", "Electricity", 1608.4, 455, 1660, 193.43),
+        Contract("e2", "Gas", 63.28, 2, 584, 977.54),
+    ]
+    amounts, _ = propose(contracts)
+    for contract in contracts:
+        assert contract.minimum <= amounts[contract.ean] <= contract.maximum
+    assert round(sum(amounts.values()), 2) == round(545.9 + 193.43 + 977.54, 2)

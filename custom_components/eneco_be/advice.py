@@ -89,17 +89,22 @@ def _fill(contracts: list[Contract], total: float) -> dict[str, float]:
 
 
 def _cents(
-    amounts: dict[str, float], total: float, changed: list[str]
+    amounts: dict[str, float], total: float, changed: list[Contract]
 ) -> dict[str, float]:
     """Return ``amounts`` in cents, still adding up to ``total`` in cents.
 
-    What rounding loses or adds goes to the last contract changed.
+    What rounding loses or adds goes to the contracts changed, the last
+    first, as far as each one's range has room for it.
     """
     out = {ean: round(value, 2) for ean, value in amounts.items()}
-    if changed:
-        out[changed[-1]] = round(
-            out[changed[-1]] + round(total, 2) - sum(out.values()), 2
-        )
+    left = round(round(total, 2) - sum(out.values()), 2)
+    for c in reversed(changed):
+        if abs(left) < _CENT:
+            break
+        room = c.maximum - out[c.ean] if left > 0 else c.minimum - out[c.ean]
+        step = max(min(left, room), 0.0) if left > 0 else min(max(left, room), 0.0)
+        out[c.ean] = round(out[c.ean] + step, 2)
+        left = round(left - step, 2)
     return out
 
 
@@ -122,7 +127,7 @@ def propose(contracts: list[Contract]) -> tuple[dict[str, float], bool]:
             amounts |= _fill(setting, min(max(need - kept, low), high))
         total = sum(amounts.values())
         exact = abs(total - need) < _CENT
-        changed = [c.ean for c in setting if abs(amounts[c.ean] - c.current) >= _CENT]
+        changed = [c for c in setting if abs(amounts[c.ean] - c.current) >= _CENT]
         score = (
             round(abs(total - need), 2),
             round(sum(abs(amounts[c.ean] - c.need) for c in contracts), 2),
