@@ -1692,7 +1692,7 @@ async def test_the_schedule_stays_usable_after_an_unexpected_failure(
     assert state_of(hass, SUBMIT_TIME).state != STATE_UNAVAILABLE
 
 
-@pytest.mark.parametrize("how", ["reauth", "reconfigure", "reconfigure renamed"])
+@pytest.mark.parametrize("how", ["reauth", "reconfigure", "reconfigure unnamed"])
 async def test_the_same_password_confirmed_again_is_tried_again(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
@@ -1703,9 +1703,9 @@ async def test_the_same_password_confirmed_again_is_tried_again(
 
     Confirming the password it already had changed nothing in the entry, so
     nothing reloaded it: once a locked account opened again, every night
-    failed without asking Okta, and asked for the password once more. A
-    renamed entry had its title put back, a change, so it did not reload
-    either.
+    failed without asking Okta, and asked for the password once more. An
+    entry migration left without a unique id gets one, a change, so it did
+    not reload either.
     """
     okta = {"status": "SUCCESS"}
     lapsed = {"once": False}
@@ -1751,10 +1751,10 @@ async def test_the_same_password_confirmed_again_is_tried_again(
     mock_discovery(aioclient_mock)
     aioclient_mock.post(f"{API}/accounts/{ACCOUNT}/meter-readings", json={"data": None})
     set_sources(hass)
+    config_entry.add_to_hass(hass)
+    if how.endswith("unnamed"):
+        hass.config_entries.async_update_entry(config_entry, unique_id=None)
     await setup_entry(hass, config_entry)
-    if how.endswith("renamed"):
-        hass.config_entries.async_update_entry(config_entry, title="Home")
-        await hass.async_block_till_done()
 
     # The token lapses on a night Okta has the account locked.
     okta["status"] = "LOCKED_OUT"
