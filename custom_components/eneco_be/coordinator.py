@@ -277,6 +277,9 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         # The date the daily trigger last fired for, so a catch-up arriving
         # behind it stands down rather than running a second time.
         self._triggered: date | None = None
+        # The date the trigger fired for while Home Assistant was starting,
+        # and left to the catch-up.
+        self._deferred: date | None = None
         self._store = store
         if stored := store.get(subentry_id):
             self.data = EnecoState.from_dict(stored)
@@ -373,6 +376,7 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
                 # them would make the catch-up stand down once Home Assistant
                 # runs. That catch-up submits for today instead.
                 _LOGGER.debug("Daily submission due while starting, left for later")
+                self._deferred = dt_util.now().date()
                 return
             _LOGGER.debug("Daily submission triggered at %s", now)
             self._triggered = dt_util.now().date()
@@ -405,8 +409,12 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         now = dt_util.now()
         # Whole seconds: the trigger fires for the whole of its own second, and
         # landing here in the middle of it would submit twice over, the second
-        # of them reporting the day as already done.
-        if now.time().replace(microsecond=0) <= self.submit_time:
+        # of them reporting the day as already done. Unless it left the day
+        # here, having fired while starting.
+        if (
+            now.time().replace(microsecond=0) <= self.submit_time
+            and self._deferred != now.date()
+        ):
             return
         # Starting up can take minutes, so the trigger may already have gone
         # off, and its submission may still be on the wire with the date not

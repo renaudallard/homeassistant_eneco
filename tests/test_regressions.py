@@ -1596,3 +1596,28 @@ async def test_setting_the_time_it_has_tries_the_day_once(
 
     assert state_of(hass, STATUS).state == "failed"
     assert coordinator_of(entry).data.failures == 1
+
+
+async def test_started_within_the_second_of_a_trigger_left_for_later(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The catch-up stands down for the whole second its trigger fires in.
+
+    A trigger that left the day to it while starting made it stand down
+    too, when startup ended within that second, and the day was lost.
+    """
+    hass.set_state(CoreState.starting)
+    await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "12:01:00"}))
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    set_sources(hass)
+    freezer.tick(timedelta(milliseconds=400))
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+
+    assert len(submissions(mock_portal)) == 1
