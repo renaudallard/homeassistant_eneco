@@ -236,6 +236,8 @@ def _advance_months(
     every: list[Invoice],
     split: Mapping[str, dict[str, float]],
     share: float | None,
+    *,
+    shared: bool = False,
 ) -> tuple[dict[str, float], set[str], set[str]]:
     """Return this energy's share of each month's advance, "YYYY-MM".
 
@@ -244,7 +246,9 @@ def _advance_months(
 
     An invoice for this energy alone is its own; one for both is split as
     its PDF prints it, or, where that could not be read, by ``share``, this
-    energy's part of today's advance. Without either it is left out.
+    energy's part of today's advance. Without either it is left out. Where
+    the address has another meter of the same energy (``shared``), none can
+    be told: no invoice names its meter.
     """
     months: dict[str, float] = {}
     estimated: set[str] = set()
@@ -254,20 +258,22 @@ def _advance_months(
             invoice.kind != ADVANCE
             or invoice.period_start is None
             or invoice.due is None
+            or invoice.energy_type not in (kind, "Both")
         ):
             continue
         month = f"{invoice.period_start:%Y-%m}"
+        if shared:
+            missing.add(month)
+            continue
         if invoice.energy_type == kind:
             amount: float | None = invoice.due
-        elif invoice.energy_type == "Both":
+        else:
             amount = (split.get(invoice.identifier) or {}).get(kind)
             if amount is None and share is not None:
                 amount = invoice.due * share
                 estimated.add(month)
             elif amount is None:
                 missing.add(month)
-        else:
-            continue
         if amount is not None:
             months[month] = months.get(month, 0.0) + amount
     return months, estimated, missing
@@ -449,6 +455,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                                 portal,
                                 today,
                                 previous,
+                                shared=shared,
                             )
                         except EnecoAuthError:
                             raise
@@ -719,13 +726,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         portal: AdvanceAmounts | str,
         today: date,
         previous: dict[str, Any] | None = None,
+        *,
+        shared: bool = False,
     ) -> dict[str, Any]:
         """Return the monthly advance the meter needs, or why it cannot be told.
 
         Worked out from the newest bill of the year shown, the official
         readings that opened and closed it, the newest reading since, the
         portal's monthly profile, and the advances invoiced. A portal that
-        does not answer leaves ``previous`` standing, with why.
+        does not answer leaves ``previous`` standing, with why. ``shared``
+        is another meter of the same energy at the address.
         """
         if year is None:
             return {"error": "no yearly bill to work from"}
@@ -805,7 +815,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         share = None
         if not isinstance(portal, str) and advance_now is not None and portal.current:
             share = advance_now / portal.current
-        months, estimated, missing = _advance_months(kind, every, self._advances, share)
+        months, estimated, missing = _advance_months(
+            kind, every, self._advances, share, shared=shared
+        )
         paid, coming, left = advances(
             period=(start, end), billed=months, advance_now=advance_now, today=today
         )
@@ -829,7 +841,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             needed = result["after_reading"]
         elif split == "incomplete":
             needed = None
-            error = "the advances invoiced could not all be split by energy"
+            error = (
+                "the advances invoiced are not told apart between meters of one energy"
+                if shared
+                else "the advances invoiced could not all be split by energy"
+            )
         else:
             needed = catch_up(result["period_cost"], paid, left)
         difference = None

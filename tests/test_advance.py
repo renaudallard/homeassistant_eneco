@@ -138,11 +138,12 @@ def portal(
     totals: Any,
     read: Sequence[tuple[str, str, tuple[int, ...]]] = READ,
     word: str = "Elektriciteit",
+    others: Sequence[dict[str, Any]] = (),
 ) -> None:
     """Register the bill of 2025-2026, three advances, readings and volumes.
 
     The October advance prints its split with ``word``, which is only read
-    in French.
+    in French. ``others`` are more meters at the address.
     """
     mock_login(
         mocker,
@@ -156,7 +157,8 @@ def portal(
                 "type": "Electricity",
                 "contractId": CONTRACT,
                 "meterNumber": "M1",
-            }
+            },
+            *others,
         ],
     )
     mocker.get(PRODUCT, json={"data": {}})
@@ -747,3 +749,35 @@ async def test_the_address_goes_when_bills_are_no_longer_read(
     await hass.async_block_till_done(wait_background_tasks=True)
 
     assert device_registry.async_get_device(identifiers=identifiers) is None
+
+
+async def test_two_meters_of_one_energy_do_not_share_their_advances(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """No advance invoice names its meter, so neither may count them all.
+
+    Each meter would take the other's advances as its own, need far less,
+    and the advance button would lower both.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [
+            contract(EAN, "Electricity", 56.51, 1663.29),
+            contract(OTHER_EAN, "Electricity", 56.51, 1663.29),
+        ],
+        {"currentAmount": 113.02},
+        word="Électricité",
+        others=[{"ean": OTHER_EAN, "type": "Electricity", "meterNumber": "M2"}],
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    got = state_of(hass, METER).attributes
+    assert got["advance_split"] == "incomplete"
+    assert got["advances_billed"] == 0
+    assert state_of(hass, METER).state == STATE_UNKNOWN
+    assert got["last_error"] == (
+        "the advances invoiced are not told apart between meters of one energy"
+    )
