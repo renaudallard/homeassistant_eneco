@@ -198,9 +198,10 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
         ):
             return self.async_abort(reason="accounts_missing")
         # A name the user gave the entry stays, unless it is another login.
+        # Told by the email: migration can leave an entry with no unique id.
         renamed = (
             {"title": login_title(self._credentials[CONF_EMAIL])}
-            if self.unique_id != entry.unique_id
+            if self.unique_id != login_id(entry.data[CONF_EMAIL])
             else {}
         )
         return self._async_update_and_finish(

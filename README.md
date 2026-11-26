@@ -161,7 +161,8 @@ were read and why a newer one was not. Your email address, password, account num
 out of it, and the account number is kept out of the log as well. The entry is
 titled with a masked form of your email address, such as `s•••@e•••.com`,
 because Home Assistant writes entry titles into its own log lines; rename it if
-you prefer something else.
+you prefer something else. The name stays through a *Reconfigure*, unless it
+signs in with another email, which puts that one's masked form back.
 
 What the last attempt did is remembered across restarts, so the sensors carry on
 reporting the real last submission rather than resetting, and a day that was

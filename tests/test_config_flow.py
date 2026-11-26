@@ -631,12 +631,20 @@ async def test_changing_the_sources_keeps_the_time_in_use(
     assert _offered_time(result) == time(23, 50)
 
 
+@pytest.mark.parametrize("unique", [True, False])
 async def test_reconfigure_keeps_a_name_given_to_the_entry(
     hass: HomeAssistant,
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
+    unique: bool,
 ) -> None:
-    """Only a new email is a new login, with the title that goes with it."""
+    """Only a new email is a new login, with the title that goes with it.
+
+    Migration can leave an entry without a unique id, which is no other login.
+    """
+    config_entry.add_to_hass(hass)
+    if not unique:
+        hass.config_entries.async_update_entry(config_entry, unique_id=None)
     await setup(hass, config_entry)
     hass.config_entries.async_update_entry(config_entry, title="Home")
     result = await config_entry.start_reconfigure_flow(hass)
