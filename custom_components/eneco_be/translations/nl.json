@@ -74,6 +74,7 @@
     },
     "error": {
       "invalid_auth": "Eneco heeft deze gegevens geweigerd.",
+      "sign_in_failed": "Eneco heeft het wachtwoord aanvaard, maar het portaal heeft de aanmelding niet afgerond. Probeer het later opnieuw.",
       "no_accounts": "Aangemeld, maar deze login heeft geen Eneco-account dat meterstanden kan doorgeven.",
       "cannot_connect": "Kan het Eneco-portaal niet bereiken."
     },

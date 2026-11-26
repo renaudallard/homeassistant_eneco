@@ -74,6 +74,7 @@
     },
     "error": {
       "invalid_auth": "Eneco hat diese Zugangsdaten abgelehnt.",
+      "sign_in_failed": "Eneco hat das Passwort angenommen, aber das Portal hat die Anmeldung nicht abgeschlossen. Versuchen Sie es später erneut.",
       "no_accounts": "Anmeldung erfolgreich, aber zu diesen Zugangsdaten gehört kein Eneco Konto, für das Zählerstände eingereicht werden können.",
       "cannot_connect": "Das Eneco Portal war nicht erreichbar."
     },

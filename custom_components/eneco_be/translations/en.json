@@ -74,6 +74,7 @@
     },
     "error": {
       "invalid_auth": "Eneco rejected these credentials.",
+      "sign_in_failed": "Eneco took the password, but the portal did not finish the sign in. Try again later.",
       "no_accounts": "Signed in, but this login has no Eneco account that can submit meter readings.",
       "cannot_connect": "Could not reach the Eneco portal."
     },

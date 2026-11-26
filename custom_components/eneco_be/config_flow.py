@@ -73,6 +73,16 @@ def _new_session(hass: HomeAssistant) -> ClientSession:
     return async_create_clientsession(hass, auto_cleanup=False)
 
 
+def _sign_in_error(client: EnecoClient) -> str:
+    """Return the form error for a sign in that failed.
+
+    Only a refusal is the password. Anything failing once Okta took it is
+    the portal's, and saying the password was wrong would have it typed
+    again, one more try with Okta each time.
+    """
+    return "invalid_auth" if client.refused else "sign_in_failed"
+
+
 CREDENTIALS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_EMAIL): selector.TextSelector(
@@ -126,7 +136,7 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
                 # did not render and for a login that owns none. Neither is the
                 # password, and saying it was sends the user round in circles.
                 _LOGGER.debug("Sign in refused: %s", err)
-                errors["base"] = "no_accounts" if signed_in else "invalid_auth"
+                errors["base"] = "no_accounts" if signed_in else _sign_in_error(client)
                 session.detach()
             except EnecoConnectionError as err:
                 _LOGGER.debug("Portal unreachable: %s", err)
@@ -256,7 +266,7 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
             try:
                 await client.async_login()
             except EnecoAuthError:
-                errors["base"] = "invalid_auth"
+                errors["base"] = _sign_in_error(client)
             except EnecoConnectionError:
                 errors["base"] = "cannot_connect"
             else:

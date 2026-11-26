@@ -655,3 +655,36 @@ async def test_reconfigure_keeps_a_name_given_to_the_entry(
 
     assert result["reason"] == "reconfigure_successful"
     assert config_entry.title == "Home"
+
+
+@pytest.mark.parametrize("source", [SOURCE_USER, "reauth"])
+async def test_a_sign_in_failing_past_the_password_says_so(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    source: str,
+) -> None:
+    """Okta took the password; the portal then gave no access token.
+
+    The form said Eneco rejected the credentials, so the user typed them
+    again, each time one more try with Okta.
+    """
+    aioclient_mock.get("https://eneco.be/api/auth/session/", json={})
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    if source == SOURCE_USER:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_USER}
+        )
+        user_input: dict[str, Any] = CREDENTIALS
+    else:
+        config_entry.add_to_hass(hass)
+        result = await config_entry.start_reauth_flow(hass)
+        user_input = {CONF_PASSWORD: PASSWORD}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], user_input
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "sign_in_failed"}
