@@ -112,7 +112,7 @@ async def test_missing_access_token(
         await client(session).async_login()
 
 
-async def test_dashboard_without_accounts(
+async def test_a_dashboard_that_did_not_render_is_a_session_gone(
     aioclient_mock: AiohttpClientMocker, session: ClientSession
 ) -> None:
     """A dashboard that did not render means the session is gone."""

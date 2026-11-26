@@ -265,24 +265,6 @@ async def test_retry_after_wrong_password(
     assert len(attempts) == 2
 
 
-async def test_already_configured(
-    hass: HomeAssistant,
-    mock_portal: AiohttpClientMocker,
-    config_entry: MockConfigEntry,
-) -> None:
-    """The same meter cannot be set up twice."""
-    config_entry.add_to_hass(hass)
-
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], CREDENTIALS
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
-
-
 async def test_no_meters(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:

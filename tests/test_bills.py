@@ -358,7 +358,7 @@ async def test_the_last_bill_survives_a_restart_without_portal(
 async def test_a_failed_sign_in_keeps_the_last_bill(
     hass: HomeAssistant, portal: AiohttpClientMocker
 ) -> None:
-    """A refresh that cannot sign in fails as a whole, and the bill stays."""
+    """A token refused again after signing in fails the read, and the bill stays."""
     mock_bill(portal, "CN2", ELECTRICITY)
     entry = bills_entry(hass, **{CONF_READ_BILLS: True})
     await setup(hass, entry)
@@ -712,7 +712,8 @@ async def test_an_intermediary_bill_is_part_of_the_year(
         (None, None),
         ("803.639", None),
         (True, None),
-        # The portal's JSON is read with json.loads, which takes these.
+        # Home Assistant's decoder refuses these, but a price integration's
+        # answer, which goes through the same helper, can hold them.
         (float("nan"), None),
         (float("inf"), None),
     ],

@@ -385,7 +385,7 @@ async def test_options_are_used(
     mock_portal: AiohttpClientMocker,
     config_entry: MockConfigEntry,
 ) -> None:
-    """The register mapping in the options decides which sensor is read."""
+    """The register mapping in the meter decides which sensor is read."""
     hass.states.async_set(
         "sensor.somewhere_else",
         "77",
