@@ -32,15 +32,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv, issue_registry as ir
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    issue_registry as ir,
+)
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 
 from .api import EnecoAuthError, EnecoClient, EnecoConnectionError
 from .bills import BillCoordinator
-from .const import CONF_READ_BILLS, DOMAIN, SUBENTRY_METER
+from .const import CONF_ADDRESS, CONF_READ_BILLS, DOMAIN, SUBENTRY_METER
 from .coordinator import EnecoCoordinator, MeterStore, repair_prefix
+from .entity import address_id
 from .migrate import async_migrate_entries
 
 _LOGGER = logging.getLogger(__name__)
@@ -143,6 +148,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
     entry.runtime_data = EnecoData(
         client, coordinators, dict(entry.data), dict(entry.options), bills
     )
+    _remove_gone_addresses(
+        hass,
+        entry,
+        set()
+        if bills is None
+        else {entry.subentries[meter].data[CONF_ADDRESS] for meter in meters},
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -165,6 +177,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
         entry.async_on_unload(async_at_started(hass, _read_bills))
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     return True
+
+
+@callback
+def _remove_gone_addresses(
+    hass: HomeAssistant, entry: EnecoConfigEntry, addresses: set[str]
+) -> None:
+    """Take away the device of each address no meter of the entry is at.
+
+    Its sensors and button go with it. Nothing adds them again once the
+    last meter there is removed, or bills are no longer read, so they would
+    stay unavailable for good.
+    """
+    registry = dr.async_get(hass)
+    prefix = address_id(entry.entry_id, "")
+    wanted = {address_id(entry.entry_id, address) for address in addresses}
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if any(
+            domain == DOMAIN and key.startswith(prefix) and key not in wanted
+            for domain, key in device.identifiers
+        ):
+            registry.async_remove_device(device.id)
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:

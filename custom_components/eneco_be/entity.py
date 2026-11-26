@@ -53,6 +53,11 @@ def meter_device(meter: Mapping[str, Any]) -> DeviceInfo:
     )
 
 
+def address_id(entry_id: str, address: str) -> str:
+    """Return the identifier of the device of a delivery address of a login."""
+    return f"{entry_id}_{address}"
+
+
 def address_device(entry_id: str, address: str, number: int) -> DeviceInfo:
     """Return the device that stands for a delivery address of a login.
 
@@ -60,7 +65,7 @@ def address_device(entry_id: str, address: str, number: int) -> DeviceInfo:
     addresses of one login apart, 0 when it has only one.
     """
     return DeviceInfo(
-        identifiers={(DOMAIN, f"{entry_id}_{address}")},
+        identifiers={(DOMAIN, address_id(entry_id, address))},
         entry_type=DeviceEntryType.SERVICE,
         manufacturer="Eneco",
         name="Eneco advance" + (f" {number}" if number else ""),

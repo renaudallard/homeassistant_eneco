@@ -36,14 +36,19 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from custom_components.eneco_be.api import EnecoConnectionError
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
 from custom_components.eneco_be.bills import _address_state
-from custom_components.eneco_be.const import CONF_ADJUST_ADVANCE, CONF_READ_BILLS
+from custom_components.eneco_be.const import (
+    CONF_ADJUST_ADVANCE,
+    CONF_READ_BILLS,
+    DOMAIN,
+)
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .bill_pdf import ELECTRICITY
-from .conftest import ACCOUNT, ADDRESS, EAN, mock_discovery, mock_login
+from .conftest import ACCOUNT, ADDRESS, EAN, METER_ID, mock_discovery, mock_login
 from .test_bills import (
     ADVANCES,
     CONSUMPTION,
@@ -687,3 +692,58 @@ async def test_a_change_half_made_says_so(
         )
     assert sent.await_count == 2
     assert refresh.await_count == 2
+
+
+async def test_an_address_left_without_meters_goes(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Its device, sensors and button go with the last meter there.
+
+    Nothing else ever adds them again, so they would stay unavailable.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+    identifiers = {(DOMAIN, f"{entry.entry_id}_{ADDRESS}")}
+    assert device_registry.async_get_device(identifiers=identifiers) is not None
+    assert entity_registry.async_get(APPLY) is not None
+
+    assert hass.config_entries.async_remove_subentry(entry, METER_ID)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert device_registry.async_get_device(identifiers=identifiers) is None
+    for entity_id in (APPLY, PROPOSED, ADDRESS_TOTAL, ADDRESS_NOW):
+        assert entity_registry.async_get(entity_id) is None, entity_id
+
+
+async def test_the_address_goes_when_bills_are_no_longer_read(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """Every entity of the address device is a bill one, so it goes too."""
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    identifiers = {(DOMAIN, f"{entry.entry_id}_{ADDRESS}")}
+    assert device_registry.async_get_device(identifiers=identifiers) is not None
+
+    hass.config_entries.async_update_entry(entry, options={CONF_READ_BILLS: False})
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert device_registry.async_get_device(identifiers=identifiers) is None
