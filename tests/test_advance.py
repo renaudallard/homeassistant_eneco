@@ -1447,3 +1447,57 @@ async def test_an_intermediary_bill_of_the_period_is_counted(
     assert got["expected_regularisation"] == round(
         got["period_cost"] - got["advances_billed"] - got["advances_to_come"] - due, 2
     )
+
+
+async def test_two_meters_of_one_energy_set_up_here_are_shared(
+    hass: HomeAssistant,
+) -> None:
+    """Told only from the portal's meters at the address, which can be none.
+
+    Each meter then took both contracts' advances as its own, and the
+    button would have lowered both.
+    """
+    address = "f" * 64
+
+    def meter(ean: str) -> ConfigSubentryData:
+        return ConfigSubentryData(
+            data={
+                CONF_ACCOUNT: ACCOUNT,
+                CONF_ADDRESS: address,
+                CONF_EAN: ean,
+                CONF_ENERGY_TYPE: "Electricity",
+            },
+            subentry_type=SUBENTRY_METER,
+            title=ean,
+            unique_id=ean,
+        )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={}, subentries_data=[meter(EAN), meter(OTHER_EAN)]
+    )
+    entry.add_to_hass(hass)
+    client = SimpleNamespace(refused=False)
+    bills = BillCoordinator(hass, entry, client)  # type: ignore[arg-type]
+    provision = AsyncMock(return_value={"error": "x"})
+    with (
+        patch.object(bills, "_async_list", AsyncMock(return_value=({}, []))),
+        patch.object(
+            bills, "_async_advance_amounts", AsyncMock(return_value="no advances")
+        ),
+        patch.object(bills, "_async_read_advances", AsyncMock()),
+        patch.object(
+            bills,
+            "_async_meter",
+            AsyncMock(
+                return_value={
+                    "card": None,
+                    "card_error": None,
+                    "year": None,
+                    "error": None,
+                }
+            ),
+        ),
+        patch.object(bills, "_async_provision", provision),
+    ):
+        await bills.async_refresh()
+    assert [call.kwargs["shared"] for call in provision.await_args_list] == [True, True]
