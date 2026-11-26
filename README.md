@@ -369,7 +369,10 @@ works it out from your own last yearly bill instead:
   index of each month when a [gas price
   integration](https://github.com/renaudallard/homeassistant_be_gas_prices)
   entry checks the bill (2026.11.17 or newer), since the index can move a lot
-  in a year; electricity energy stays at the bill's price for now.
+  in a year; electricity energy stays at the bill's price for now. When the
+  entry checking the bill cannot give its prices, not loaded or failing, the
+  sensor shows nothing that day, with the reason in `last_error`, rather than
+  the bill's price, which on an index can be far below today's.
 
 The state is the advance to pay until the reading for the next regularisation
 to come to about 0: what the period will cost less the advances invoiced so

@@ -53,7 +53,7 @@ from .advice import address_proposal, no_proposal
 from .api import EnecoAuthError, EnecoClient, EnecoError, ServiceDeliveryPoint
 from .api_billing import AdvanceAmounts, Invoice
 from .bill import BillFormatError, parse_advance, parse_bill, pdf_text
-from .bill_compare import async_compare, async_energy_rates
+from .bill_compare import RatesUnavailableError, async_compare, async_energy_rates
 from .bill_year import (
     INTERMEDIARY,
     MONTHLY,
@@ -785,9 +785,15 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return {"error": "the newest reading has no date"}
         rates = None
         if kind == GAS:
-            rates = await async_energy_rates(
-                self.hass, f"{ean}_{LAST_BILL}", start.isoformat(), end.isoformat()
-            )
+            try:
+                rates = await async_energy_rates(
+                    self.hass, f"{ean}_{LAST_BILL}", start.isoformat(), end.isoformat()
+                )
+            except RatesUnavailableError as err:
+                # Not the bill's price instead: on an indexed contract it can
+                # be far below today's, and the advance set far too low.
+                kept = previous if previous and kept_period == start.isoformat() else {}
+                return kept | {"error": f"the gas prices were not read: {err}"}
         try:
             result = project(
                 energy_type=kind,

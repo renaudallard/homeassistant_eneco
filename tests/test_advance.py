@@ -44,6 +44,7 @@ from custom_components.eneco_be.api import (
     ServiceDeliveryPoint,
 )
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
+from custom_components.eneco_be.bill_compare import RatesUnavailableError
 from custom_components.eneco_be.bills import BillCoordinator, _address_state
 from custom_components.eneco_be.const import (
     CONF_ACCOUNT,
@@ -1341,3 +1342,43 @@ async def test_a_closing_bill_of_another_meter_is_no_newer_year(
     meter = state_of(hass, METER)
     assert meter.attributes["last_error"] is None
     assert meter.state != STATE_UNKNOWN
+
+
+async def test_no_gas_advance_from_the_bill_price_when_rates_fail(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The gas price entry checking the bill could not give its rates.
+
+    The bill's price stood in, far below an index's, and the advance was
+    worked out, and could be sent, far too low.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+    year = bills.data[METER_ID]["year"]
+
+    with patch(
+        "custom_components.eneco_be.bills.async_energy_rates",
+        AsyncMock(side_effect=RatesUnavailableError("Gas is not loaded")),
+    ):
+        got = await bills._async_provision(  # noqa: SLF001
+            ACCOUNT,
+            ADDRESS,
+            {**meter_of(entry).data, CONF_ENERGY_TYPE: "Gas"},
+            ServiceDeliveryPoint(EAN, "Gas", meter_number="M1"),
+            year,
+            [],
+            "the portal lists no advances",
+            date(2026, 11, 26),
+        )
+    assert got.get("monthly_advance") is None
+    assert got["error"] == "the gas prices were not read: Gas is not loaded"

@@ -46,7 +46,10 @@ from custom_components.eneco_be.api import (
     EnecoConnectionError,
     EnecoError,
 )
-from custom_components.eneco_be.bill_compare import async_energy_rates
+from custom_components.eneco_be.bill_compare import (
+    RatesUnavailableError,
+    async_energy_rates,
+)
 from custom_components.eneco_be.bill_year import not_read
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.binary_sensor import threshold
@@ -1133,8 +1136,54 @@ async def test_a_rate_that_is_no_number_is_not_taken(
         handler,
         supports_response=SupportsResponse.ONLY,
     )
-    got = await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
-    assert got == ({"2026-02": rate} if rate == 0.1 else None)
+    if rate == 0.1:
+        got = await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+        assert got == {"2026-02": rate}
+        return
+    with pytest.raises(RatesUnavailableError):
+        await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+
+
+@pytest.mark.parametrize("how", ["not loaded", "raises", "empty"])
+async def test_a_gas_price_entry_that_cannot_answer_is_no_bill_price(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry, how: str
+) -> None:
+    """The entry checking the bill gave no rates: the bill's price stood in.
+
+    On an indexed contract that price is far below what is used now, and the
+    advance proposed from it, and sent, far too low.
+    """
+    unique_id = f"{EAN}_last_bill"
+    sensor = entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
+    price_entry(
+        hass,
+        "be_gas_prices",
+        "bill_entity",
+        sensor.entity_id,
+        ConfigEntryState.SETUP_RETRY
+        if how == "not loaded"
+        else ConfigEntryState.LOADED,
+    )
+
+    async def handler(call: ServiceCall) -> Any:
+        if how == "raises":
+            raise HomeAssistantError("nothing priced yet")
+        return {"months": []}
+
+    hass.services.async_register(
+        "be_gas_prices", "energy_rate", handler, supports_response=SupportsResponse.ONLY
+    )
+    with pytest.raises(RatesUnavailableError):
+        await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+
+
+async def test_no_gas_price_entry_leaves_the_bill_price(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """With no entry checking the bill, the bill's own price is the design."""
+    unique_id = f"{EAN}_last_bill"
+    entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
+    assert await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31") is None
 
 
 async def test_the_difference_goes_with_the_other_bill_sensors(
