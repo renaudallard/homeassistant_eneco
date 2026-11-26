@@ -440,7 +440,7 @@ contract's proposed advance, `changes`, the energies that would change,
 `exact`, whether the total is exactly what is needed, and `last_error`. It
 proposes nothing while a contract of the address has no meter set up here or
 no amount yet, while one advance or none is left before the reading, while
-two accounts of the login share the address, or when
+meters set up here under two accounts share the address, or when
 the portal would refuse a change: payments overdue, a vacancy, an advance not
 available, billing other than yearly, or one of the errors its own advances
 page refuses a change on: `InvoiceOrEndnoteNeedsToBeCreatedFirst`,
@@ -453,7 +453,8 @@ invoices, the advances page or a meter's readings cannot be read again:
 nothing is proposed from what was left standing from an earlier day, and the
 proposed advance sensor gives the reason in `last_error`. An advance invoice
 whose PDF does not download is split on today's advances instead, which
-`advance_split` shows as `estimated`. Then it sets on My Eneco the advance of
+`advance_split` shows as `estimated`, or left unsplit, and nothing proposed,
+when those give no share. Then it sets on My Eneco the advance of
 each contract that changes, as the portal's own advances page does, and
 reads again so the sensors show what is billed now. Each change is logged,
 and when one contract is set and the next refused, the error says which was
