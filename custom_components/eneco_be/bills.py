@@ -168,7 +168,7 @@ def _settlement(every: list[Invoice], today: date) -> list[Invoice]:
     with no date, would otherwise come before the bills it precedes and
     break the year they make.
     """
-    invoices = [i for i in every if i.kind in SETTLEMENT and i.document_url]
+    invoices = [i for i in every if i.kind in SETTLEMENT]
     invoices.sort(
         key=lambda i: (i.period_end or i.issued or today, i.issued or today),
         reverse=True,
@@ -928,7 +928,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 raise
             except EnecoError as err:
                 return _not_read(invoice, str(err))
-            self._seen[invoice.identifier] = seen
+            # One with no document may be given one later.
+            if invoice.document_url:
+                self._seen[invoice.identifier] = seen
         return seen
 
     async def _async_read(self, invoice: Invoice) -> dict[str, Any]:
@@ -939,7 +941,8 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         same day twice.
         """
         if not invoice.document_url:
-            return {"eans": [], "error": None, "bill": None}
+            # Whose it is cannot be told, and so it may be the meter's.
+            return {"eans": None, "error": "it has no document", "bill": None}
         payload = await self.client.async_get_document(invoice.document_url)
         try:
             text = await self.hass.async_add_executor_job(pdf_text, payload)

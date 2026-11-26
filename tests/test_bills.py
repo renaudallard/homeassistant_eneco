@@ -1489,3 +1489,38 @@ async def test_an_older_year_issued_late_is_not_the_year(
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["period_end"] == "2026-01-31"
     assert bill.attributes["last_error"] is None
+
+
+async def test_a_bill_with_no_document_is_named(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Left out of the list before anything looked at it, it went unsaid.
+
+    An intermediary bill with no PDF gave a year short of it with no error,
+    where one that would not download is named.
+    """
+    mock_invoices(
+        aioclient_mock,
+        [
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-03-15", "2026-02-01"
+            ),
+            billed(
+                invoice("IN1", "IntermediaryInvoice", "2025-03-20"),
+                "2024-02-15",
+                "2025-03-15",
+            )
+            | {"documents": []},
+            billed(
+                invoice("CN1", "YearlyBill", "2024-02-20"), "2023-02-15", "2024-02-15"
+            ),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2025-03-15"
+    assert bill.attributes["last_error"] == (
+        "the bill of 2025-03-20 was not read: it has no document"
+    )
