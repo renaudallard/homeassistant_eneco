@@ -695,3 +695,53 @@ async def test_a_dashboard_that_does_not_render_is_no_account_missing(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "sign_in_failed"}
+
+
+@pytest.mark.parametrize(
+    ("second", "expected"),
+    [("no token", "sign_in_failed"), ("refused", "invalid_auth")],
+)
+async def test_a_sign_in_again_for_the_dashboard_says_what_failed(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    second: str,
+    expected: str,
+) -> None:
+    """The dashboard did not render, and signing in again failed too.
+
+    Any failure once signed in said the login owns no account, a refusal
+    of the password included.
+    """
+    calls = {"authn": 0, "session": 0}
+
+    async def authn(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        calls["authn"] += 1
+        if calls["authn"] > 1 and second == "refused":
+            return AiohttpClientMockResponse(
+                method,
+                url,
+                status=HTTPStatus.UNAUTHORIZED,
+                json={"errorSummary": "Authentication failed"},
+            )
+        return AiohttpClientMockResponse(
+            method, url, json={"status": "SUCCESS", "sessionToken": "one-shot"}
+        )
+
+    async def session(method: str, url: Any, data: Any) -> AiohttpClientMockResponse:
+        calls["session"] += 1
+        token = {"accessToken": "bearer"} if calls["session"] == 1 else {}
+        return AiohttpClientMockResponse(method, url, json=token)
+
+    aioclient_mock.post("https://login.eneco.be/api/v1/authn", side_effect=authn)
+    aioclient_mock.get("https://eneco.be/api/auth/session/", side_effect=session)
+    aioclient_mock.get(
+        "https://eneco.be/fr/my-eneco/dashboard/", text="<html>maintenance</html>"
+    )
+    mock_login(aioclient_mock, accounts=[])
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], CREDENTIALS
+    )
+    assert result["errors"] == {"base": expected}

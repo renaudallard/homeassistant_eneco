@@ -56,7 +56,7 @@ from .api import (
     EnecoClient,
     EnecoConnectionError,
     EnecoError,
-    EnecoSessionGoneError,
+    EnecoNoAccountError,
 )
 from .const import (
     CONF_ACCOUNT,
@@ -132,21 +132,17 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
             client = EnecoClient(
                 session, user_input[CONF_EMAIL], user_input[CONF_PASSWORD]
             )
-            signed_in = False
             try:
                 await client.async_login()
-                signed_in = True
                 self._accounts = await client.async_get_accounts()
             except EnecoAuthError as err:
-                # Reading the accounts raises this too, for a dashboard that
-                # did not render and for a login that owns none. Neither is the
-                # password, and saying it was sends the user round in circles.
                 _LOGGER.debug("Sign in refused: %s", err)
-                # A dashboard that did not render is the portal's trouble,
-                # not an account missing.
+                # Only a dashboard listing no account is an account missing;
+                # one that did not render, or a sign in again that failed, is
+                # told as any other sign in: the password only when refused.
                 errors["base"] = (
                     "no_accounts"
-                    if signed_in and not isinstance(err, EnecoSessionGoneError)
+                    if isinstance(err, EnecoNoAccountError)
                     else _sign_in_error(client)
                 )
                 session.detach()

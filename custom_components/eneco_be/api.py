@@ -121,6 +121,10 @@ class EnecoSessionGoneError(EnecoAuthError):
     """The web session behind the dashboard is no longer signed in."""
 
 
+class EnecoNoAccountError(EnecoAuthError):
+    """Signed in, but the login owns no account readings can be sent for."""
+
+
 class _RefusedError(EnecoAuthError):
     """Okta refused the credentials, which asking again will not change."""
 
@@ -554,7 +558,7 @@ class EnecoClient:
         for key in ("props", "pageProps", "accounts"):
             raw = raw.get(key) if isinstance(raw, dict) else None
         if not isinstance(raw, list):
-            raise EnecoAuthError("the dashboard listed no accounts")
+            raise EnecoNoAccountError("the dashboard listed no accounts")
 
         accounts = [
             Account(
@@ -565,7 +569,7 @@ class EnecoClient:
             if isinstance(entry, dict) and entry.get("crmAccountNumber")
         ]
         if not accounts:
-            raise EnecoAuthError("the dashboard listed no accounts")
+            raise EnecoNoAccountError("the dashboard listed no accounts")
         return accounts
 
     async def async_get_addresses(self, account: str) -> list[Address]:
