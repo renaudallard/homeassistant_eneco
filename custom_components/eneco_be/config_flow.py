@@ -190,7 +190,7 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
                 DOMAIN, self.unique_id or ""
             )
             if other is not None:
-                return self.async_abort(reason="already_configured")
+                return self.async_abort(reason="login_in_use")
         reachable = {account.number for account in self._accounts}
         if any(
             subentry.data[CONF_ACCOUNT] not in reachable

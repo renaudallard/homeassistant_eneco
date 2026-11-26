@@ -81,6 +81,7 @@
       "accounts_missing": "Cette connexion n'a pas accès au compte de chaque compteur configuré. Supprimez d'abord ces compteurs, ou connectez-vous avec la connexion à laquelle ils appartiennent.",
       "already_configured": "Cette connexion est déjà configurée. Ajoutez-y ses autres compteurs depuis son entrée, avec Ajouter un compteur.",
       "already_in_progress": "Cette connexion est déjà en cours de configuration.",
+      "login_in_use": "Une autre entrée utilise déjà cette connexion.",
       "cannot_connect": "Impossible de joindre le portail Eneco : {error}",
       "meters_configured": "Tous les compteurs à cette adresse sont déjà configurés.",
       "no_addresses": "Ce compte n'a aucune adresse avec un contrat actif.",

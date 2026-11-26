@@ -81,6 +81,7 @@
       "accounts_missing": "This login cannot reach the account of every meter set up on it. Remove those meters first, or sign in with the login they belong to.",
       "already_configured": "This login is already set up. Add its other meters from its entry, with Add meter.",
       "already_in_progress": "This login is already being set up.",
+      "login_in_use": "Another entry already uses this login.",
       "cannot_connect": "Could not reach the Eneco portal: {error}",
       "meters_configured": "Every meter at this address is already set up.",
       "no_addresses": "This account has no address with an active contract.",

@@ -467,7 +467,8 @@ async def test_reconfigure_onto_another_configured_login_is_refused(
     )
 
     assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
+    # Not the setup's reason, which says to add the meters to that entry.
+    assert result["reason"] == "login_in_use"
     assert config_entry.data[CONF_EMAIL] == EMAIL
 
 

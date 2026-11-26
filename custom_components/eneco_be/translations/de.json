@@ -81,6 +81,7 @@
       "accounts_missing": "Dieser Login erreicht nicht das Konto jedes eingerichteten Zählers. Entfernen Sie diese Zähler zuerst, oder melden Sie sich mit dem Login an, zu dem sie gehören.",
       "already_configured": "Dieser Login ist bereits eingerichtet. Fügen Sie die weiteren Zähler über seinen Eintrag hinzu, mit Zähler hinzufügen.",
       "already_in_progress": "Dieser Login wird bereits eingerichtet.",
+      "login_in_use": "Ein anderer Eintrag verwendet diesen Login bereits.",
       "cannot_connect": "Das Eneco Portal war nicht erreichbar: {error}",
       "meters_configured": "Jeder Zähler an dieser Adresse ist bereits eingerichtet.",
       "no_addresses": "Dieses Konto hat keine Adresse mit einem laufenden Vertrag.",

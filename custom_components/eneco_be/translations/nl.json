@@ -81,6 +81,7 @@
       "accounts_missing": "Deze login heeft geen toegang tot het account van elke ingestelde meter. Verwijder die meters eerst, of meld je aan met de login waartoe ze behoren.",
       "already_configured": "Deze login is al ingesteld. Voeg de andere meters toe vanuit de invoer, met Meter toevoegen.",
       "already_in_progress": "Deze login wordt al ingesteld.",
+      "login_in_use": "Een andere invoer gebruikt deze login al.",
       "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
       "meters_configured": "Elke meter op dit adres is al ingesteld.",
       "no_addresses": "Dit account heeft geen adres met een actief contract.",
