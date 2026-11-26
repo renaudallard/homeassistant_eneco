@@ -720,7 +720,10 @@ async def test_a_change_half_made_says_so(
         ) as sent,
         pytest.raises(
             HomeAssistantError,
-            match="the electricity advance was set, but not the gas one: .*HTTP 500",
+            match=(
+                "the advance of the electricity meter ending 0001 was set, but not"
+                " that of the gas meter ending 0099: .*HTTP 500"
+            ),
         ),
     ):
         await hass.services.async_call(

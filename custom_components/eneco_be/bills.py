@@ -367,9 +367,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if account is None:
             raise EnecoError("no meter is set up at the address any more")
         done: list[str] = []
+        # Each by its meter, as two of one energy can share the address.
+        set_for: list[str] = []
         for ean in changes:
             amount = proposal["amounts"][ean]
             energy = proposal["energies"][ean]
+            meter = f"{energy.lower()} meter ending {ean[-4:]}"
             try:
                 await self.client.async_set_advance(account, address, ean, amount)
             except EnecoError as err:
@@ -377,11 +380,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     raise
                 await self.async_refresh()
                 raise EnecoError(
-                    f"the {' and '.join(done).lower()} advance was set,"
-                    f" but not the {energy.lower()} one: {err}"
+                    f"the advance of the {' and '.join(set_for)} was set,"
+                    f" but not that of the {meter}: {err}"
                 ) from err
             _LOGGER.info("Set the %s advance to %.2f EUR", energy.lower(), amount)
             done.append(energy)
+            set_for.append(meter)
         if done:
             await self.async_refresh()
         return done
