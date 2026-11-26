@@ -126,6 +126,34 @@ def profile_range(first: date, last: date) -> tuple[date, date]:
     return first.replace(day=1), last.replace(day=monthrange(last.year, last.month)[1])
 
 
+def reading_end(start: date, month: int | None) -> tuple[date, str]:
+    """Return the last day of the period starting on ``start``, and how it was told.
+
+    With the month of the meter reading the portal gives, the period ends
+    with that month, the one nearest a year on; otherwise a year after it
+    started.
+    """
+    anniversary = year_after(start)
+    if month is None:
+        return anniversary - timedelta(days=1), "anniversary"
+    ends = [
+        date(year, month, monthrange(year, month)[1])
+        for year in (anniversary.year - 1, anniversary.year, anniversary.year + 1)
+    ]
+    return min(ends, key=lambda end: abs((end - anniversary).days)), "reading_month"
+
+
+def catch_up(period_cost: float, paid: float, left: int) -> float | None:
+    """Return the advance that brings the coming regularisation to about 0.
+
+    What the period will cost less what was invoiced, over the advances left
+    before the reading; never below 0, and None when none is left.
+    """
+    if left <= 0:
+        return None
+    return round(max(0.0, (period_cost - paid) / left), 2)
+
+
 def index_volumes(
     first: Mapping[str, int], last: Mapping[str, int], factor: float = 1.0
 ) -> Volumes:
@@ -197,25 +225,21 @@ def _weight(day: date, profile: Mapping[str, float]) -> float | None:
     return None if value is None else value / monthrange(day.year, day.month)[1]
 
 
-def _share(
-    first: date, last: date, rest: date, profile: Mapping[str, float]
-) -> float | None:
-    """Return the share of the days ``first`` to ``last`` from ``rest`` on.
+def _weigh(first: date, last: date, profile: Mapping[str, float]) -> float | None:
+    """Return what the days ``first`` to ``last`` weigh in ``profile``.
 
-    Each day weighs its month's value in ``profile`` over the days of that
-    month; None if the profile misses one of the months.
+    Each day weighs its month's value over the days of that month; None if
+    the profile misses one of the months.
     """
-    whole = part = 0.0
+    whole = 0.0
     day = first
     while day <= last:
         weight = _weight(day, profile)
         if weight is None:
             return None
         whole += weight
-        if day >= rest:
-            part += weight
         day += timedelta(days=1)
-    return part / whole if whole > 0 else None
+    return whole
 
 
 def _months_of(first: date, last: date) -> list[str]:
@@ -237,29 +261,59 @@ def _solar(first: date, last: date) -> dict[str, float]:
 
 def rest_of_period(
     last_period: tuple[date, date],
-    rest_from: date,
+    rest: tuple[date, date],
     billed: Volumes,
     profile: Mapping[str, MonthVolume],
 ) -> tuple[Volumes, str]:
-    """Return the volume of the days left, read off the last period's same days.
+    """Return the volume of the days left, read off the same days a year back.
 
-    ``rest_from`` is the first day left of the running period, and the last
-    period is the year before it. Without the portal's profile for every
-    month of the last period, the days are counted flat, and the basis says
-    so.
+    ``rest`` is the first and last day left of the running period. What the
+    same days took a year earlier is the last period's volume times their
+    weight over the last period's in the profile, which may reach past that
+    period when the next reading comes later in the year. Without the
+    portal's profile for every month needed, the days count flat, and the
+    basis says so.
     """
     first, last = last_period
-    rest = year_before(rest_from)
-    if rest > last:
+    rest_from, rest_to = rest
+    if rest_from > rest_to:
         return Volumes(0.0, 0.0), "measured"
-    rest = max(rest, first)
-    taken = _share(first, last, rest, {k: v.offtake for k, v in profile.items()})
+    back_from, back_to = year_before(rest_from), year_before(rest_to)
+    offtake = {k: v.offtake for k, v in profile.items()}
+    part = _weigh(back_from, back_to, offtake)
+    whole = _weigh(first, last, offtake)
     basis = "profile"
-    if taken is None:
+    if part is None or not whole:
         basis = "days"
-        taken = ((last - rest).days + 1) / ((last - first).days + 1)
-    fed = _share(first, last, rest, _solar(first, last)) or 0.0
-    return Volumes(billed.offtake * taken, billed.injection * fed), basis
+        part = (back_to - back_from).days + 1
+        whole = (last - first).days + 1
+    solar = _solar(min(first, back_from), max(last, back_to))
+    fed = (_weigh(back_from, back_to, solar) or 0.0) / (
+        _weigh(first, last, solar) or 1.0
+    )
+    return Volumes(billed.offtake * part / whole, billed.injection * fed), basis
+
+
+def year_share(start: date, end: date, profile: Mapping[str, float]) -> float:
+    """Return what a year weighs against the days ``start`` to ``end``.
+
+    Each day weighs its calendar month's latest value in ``profile`` over
+    the days of that month, so a period holding two Januaries is not scaled
+    down to a year as if its days were all alike. Counted flat when the
+    profile misses a calendar month.
+    """
+    by_month: dict[int, float] = {}
+    for key in sorted(profile):
+        by_month[int(key[5:])] = profile[key]
+    if len(by_month) < 12:
+        return 365 / ((end - start).days + 1)
+    year = sum(by_month.values())
+    period = 0.0
+    day = start
+    while day <= end:
+        period += by_month[day.month] / monthrange(day.year, day.month)[1]
+        day += timedelta(days=1)
+    return year / period if period > 0 else 365 / ((end - start).days + 1)
 
 
 def cost(
@@ -324,13 +378,15 @@ def project(
     latest: tuple[date, Mapping[str, int]],
     profile: Mapping[str, MonthVolume],
     rates: Mapping[str, float] | None,
+    period_end: date,
 ) -> dict[str, Any]:
-    """Return the running period's volumes and cost, and the advance needed.
+    """Return the running period's volumes and cost, and a year's advance.
 
     ``bill_readings`` are the official readings that opened and closed the
     last bill, ``latest`` the newest reading and its date, ``rates`` the gas
     energy price of each month of the period, VAT included, if a price
-    integration gave them.
+    integration gave them, and ``period_end`` the period's last day
+    (:func:`reading_end`).
     """
     bill_first, bill_last = bill_period
     bill_days = (bill_last - bill_first).days + 1
@@ -343,7 +399,7 @@ def project(
     priced = parts(lines, billed, bill_days)
 
     start = bill_last + timedelta(days=1)
-    end = year_after(start) - timedelta(days=1)
+    end = period_end
     days = (end - start).days + 1
     # A reading dated D is the index as D starts, as the official reading of
     # 1 February closes a bill ending on 31 January: the meter has measured
@@ -354,13 +410,13 @@ def project(
     measured = index_volumes(closed, values, factor)
     rest_from = min(read_on, end + timedelta(days=1))
     measured_to = rest_from - timedelta(days=1)
-    rest, basis = rest_of_period(bill_period, rest_from, billed, profile)
+    rest, basis = rest_of_period(bill_period, (rest_from, end), billed, profile)
     volumes = Volumes(
         measured.offtake + rest.offtake, measured.injection + rest.injection
     )
 
     energy = 0.0
-    year_energy = 0.0
+    year_rate = 0.0
     priced_by = "last_bill"
     if energy_type == GAS and rates:
         # The gas energy at each month's rate: the bill's own energy line is
@@ -375,13 +431,17 @@ def project(
             energy = sum(
                 kwh * rates.get(month, latest_rate) for month, kwh in months.items()
             )
-            year_energy = volumes.offtake * 365 / days * latest_rate
+            year_rate = latest_rate
             priced_by = "price_integration"
 
     period_cost = cost(priced, volumes, days, energy)
-    scale = 365 / days
-    year = Volumes(volumes.offtake * scale, volumes.injection * scale)
-    year_cost = cost(priced, year, 365, year_energy)
+    taken = {k: v.offtake for k, v in profile.items()}
+    year = Volumes(
+        volumes.offtake * year_share(start, end, taken),
+        volumes.injection
+        * year_share(start, end, _solar(date(1, 1, 1), date(1, 12, 31))),
+    )
+    year_cost = cost(priced, year, 365, year.offtake * year_rate)
     return {
         "period_start": start.isoformat(),
         "period_end": end.isoformat(),
@@ -395,7 +455,7 @@ def project(
         "energy_price": priced_by,
         "period_cost": round(period_cost, 2),
         "year_cost": round(year_cost, 2),
-        "monthly_advance": round(year_cost / 12, 2),
+        "after_reading": round(year_cost / 12, 2),
     }
 
 
@@ -414,8 +474,8 @@ def advances(
     billed: Mapping[str, float],
     advance_now: float | None,
     today: date,
-) -> tuple[float, float | None]:
-    """Return the advances billed in the period and those still to come.
+) -> tuple[float, float | None, int]:
+    """Return the advances billed in the period, those to come, and how many.
 
     ``billed`` maps the month each advance invoice is for, "YYYY-MM", to this
     meter's share of it. Every month of the period from this one on that has
@@ -423,9 +483,9 @@ def advances(
     """
     in_period = period_months(*period)
     paid = sum(billed.get(month, 0.0) for month in in_period)
-    coming = [m for m in in_period if m not in billed and m >= _month(today)]
-    if not coming:
-        return round(paid, 2), 0.0
+    left = len([m for m in in_period if m not in billed and m >= _month(today)])
+    if not left:
+        return round(paid, 2), 0.0, 0
     if advance_now is None:
-        return round(paid, 2), None
-    return round(paid, 2), round(advance_now * len(coming), 2)
+        return round(paid, 2), None, left
+    return round(paid, 2), round(advance_now * left, 2), left

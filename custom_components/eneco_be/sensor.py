@@ -66,9 +66,14 @@ MONTHLY_ADVANCE = "monthly_advance"
 PROVISION_ATTRIBUTES = (
     "advance_now",
     "difference",
+    "after_reading",
+    "advances_left",
+    "portal_min",
+    "portal_max",
     "year_cost",
     "period_start",
     "period_end",
+    "period_end_basis",
     "period_cost",
     "expected_regularisation",
     "advances_billed",
@@ -300,10 +305,13 @@ class BillDifferenceSensor(BillSensor):
 
 
 class MonthlyAdvanceSensor(BillSensor):
-    """The monthly advance the meter needs: a year like the running one.
+    """The monthly advance the meter needs until its next reading.
 
-    Its attributes say what the running billing period will cost and what
-    the next regularisation should come to, positive still to pay.
+    What brings the coming regularisation to about 0; once no advance is
+    left before the reading, a year like the running one for the next
+    period, which ``after_reading`` always gives. The attributes say what
+    the period will cost and what the regularisation would come to at
+    today's advance, positive still to pay.
     """
 
     _attr_device_class = SensorDeviceClass.MONETARY
@@ -411,11 +419,17 @@ class AddressAdvanceSensor(CoordinatorEntity[BillCoordinator], SensorEntity):
         total = self.native_value
         now = portal.get("advance_now")
         expected = [p.get("expected_regularisation") for p in by_energy.values()]
+        after = [p.get("after_reading") for p in by_energy.values()]
         return {
             "advance_now": now,
             "difference": None
             if total is None or now is None
             else round(total - now, 2),
+            "after_reading": None
+            if error is not None or None in after
+            else round(sum(float(a) for a in after if a is not None), 2),
+            "portal_min": portal.get("portal_min"),
+            "portal_max": portal.get("portal_max"),
             "electricity": (by_energy.get("electricity") or {}).get("monthly_advance"),
             "gas": (by_energy.get("gas") or {}).get("monthly_advance"),
             "expected_regularisation": None

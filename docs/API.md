@@ -278,7 +278,10 @@ on 2026-11-26:
 
 `recommendedAmount` is `amountDueForMeterReadingMonth` divided by
 `monthsUntilMeterReadingMonth`, to the cent, and the portal's expected
-regularisation is `currentAmount` times those months less the amount due. On a
+regularisation is `currentAmount` times those months less the amount due.
+`meterReadingMonth` is the month of the reading that closes the period: 1 for
+an electricity meter read on 1 February, and for a gas meter last read on 17
+December. On a
 `CompensatedOfftake` contract the amount due counts offtake without netting
 injection. The same path takes a POST, `{"amount": 0, "type": "Global"}`, that
 sets the advance: this integration never sends it, nor the POSTs of

@@ -66,10 +66,12 @@ from .const import (
 from .provision import (
     ProvisionError,
     advances,
+    catch_up,
     period_months,
     profile_range,
     project,
-    year_after,
+    reading_end,
+    year_before,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -175,6 +177,8 @@ def _address_state(portal: AdvanceAmounts | str) -> dict[str, Any]:
         return {
             "eans": None,
             "advance_now": None,
+            "portal_min": None,
+            "portal_max": None,
             "eneco_recommended": None,
             "eneco_expected_regularisation": None,
             "error": portal,
@@ -197,6 +201,8 @@ def _address_state(portal: AdvanceAmounts | str) -> dict[str, Any]:
     return {
         "eans": sorted(c.ean for c in portal.contracts),
         "advance_now": portal.current,
+        "portal_min": portal.minimum,
+        "portal_max": portal.maximum,
         "eneco_recommended": portal.recommended,
         "eneco_expected_regularisation": expected,
         "error": None,
@@ -643,10 +649,17 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return {"error": "billed monthly, with no advance"}
         ean = meter[CONF_EAN]
         kind = meter[CONF_ENERGY_TYPE]
+        contract = (
+            None
+            if isinstance(portal, str)
+            else next((c for c in portal.contracts if c.ean == ean), None)
+        )
         first = date.fromisoformat(newest["period_start"])
         last = date.fromisoformat(newest["period_end"])
         start = last + timedelta(days=1)
-        end = year_after(start) - timedelta(days=1)
+        end, end_basis = reading_end(
+            start, contract.reading_month if contract else None
+        )
         lines = [
             line for line in year["lines"] if line["start"] >= newest["period_start"]
         ]
@@ -656,7 +669,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 {}
                 if point is None
                 else await self.client.async_get_monthly_volumes(
-                    account, address, point, *profile_range(first, last)
+                    account,
+                    address,
+                    point,
+                    # The last period, and the same days a year back as the
+                    # rest of this one, which may reach past it.
+                    *profile_range(first, max(last, year_before(end))),
                 )
             )
         except EnecoAuthError:
@@ -693,21 +711,17 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 latest=(read_on, newest_reading.values),
                 profile=profile,
                 rates=rates,
+                period_end=end,
             )
         except ProvisionError as err:
             return {"error": str(err)}
 
-        contract = (
-            None
-            if isinstance(portal, str)
-            else next((c for c in portal.contracts if c.ean == ean), None)
-        )
         advance_now = None if contract is None else contract.current
         share = None
         if not isinstance(portal, str) and advance_now is not None and portal.current:
             share = advance_now / portal.current
         months, estimated, missing = _advance_months(kind, every, self._advances, share)
-        paid, coming = advances(
+        paid, coming, left = advances(
             period=(start, end), billed=months, advance_now=advance_now, today=today
         )
         in_period = set(period_months(start, end))
@@ -721,17 +735,31 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         expected = None
         if coming is not None and split != "incomplete":
             expected = round(result["period_cost"] - paid - coming, 2)
+        # Until the reading, what brings the regularisation to about 0; with
+        # no advance left before it, a year like this one for the next period.
+        error = None
+        needed = catch_up(result["period_cost"], paid, left)
+        if left and split == "incomplete":
+            needed = None
+            error = "the advances invoiced could not all be split by energy"
+        elif not left:
+            needed = result["after_reading"]
         difference = None
-        if advance_now is not None:
-            difference = round(result["monthly_advance"] - advance_now, 2)
+        if advance_now is not None and needed is not None:
+            difference = round(needed - advance_now, 2)
         return result | {
+            "monthly_advance": needed,
+            "period_end_basis": end_basis,
             "advance_now": advance_now,
             "difference": difference,
             "advances_billed": paid,
             "advances_to_come": coming,
+            "advances_left": left,
             "advance_split": split,
             "expected_regularisation": expected,
-            "error": None,
+            "portal_min": None if contract is None else contract.minimum,
+            "portal_max": None if contract is None else contract.maximum,
+            "error": error,
         }
 
     async def _async_seen(self, invoice: Invoice) -> dict[str, Any] | str:

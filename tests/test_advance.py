@@ -102,9 +102,11 @@ def split(
 def contract(ean: str, energy: str, current: float, due: float) -> dict[str, Any]:
     """Return a contract of the portal's advances page."""
     return {
-        "meterDetails": {"ean": ean, "energyType": energy},
+        "meterDetails": {"ean": ean, "energyType": energy, "meterReadingMonth": 1},
         "details": {
             "currentAmount": current,
+            "minAmount": 20,
+            "maxAmount": 2500,
             "recommendedAmount": round(due / 3, 2),
             "monthsUntilMeterReadingMonth": 3,
             "amountDueForMeterReadingMonth": due,
@@ -223,8 +225,17 @@ async def test_the_advance_a_meter_needs(
     got = meter.attributes
     assert got["last_error"] is None
     assert meter.attributes["unit_of_measurement"] == "EUR"
-    assert float(meter.state) == round(got["year_cost"] / 12, 2)
-    assert float(meter.state) == pytest.approx(80, abs=10)
+    # Until the January reading: what is left to pay over November,
+    # December and January.
+    assert got["advances_left"] == 3
+    assert got["period_end_basis"] == "reading_month"
+    assert float(meter.state) == round(
+        (got["period_cost"] - got["advances_billed"]) / 3, 2
+    )
+    # Then a year like this one.
+    assert got["after_reading"] == round(got["year_cost"] / 12, 2)
+    assert got["after_reading"] == pytest.approx(80, abs=10)
+    assert (got["portal_min"], got["portal_max"]) == (20, 2500)
     assert got["period_start"] == "2026-02-01"
     assert got["period_end"] == "2027-01-31"
     assert got["measured_until"] == "2026-11-24"
@@ -288,16 +299,19 @@ async def test_advances_not_read_leave_the_amount(
     aioclient_mock: AiohttpClientMocker,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """The portal's advances page down: the amount needed stands.
+    """The portal's advances page down: a year's advance stands.
 
-    What is paid now and the regularisation are not known.
+    What is paid now and the regularisation are not known, nor what is left
+    to pay: an advance whose split is unread cannot be shared by today's.
     """
     freezer.move_to(TODAY)
     portal(aioclient_mock, [], None)
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     meter = state_of(hass, METER)
-    assert float(meter.state) > 0
+    assert meter.state == STATE_UNKNOWN
+    assert meter.attributes["after_reading"] > 0
+    assert meter.attributes["period_end_basis"] == "anniversary"
     assert meter.attributes["advance_now"] is None
     assert meter.attributes["advances_to_come"] is None
     assert meter.attributes["expected_regularisation"] is None
@@ -319,7 +333,10 @@ async def test_a_split_not_told_leaves_no_regularisation(
     portal(aioclient_mock, [contract(EAN, "Electricity", 56.51, 1663.29)], {})
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
-    got = state_of(hass, METER).attributes
+    meter = state_of(hass, METER)
+    got = meter.attributes
+    assert meter.state == STATE_UNKNOWN
+    assert got["last_error"] == "the advances invoiced could not all be split by energy"
     assert got["advance_now"] == 56.51
     assert got["advance_split"] == "incomplete"
     assert got["advances_to_come"] == round(3 * 56.51, 2)
@@ -346,3 +363,6 @@ async def test_a_period_over_and_not_billed_ends_at_its_reading(
     assert got["measured_offtake_kwh"] == (9900 - 7722) + (14500 - 11036)
     assert got["measured_injection_kwh"] == (10200 - 8526) + (6700 - 3355)
     assert got["offtake_kwh"] == got["measured_offtake_kwh"]
+    # No advance left before the reading: the next period's.
+    assert got["advances_left"] == 0
+    assert float(state_of(hass, METER).state) == got["after_reading"]

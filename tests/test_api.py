@@ -450,17 +450,24 @@ def test_advance_amounts_are_parsed() -> None:
                     "meterDetails": {
                         "ean": "541449000000000001",
                         "energyType": "Electricity",
+                        "meterReadingMonth": 1,
                     },
                     "details": {
                         "currentAmount": 56.51,
                         "recommendedAmount": 554.43,
                         "monthsUntilMeterReadingMonth": 3,
                         "amountDueForMeterReadingMonth": 1663.29,
+                        "minAmount": 277,
+                        "maxAmount": 2500,
                     },
                 },
                 {"meterDetails": {"energyType": "Gas"}, "details": {}},
                 {
-                    "meterDetails": {"ean": "541449000000000099", "energyType": "Gas"},
+                    "meterDetails": {
+                        "ean": "541449000000000099",
+                        "energyType": "Gas",
+                        "meterReadingMonth": 13,
+                    },
                     "details": {
                         "currentAmount": "300",
                         "monthsUntilMeterReadingMonth": -1,
@@ -468,7 +475,12 @@ def test_advance_amounts_are_parsed() -> None:
                 },
                 "nonsense",
             ],
-            "totals": {"currentAmount": 356.51, "recommendedAmount": 861.13},
+            "totals": {
+                "currentAmount": 356.51,
+                "recommendedAmount": 861.13,
+                "minAmount": 430,
+                "maxAmount": 2500,
+            },
         }
     )
     assert got == api_billing.AdvanceAmounts(
@@ -476,12 +488,22 @@ def test_advance_amounts_are_parsed() -> None:
         recommended=861.13,
         contracts=(
             api_billing.ContractAdvance(
-                "541449000000000001", "Electricity", 56.51, 554.43, 3, 1663.29
+                "541449000000000001",
+                "Electricity",
+                56.51,
+                554.43,
+                3,
+                1663.29,
+                reading_month=1,
+                minimum=277,
+                maximum=2500,
             ),
             api_billing.ContractAdvance(
                 "541449000000000099", "Gas", None, None, None, None
             ),
         ),
+        minimum=430,
+        maximum=2500,
     )
     assert api_billing.advance_amounts(None) is None
 

@@ -34,11 +34,14 @@ from custom_components.eneco_be.provision import (
     ProvisionError,
     Volumes,
     advances,
+    catch_up,
     cost,
     index_volumes,
     parts,
     profile_range,
     project,
+    reading_end,
+    year_share,
 )
 
 
@@ -98,6 +101,7 @@ def test_a_year_is_priced_on_the_last_bill() -> None:
         latest=(date(2026, 7, 2), {"offtake_single": 3000}),
         profile=flat(2025),
         rates=None,
+        period_end=date(2026, 12, 31),
     )
     # 1000 kWh measured from 1 January to 1 July, and 2 July to 31 December
     # took 183 of the 365 days' 2000 kWh last year.
@@ -111,7 +115,7 @@ def test_a_year_is_priced_on_the_last_bill() -> None:
     assert got["energy_price"] == "last_bill"
     assert got["period_cost"] == round(period, 2)
     assert got["year_cost"] == round(period, 2)
-    assert got["monthly_advance"] == round(period / 12, 2)
+    assert got["after_reading"] == round(period / 12, 2)
 
 
 def test_without_a_profile_the_days_count_flat() -> None:
@@ -124,6 +128,7 @@ def test_without_a_profile_the_days_count_flat() -> None:
         latest=(date(2026, 7, 2), {"offtake_single": 3000}),
         profile={},
         rates=None,
+        period_end=date(2026, 12, 31),
     )
     assert got["volume_basis"] == "days"
     assert got["offtake_kwh"] == round(1000 + 2000 * 183 / 365, 1)
@@ -183,6 +188,7 @@ def test_readings_that_do_not_add_up_are_refused() -> None:
             latest=(date(2025, 12, 31), {"offtake_single": 1990}),
             profile=flat(2025),
             rates=None,
+            period_end=date(2026, 12, 31),
         )
 
 
@@ -215,6 +221,7 @@ def _gas(rates: dict[str, float] | None) -> dict[str, Any]:
         latest=(date(2026, 7, 2), {"offtake_single": 1600}),
         profile=flat(2025),
         rates=rates,
+        period_end=date(2026, 12, 31),
     )
 
 
@@ -245,7 +252,7 @@ def test_the_advances_of_the_period() -> None:
     A month gone by with no invoice is not one to come.
     """
     billed = {"2025-12": 50.0, "2026-01": 60.0, "2026-03": 60.0, "2026-10": 70.0}
-    paid, coming = advances(
+    paid, coming, left = advances(
         period=(date(2025, 12, 17), date(2026, 12, 16)),
         billed=billed,
         advance_now=80.0,
@@ -253,13 +260,13 @@ def test_the_advances_of_the_period() -> None:
     )
     assert paid == 190.0
     # November and December 2026.
-    assert coming == 160.0
+    assert (coming, left) == (160.0, 2)
     assert advances(
         period=(date(2025, 12, 17), date(2026, 12, 16)),
         billed=billed,
         advance_now=None,
         today=date(2026, 11, 26),
-    ) == (190.0, None)
+    ) == (190.0, None, 2)
 
 
 # The yearly electricity bill of 1 February 2025 to 31 January 2026 of a
@@ -574,11 +581,12 @@ def test_a_compensated_household_against_its_own_bills() -> None:
         latest=(date(2026, 11, 25), NOW),
         profile={m: MonthVolume(v, 0.0) for m, v in OFFTAKE_2025.items()},
         rates=None,
+        period_end=date(2027, 1, 31),
     )
     assert got["measured_offtake_kwh"] == 3850.0
     assert got["measured_injection_kwh"] == 4786.0
     assert got["period_cost"] == pytest.approx(996, rel=0.05)
-    assert got["monthly_advance"] == pytest.approx(83, rel=0.05)
+    assert got["after_reading"] == pytest.approx(83, rel=0.05)
 
 
 def test_the_profile_is_asked_in_whole_months() -> None:
@@ -591,3 +599,89 @@ def test_the_profile_is_asked_in_whole_months() -> None:
         date(2024, 2, 1),
         date(2025, 2, 28),
     )
+
+
+def test_the_period_ends_with_the_reading_month() -> None:
+    """The month the portal gives, the one nearest a year on."""
+    assert reading_end(date(2026, 2, 1), 1) == (date(2027, 1, 31), "reading_month")
+    # Read on 17 December last time, in January this time: a longer period.
+    assert reading_end(date(2025, 12, 17), 1) == (date(2027, 1, 31), "reading_month")
+    assert reading_end(date(2026, 2, 1), 2) == (date(2027, 2, 28), "reading_month")
+    assert reading_end(date(2025, 12, 17), None) == (date(2026, 12, 16), "anniversary")
+
+
+def test_the_advance_that_brings_the_regularisation_to_zero() -> None:
+    """What is left to pay over the advances left, never below 0."""
+    assert catch_up(995.92, 583.13, 3) == 137.6
+    assert catch_up(1500.0, 2000.0, 2) == 0.0
+    assert catch_up(995.92, 583.13, 0) is None
+
+
+def test_the_rest_may_reach_past_the_last_period() -> None:
+    """Read in January after a bill closed on 16 December.
+
+    The days a year back from 17 December to 31 January weigh in too.
+    """
+    lines = [
+        line("energy", "Conso", "2025-01-01", "2025-12-16", 3500, "kWh", 0.10, 0, 350),
+    ]
+    profile = {**flat(2025), "2026-01": MonthVolume(31.0, 0.0)}
+    got = project(
+        energy_type="Electricity",
+        lines=lines,
+        bill_period=(date(2025, 1, 1), date(2025, 12, 16)),
+        bill_readings=({"offtake_single": 0}, {"offtake_single": 3500}),
+        latest=(date(2026, 12, 17), {"offtake_single": 7000}),
+        profile=profile,
+        rates=None,
+        period_end=date(2027, 1, 31),
+    )
+    # The 350 days of the last period took 3500 kWh, 10 a day: 17 December
+    # to 31 January a year back is 46 of those days.
+    assert got["offtake_kwh"] == 3500 + 460.0
+    assert got["period_cost"] == round((3500 + 460) * 0.10, 2)
+
+
+def test_a_period_longer_than_a_year_is_scaled_by_its_months() -> None:
+    """Two Januaries in 13 months weigh more than 365 of their 396 days.
+
+    The year is the weight of its 12 months, not a share of the days as if
+    they were alike.
+    """
+    profile = {f"2025-{n:02d}": 100.0 for n in range(1, 13)} | {"2025-01": 400.0}
+    # 1 January 2026 to 31 January 2027 weighs 1500 + 400.
+    assert year_share(date(2026, 1, 1), date(2027, 1, 31), profile) == pytest.approx(
+        1500 / 1900
+    )
+    # A whole year scales to itself, and a profile short of a month is flat.
+    assert year_share(date(2026, 2, 1), date(2027, 1, 31), profile) == pytest.approx(1)
+    assert year_share(date(2026, 1, 1), date(2027, 1, 31), {"2025-01": 1.0}) == (
+        pytest.approx(365 / 396)
+    )
+
+
+def test_a_year_from_a_long_period_is_scaled_by_its_months() -> None:
+    """The advance after the reading takes a year out of 13 months.
+
+    On the profile, 3800 kWh with two heavy Januaries are 3000 a year.
+    """
+    lines = [
+        line("energy", "Conso", "2025-01-01", "2025-12-31", 3650, "kWh", 0.10, 0, 365)
+    ]
+    profile = {
+        f"2025-{n:02d}": MonthVolume(400.0 if n == 1 else 100.0, 0.0)
+        for n in range(1, 13)
+    }
+    got = project(
+        energy_type="Electricity",
+        lines=lines,
+        bill_period=(date(2025, 1, 1), date(2025, 12, 31)),
+        bill_readings=({"offtake_single": 0}, {"offtake_single": 3650}),
+        latest=(date(2027, 2, 1), {"offtake_single": 3650 + 3800}),
+        profile=profile,
+        rates=None,
+        period_end=date(2027, 1, 31),
+    )
+    assert got["period_cost"] == 380.0
+    assert got["year_cost"] == pytest.approx(300.0, abs=0.01)
+    assert got["after_reading"] == 25.0

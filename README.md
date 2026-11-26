@@ -313,13 +313,16 @@ what solar panels feed back under the compensation scheme: on a compensated
 household it can ask several times too much. `sensor.*_monthly_advance_needed`
 works it out from your own last yearly bill instead:
 
-- **The billing period** runs a year from the day after the last yearly bill
-  ends.
+- **The billing period** starts the day after the last yearly bill ends and
+  ends with the month the portal gives for the next meter reading, the one
+  nearest a year on, or a year after it started when the portal does not
+  say.
 - **What it uses so far** is the meter's newest reading less the official
   reading that closed that bill, the way the bill counts it.
-- **The rest of it** is the last period's volume times the share of it its
-  remaining days took: on the portal's monthly profile for what is taken,
-  and on a solar profile for what is fed back.
+- **The rest of it** is the last period's volume times the weight its
+  remaining days had a year earlier against the last period's: on the
+  portal's monthly profile for what is taken, and on a solar profile for
+  what is fed back.
 - **The price** is the last bill's, line by line at its latest unit price:
   each kWh line on the volume that bill charged it on, net (taken less fed
   back), gross or fed back, the yearly lines by the day, and the prosumer cap
@@ -329,28 +332,40 @@ works it out from your own last yearly bill instead:
   entry checks the bill (2026.11.17 or newer), since the index can move a lot
   in a year; electricity energy stays at the bill's price for now.
 
-The state is a year like the running one at today's prices, divided by
-twelve: the amount to set once, which does not swing as the reading nears.
-The attributes say what is behind it:
+The state is the advance to pay until the reading for the next regularisation
+to come to about 0: what the period will cost less the advances invoiced so
+far, divided by the advances left before the reading, never below 0. Once no
+advance is left before the reading, it is the next period's: a year like the
+running one at today's prices, divided by twelve, which `after_reading` always
+gives. A period longer or shorter than a year is brought to one on the
+profile, so one holding two Januaries is not taken for a colder year. Near the reading a small gap is divided by one or two months, so the
+amount moves more then. The attributes say what is behind it:
 
 | Attribute | Meaning |
 | --- | --- |
 | `advance_now` | What you pay for this meter today, as the portal splits it |
 | `difference` | The state less `advance_now` |
+| `after_reading` | The advance for the next period: `year_cost` divided by twelve |
+| `advances_left` | The advances still to be invoiced before the reading |
+| `portal_min`, `portal_max` | The range the portal lets this advance be set in |
 | `year_cost` | A year like the running one at today's prices |
 | `period_start`, `period_end`, `period_cost` | The running billing period and what it will cost |
-| `expected_regularisation` | What the next yearly bill should ask, negative for a refund, like `balance` |
+| `period_end_basis` | `reading_month`, or `anniversary` when the portal gave no reading month |
+| `expected_regularisation` | What the next yearly bill would ask at today's advance, negative for a refund, like `balance` |
 | `advances_billed`, `advances_to_come` | The advances of the period invoiced so far, and those left at `advance_now` |
 | `measured_until`, `measured_offtake_kwh`, `measured_injection_kwh` | The last day the meter readings cover, and what they show since the bill |
 | `offtake_kwh`, `injection_kwh`, `net_kwh` | The whole period's volumes, measured and projected |
 | `volume_basis` | `profile`, or `days` when the portal's profile was missing and each day counted the same |
 | `energy_price` | `price_integration` or `last_bill` |
-| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be |
+| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be, and the state is then unknown |
 
 The address sensor adds up its meters: `electricity` and `gas` are each
-one's share, `advance_now` what the portal says you pay in all, and
-`eneco_recommended` and `eneco_expected_regularisation` Eneco's own advice
-and what it expects at the reading, to compare with. It shows nothing, with
+one's share, `after_reading` the next period's total, `advance_now` what the
+portal says you pay in all, `portal_min` and `portal_max` the range it lets
+the total be set in, and `eneco_recommended` and
+`eneco_expected_regularisation` Eneco's own advice and what it expects at the
+reading, to compare with. The portal's minimum follows its own projection, so
+on a compensated household the amount needed can be below what it accepts. It shows nothing, with
 the reason in `last_error`, while a contract the portal lists at the address
 has no meter set up here or no amount yet: a total missing one would pass for
 the whole.

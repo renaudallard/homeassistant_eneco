@@ -82,6 +82,11 @@ class ContractAdvance:
     recommended: float | None
     months_left: int | None
     due: float | None
+    # The month of the meter reading that closes the period, 1 to 12.
+    reading_month: int | None = None
+    # The range the portal lets the advance be set in.
+    minimum: float | None = None
+    maximum: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +96,8 @@ class AdvanceAmounts:
     current: float | None
     recommended: float | None
     contracts: tuple[ContractAdvance, ...]
+    minimum: float | None = None
+    maximum: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +126,13 @@ def amount(value: Any) -> float | None:
 def _months(value: Any) -> int | None:
     """Return a count of months the API sends, or None for one it does not."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _month_number(value: Any) -> int | None:
+    """Return a month the API sends, 1 to 12, or None for one it does not."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 12:
         return None
     return value
 
@@ -213,12 +227,17 @@ def advance_amounts(payload: Any) -> AdvanceAmounts | None:
                 recommended=amount(details.get("recommendedAmount")),
                 months_left=_months(details.get("monthsUntilMeterReadingMonth")),
                 due=amount(details.get("amountDueForMeterReadingMonth")),
+                reading_month=_month_number(meter.get("meterReadingMonth")),
+                minimum=amount(details.get("minAmount")),
+                maximum=amount(details.get("maxAmount")),
             )
         )
     return AdvanceAmounts(
         current=amount(totals.get("currentAmount")),
         recommended=amount(totals.get("recommendedAmount")),
         contracts=tuple(contracts),
+        minimum=amount(totals.get("minAmount")),
+        maximum=amount(totals.get("maxAmount")),
     )
 
 
