@@ -28,6 +28,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from datetime import date
 from http import HTTPStatus
+import json
 import re
 from typing import Any
 
@@ -634,3 +635,66 @@ async def test_a_refused_password_is_not_tried_again(
         if method.lower() == "post" and str(url).endswith("/api/v1/authn")
     ]
     assert len(tries) == 1
+
+
+@pytest.mark.parametrize("error", [{"code": "X"}, ["X"]])
+def test_an_advance_error_of_another_shape_blocks_the_change(error: Any) -> None:
+    """An error that is not a name the portal uses still says something is wrong.
+
+    It raised TypeError, which no caller catches, and the whole read of the
+    bills failed with it.
+    """
+    got = api_billing.advance_amounts(
+        {
+            "advancePayments": [
+                {
+                    "meterDetails": {
+                        "ean": "541449000000000001",
+                        "energyType": "Electricity",
+                        "invoiceFrequency": "Yearly",
+                    },
+                    "details": {
+                        "currentAmount": 56.51,
+                        "recommendedAmountError": error,
+                    },
+                }
+            ],
+            "totals": {"currentAmount": 56.51},
+        }
+    )
+    assert got is not None
+    assert got.contracts[0].blocked == "the portal reports an error it does not name"
+
+
+@pytest.mark.parametrize(
+    "payload", [{"props": None}, {"props": {"pageProps": None}}, ["accounts"]]
+)
+async def test_a_dashboard_of_another_shape_lists_no_account(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession, payload: Any
+) -> None:
+    """It raised AttributeError in the flows instead of saying so."""
+    aioclient_mock.get(
+        "https://eneco.be/fr/my-eneco/dashboard/",
+        text='<script id="__NEXT_DATA__" type="application/json">'
+        f"{json.dumps(payload)}</script>",
+    )
+    mock_login(aioclient_mock, accounts=[])
+    api = client(session)
+    await api.async_login()
+    with pytest.raises(EnecoAuthError, match="listed no accounts"):
+        await api.async_get_accounts()
+
+
+async def test_readings_whose_indexes_are_not_a_list_have_none(
+    aioclient_mock: AiohttpClientMocker, session: ClientSession
+) -> None:
+    """A scalar raised TypeError, which no caller catches."""
+    mock_login(aioclient_mock, accounts=[])
+    aioclient_mock.get(
+        f"{API}/accounts/{ACCOUNT}/meter-readings",
+        json={"data": [{"date": "2026-11-25", "indexValues": 5}]},
+    )
+    api = client(session)
+    await api.async_login()
+    readings = await api.async_get_readings(ACCOUNT, EAN)
+    assert [reading.values for reading in readings] == [{}]

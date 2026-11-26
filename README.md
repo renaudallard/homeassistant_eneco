@@ -424,7 +424,8 @@ contract's proposed advance, `changes`, the energies that would change,
 proposes nothing while a contract of the address has no meter set up here or
 no amount yet, while one advance or none is left before the reading, or when
 the portal would refuse a change: payments overdue, a vacancy, an advance not
-available, or billing other than yearly.
+available, billing other than yearly, or an error the portal reports without
+a name this integration knows.
 
 Pressing the button reads everything again first, and sends nothing if any
 part of that fails: nothing is proposed from invoices, an advances page or

@@ -165,8 +165,12 @@ def _blocked(meter: dict[str, Any], details: dict[str, Any]) -> str | None:
         return "the advance is not available"
     if details.get("vacancyChangeRequested"):
         return "a vacancy is being requested"
-    if error in _BLOCKING_ERRORS:
-        return f"the portal reports {error}"
+    if isinstance(error, str):
+        return f"the portal reports {error}" if error in _BLOCKING_ERRORS else None
+    if error:
+        # Not a name the portal is known to use, so not one known to be
+        # harmless: what is set is the money debited.
+        return "the portal reports an error it does not name"
     return None
 
 

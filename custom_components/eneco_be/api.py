@@ -531,7 +531,9 @@ class EnecoClient:
         except ValueError as err:
             raise EnecoConnectionError("the dashboard payload was not JSON") from err
 
-        raw = data.get("props", {}).get("pageProps", {}).get("accounts")
+        raw: Any = data
+        for key in ("props", "pageProps", "accounts"):
+            raw = raw.get(key) if isinstance(raw, dict) else None
         if not isinstance(raw, list):
             raise EnecoAuthError("the dashboard listed no accounts")
 
@@ -638,7 +640,8 @@ class EnecoClient:
             if not isinstance(entry, dict):
                 continue
             values: dict[str, int] = {}
-            for index in entry.get("indexValues") or []:
+            indexes = entry.get("indexValues")
+            for index in indexes if isinstance(indexes, list) else []:
                 if not isinstance(index, dict):
                     continue
                 direction = index.get("direction")
