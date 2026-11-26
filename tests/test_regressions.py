@@ -53,6 +53,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 from custom_components.eneco_be.api import (
+    EnecoAuthError,
     EnecoClient,
     EnecoConnectionError,
     EnecoError,
@@ -1840,3 +1841,32 @@ def test_error_texts_hold_no_id_of_the_portal() -> None:
     for secret in (ACCOUNT, ADDRESS, "1-1000", EAN):
         assert secret not in text, secret
     assert text.endswith(" done")
+
+
+async def test_a_submission_failing_past_the_password_does_not_ask_for_it(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The portal giving no access token says nothing about the password.
+
+    It still raised a prompt saying Eneco no longer accepts it, which stayed
+    up after the next night went through.
+    """
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    client = coordinator_of(config_entry).client
+
+    async def no_token() -> str:
+        raise EnecoAuthError("the portal returned no access token")
+
+    monkeypatch.setattr(client, "_async_read_access_token", no_token)
+    client._token = None  # noqa: SLF001
+    await press_failing(hass)
+
+    assert not client.refused
+    assert state_of(hass, STATUS).attributes[ATTR_LAST_ERROR] == (
+        "the portal returned no access token"
+    )
+    assert not list(config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))

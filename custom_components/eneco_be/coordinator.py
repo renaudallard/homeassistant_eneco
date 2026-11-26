@@ -562,9 +562,14 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
                 values,
             )
         except EnecoAuthError as err:
-            _LOGGER.warning("Eneco no longer accepts the stored password: %s", err)
             state.error = str(err)
-            self.config_entry.async_start_reauth(self.hass)
+            # Only a refusal of the password needs a new one. Anything failing
+            # once Okta took it is the portal's, and the next night may pass.
+            if self.client.refused:
+                _LOGGER.warning("Eneco no longer accepts the stored password: %s", err)
+                self.config_entry.async_start_reauth(self.hass)
+            else:
+                _LOGGER.warning("Could not sign in to submit the readings: %s", err)
         except EnecoValidationError as err:
             _LOGGER.warning("Eneco rejected the readings: %s", err)
             state.error = ", ".join(err.codes)
