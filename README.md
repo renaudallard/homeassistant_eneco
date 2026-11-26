@@ -384,8 +384,8 @@ so one holding two Januaries is not taken for a colder year. With two
 advances left a gap is shared by two months, so the amount moves more then.
 While a yearly or closing bill newer than the one shown, and not known to be
 another meter's, is refused or not read, the period after the one shown is
-over, and the sensor shows nothing, with the reason in `last_error`. The attributes say
-what is behind it:
+over, and the sensor shows nothing, with the reason in `last_error`. The
+attributes say what is behind it:
 
 | Attribute | Meaning |
 | --- | --- |
