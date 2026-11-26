@@ -25,6 +25,7 @@
 """Tests for the monthly advance sensors, from the portal to the states."""
 
 from collections.abc import Sequence
+from datetime import date
 from http import HTTPStatus
 import json
 from pathlib import Path
@@ -36,7 +37,11 @@ from freezegun.api import FrozenDateTimeFactory
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.eneco_be.api import EnecoConnectionError, EnecoError
+from custom_components.eneco_be.api import (
+    EnecoConnectionError,
+    EnecoError,
+    ServiceDeliveryPoint,
+)
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
 from custom_components.eneco_be.bills import _address_state
 from custom_components.eneco_be.const import (
@@ -52,7 +57,15 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .bill_pdf import ELECTRICITY
-from .conftest import ACCOUNT, ADDRESS, EAN, METER_ID, mock_discovery, mock_login
+from .conftest import (
+    ACCOUNT,
+    ADDRESS,
+    EAN,
+    METER_ID,
+    meter_of,
+    mock_discovery,
+    mock_login,
+)
 from .test_bills import (
     ADVANCES,
     CONSUMPTION,
@@ -985,3 +998,57 @@ async def test_every_entity_has_its_name_in_the_strings(
     assert len(entities) > 10
     for item in entities:
         assert item.translation_key in strings.get(item.domain, {}), item.entity_id
+
+
+async def test_a_bill_shorter_than_a_year_asks_the_profile_a_year_back(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The rest of the period is weighed on the same days a year before.
+
+    The profile was asked from the bill's first month only, so after a bill
+    of half a year those days were never fetched, and the rest counted every
+    day the same: about a fifth off on a seasonal meter.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    year = {
+        "bills": [
+            {
+                "invoice_type": "YearlyBill",
+                "period_start": "2025-08-01",
+                "period_end": "2026-01-31",
+            }
+        ],
+        "lines": [],
+    }
+    volumes = AsyncMock(return_value={})
+    with (
+        patch.object(bills.client, "async_get_readings", AsyncMock(return_value=[])),
+        patch.object(bills.client, "async_get_monthly_volumes", volumes),
+    ):
+        await bills._async_provision(  # noqa: SLF001
+            ACCOUNT,
+            ADDRESS,
+            meter_of(entry).data,
+            ServiceDeliveryPoint(EAN, "Electricity", meter_number="M1"),
+            year,
+            [],
+            "the portal lists no advances",
+            date(2026, 4, 2),
+        )
+    assert volumes.await_args is not None
+    start, end = volumes.await_args.args[3:]
+    # A year before the period that starts on 1 February 2026.
+    assert start == date(2025, 2, 1)
+    assert end == date(2026, 1, 31)

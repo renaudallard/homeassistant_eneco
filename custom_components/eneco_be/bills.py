@@ -793,9 +793,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     account,
                     address,
                     point,
-                    # The last period, and the same days a year back as the
-                    # rest of this one, which may reach past it.
-                    *profile_range(first, max(last, year_before(end))),
+                    # The last period, and the same days a year back as this
+                    # one, which reach before it when it was shorter than a
+                    # year and past it when this one ends later.
+                    *profile_range(
+                        min(first, year_before(start)), max(last, year_before(end))
+                    ),
                 )
             )
         except EnecoAuthError:
