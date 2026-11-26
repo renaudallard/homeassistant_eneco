@@ -112,7 +112,8 @@ async def async_energy_rates(
     # again.
     except Exception as err:
         _LOGGER.debug("%s gave no energy rates: %r", entry.title, err)
-        raise RatesUnavailableError(f"{entry.title} gave no rates: {err}") from err
+        why = str(err) or type(err).__name__
+        raise RatesUnavailableError(f"{entry.title} gave no rates: {why}") from err
     months = answer.get("months") if answer is not None else None
     rates: dict[str, float] = {}
     for row in months if isinstance(months, list) else []:

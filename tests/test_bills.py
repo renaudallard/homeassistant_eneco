@@ -2391,3 +2391,39 @@ async def test_an_unread_bill_of_two_meters_says_it_may_be_the_others(
         "the bill of 2026-04-27 was not read: it has no document,"
         " so it may be another meter's"
     )
+
+
+async def test_a_loaded_gas_price_entry_is_taken_before_one_retrying(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry
+) -> None:
+    """Two entries name the bill; the first listed is retrying its setup.
+
+    The loaded one answers, and why another gave nothing says its own
+    reason, or its kind when it has none.
+    """
+    unique_id = f"{EAN}_last_bill"
+    sensor = entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
+    price_entry(
+        hass,
+        "be_gas_prices",
+        "bill_entity",
+        sensor.entity_id,
+        ConfigEntryState.SETUP_RETRY,
+    )
+    price_entry(hass, "be_gas_prices", "bill_entity", sensor.entity_id)
+    calls = 0
+
+    async def handler(call: ServiceCall) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise TimeoutError
+        return {"months": [{"month": "2026-02", "eur_per_kwh": 0.1}]}
+
+    hass.services.async_register(
+        "be_gas_prices", "energy_rate", handler, supports_response=SupportsResponse.ONLY
+    )
+    got = await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+    assert got == {"2026-02": 0.1}
+    with pytest.raises(RatesUnavailableError, match="gave no rates: TimeoutError$"):
+        await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
