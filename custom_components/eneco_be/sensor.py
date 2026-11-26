@@ -51,7 +51,13 @@ from .const import (
     LAST_BILL,
 )
 from .coordinator import EnecoCoordinator, EnecoState
-from .entity import BillEntity, EnecoEntity, address_device, remove_entities
+from .entity import (
+    BillEntity,
+    EnecoEntity,
+    address_device,
+    numbered_addresses,
+    remove_entities,
+)
 
 STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
@@ -170,13 +176,10 @@ async def async_setup_entry(
     if bills is None:
         remove_entities(hass, entry, ("sensor", "binary_sensor"), BILL_SUFFIXES)
         return
-    addresses = sorted(
-        {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
-    )
+    meters = [c.meter for c in entry.runtime_data.coordinators.values()]
     adjust = bool(entry.options.get(CONF_ADJUST_ADVANCE))
     per_address: list[SensorEntity] = []
-    for n, address in enumerate(addresses):
-        number = n + 1 if len(addresses) > 1 else 0
+    for address, number in numbered_addresses(meters):
         per_address += [
             AddressAdvanceSensor(bills, entry.entry_id, address, number),
             AddressCurrentAdvanceSensor(bills, entry.entry_id, address, number),

@@ -35,9 +35,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import EnecoConfigEntry
 from .api import EnecoError
 from .bills import BillCoordinator
-from .const import CONF_ADDRESS, CONF_ADJUST_ADVANCE, CONF_EAN
+from .const import CONF_ADJUST_ADVANCE, CONF_EAN
 from .coordinator import EnecoCoordinator
-from .entity import EnecoEntity, address_device, remove_entities
+from .entity import EnecoEntity, address_device, numbered_addresses, remove_entities
 
 DESCRIPTION = ButtonEntityDescription(key="submit", translation_key="submit")
 APPLY_ADVANCE = "apply_advance"
@@ -57,14 +57,10 @@ async def async_setup_entry(
     if bills is None or not entry.options.get(CONF_ADJUST_ADVANCE):
         remove_entities(hass, entry, ("button",), (f"_{APPLY_ADVANCE}",))
         return
-    addresses = sorted(
-        {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
-    )
+    meters = [c.meter for c in entry.runtime_data.coordinators.values()]
     async_add_entities(
-        ApplyAdvanceButton(
-            bills, entry.entry_id, address, n + 1 if len(addresses) > 1 else 0
-        )
-        for n, address in enumerate(addresses)
+        ApplyAdvanceButton(bills, entry.entry_id, address, number)
+        for address, number in numbered_addresses(meters)
     )
 
 

@@ -76,6 +76,18 @@ def address_device(entry_id: str, address: str, number: int) -> DeviceInfo:
     )
 
 
+def numbered_addresses(meters: list[Mapping[str, Any]]) -> list[tuple[str, int]]:
+    """Return the addresses of the meters, each with the number of its device.
+
+    The number tells the addresses of one login apart, 0 when it has only one.
+    """
+    addresses = sorted({meter[CONF_ADDRESS] for meter in meters})
+    return [
+        (address, n + 1 if len(addresses) > 1 else 0)
+        for n, address in enumerate(addresses)
+    ]
+
+
 @callback
 def remove_entities(
     hass: HomeAssistant,
