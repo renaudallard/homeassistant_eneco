@@ -2398,8 +2398,8 @@ async def test_a_loaded_gas_price_entry_is_taken_before_one_retrying(
 ) -> None:
     """Two entries name the bill; the first listed is retrying its setup.
 
-    The loaded one answers, and why another gave nothing says its own
-    reason, or its kind when it has none.
+    The loaded one answers; when it then fails with no text of its own,
+    the error gives the kind of failure.
     """
     unique_id = f"{EAN}_last_bill"
     sensor = entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
