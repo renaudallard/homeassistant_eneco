@@ -227,7 +227,7 @@ download, and their billing lines become more sensors per meter:
 | `sensor.*_monthly_advance_needed` | The monthly advance the meter needs, VAT included, in EUR |
 | `sensor.*_current_advance` | What Eneco bills the meter's contract each month now, VAT included, in EUR |
 
-and one more for each delivery address, on a device of its own named *Eneco
+and two for each delivery address, on a device of its own named *Eneco
 advance*:
 
 | Entity | Purpose |
@@ -375,9 +375,9 @@ The attributes say what is behind it:
 | `advances_billed`, `advances_to_come` | The advances of the period invoiced so far, and those left at `advance_now` |
 | `measured_until`, `measured_offtake_kwh`, `measured_injection_kwh` | The last day the meter readings cover, and what they show since the bill |
 | `offtake_kwh`, `injection_kwh`, `net_kwh` | The whole period's volumes, measured and projected |
-| `volume_basis` | `profile`, or `days` when the portal's profile was missing and each day counted the same |
+| `volume_basis` | `profile`, `days` when the portal's profile was missing and each day counted the same, or `measured` once the period is over and the readings cover all of it |
 | `energy_price` | `price_integration` or `last_bill` |
-| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be, and the state is then unknown. At an address with two meters of one energy no advance invoice is split, since none names its meter, so `incomplete` once one is invoiced |
+| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be, and the state is then unknown until one advance or none is left. At an address with two meters of one energy no advance invoice is split, since none names its meter, so `incomplete` once one is invoiced |
 
 The address sensor adds up its meters, two of one energy included:
 `electricity` and `gas` are what the meters of each need, `after_reading`
@@ -446,7 +446,9 @@ French wording has been seen: on another, the advance is split on today's
 advances and `advance_split` says so. Nothing is sent to the advances page
 unless the advance button above is pressed.
 
-Turning the option off removes these sensors and what was read.
+Turning this option off removes the proposed advance sensor and the button;
+turning *Read bills* off removes every bill and advance sensor and what was
+read.
 
 ## Upgrading from 0.3 or earlier
 
