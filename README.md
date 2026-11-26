@@ -76,11 +76,13 @@ it.
 
 ## Installation
 
-### HACS
+### Home Assistant Marketplace or HACS
 
-Add this repository as a custom repository of type *Integration*, install it,
-and restart Home Assistant. Releases ship as a single archive, so downloading
-one is a single request rather than a file at a time.
+Search for **Eneco Belgium** under *Settings > Marketplace* (Home Assistant
+2026.11 and later), or in HACS on an older version, install it and restart
+Home Assistant. If it is not listed yet, add this repository as a custom
+repository of type *Integration* first. Releases ship as a single archive, so
+downloading one is a single request rather than a file at a time.
 
 ### Manually
 
