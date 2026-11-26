@@ -641,16 +641,19 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
         converter = VolumeConverter if gas else EnergyConverter
 
         unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
-        if unit == wanted:
-            value = round(raw)
-        else:
+        if unit != wanted:
             try:
-                value = round(converter.convert(raw, unit, wanted))
+                raw = converter.convert(raw, unit, wanted)
             except (HomeAssistantError, TypeError):  # fmt: skip
                 _LOGGER.warning(
                     "%s reports %s, which cannot be read as %s", entity_id, unit, wanted
                 )
                 return None
+            # A value finite in MWh can be past what a float holds in kWh.
+            if not isfinite(raw):
+                _LOGGER.warning("%s reports a value too large to read", entity_id)
+                return None
+        value = round(raw)
 
         # An index is never negative, and the portal keeps it in a 32 bit
         # integer. Beyond that the store cannot hold the number either, and it

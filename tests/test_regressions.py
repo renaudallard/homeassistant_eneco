@@ -1870,3 +1870,28 @@ async def test_a_submission_failing_past_the_password_does_not_ask_for_it(
         "the portal returned no access token"
     )
     assert not list(config_entry.async_get_active_flows(hass, {SOURCE_REAUTH}))
+
+
+async def test_a_value_too_large_to_convert_is_no_reading(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A finite value in MWh can come out of the conversion as infinity.
+
+    round() then raised OverflowError, which nothing caught, and the
+    attempt failed with a traceback instead of naming the source.
+    """
+    set_sources(hass)
+    hass.states.async_set(
+        "sensor.export_day",
+        "1e306",
+        {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.MEGA_WATT_HOUR},
+    )
+    await setup_entry(hass, config_entry)
+    await press_failing(hass)
+
+    assert submissions(mock_portal) == []
+    assert state_of(hass, STATUS).attributes[ATTR_LAST_ERROR] == (
+        "no usable value from sensor.export_day"
+    )
