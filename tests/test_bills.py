@@ -1524,3 +1524,60 @@ async def test_a_bill_with_no_document_is_named(
     assert bill.attributes["last_error"] == (
         "the bill of 2025-03-20 was not read: it has no document"
     )
+
+
+async def test_an_unreadable_bill_of_two_meters_is_no_ones(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """With two meters of one energy, only the EAN a bill prints says whose.
+
+    One whose PDF would not read was taken as this meter's, so the other
+    meter's yearly bill ended this one's year, with no error.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    invoice("NB1", "YearlyBill", "2025-06-01"),
+                    invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+                    invoice("CN1", "YearlyBill", "2024-02-20"),
+                ]
+            }
+        },
+    )
+    mock_advances(aioclient_mock)
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    # Served the way the website does, but not a PDF that reads.
+    url = document("NB1")
+    slashed = url.replace("/NB1?", "/NB1/?")
+    aioclient_mock.get(
+        url,
+        status=HTTPStatus.PERMANENT_REDIRECT,
+        headers={"Location": slashed.removeprefix("https://eneco.be")},
+    )
+    aioclient_mock.get(slashed, content=b"%PDF-1.4\nbroken\n")
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN1", DEARER)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == [
+        "IntermediaryInvoice",
+        "YearlyBill",
+    ]
+    assert bill.attributes["last_error"].startswith(
+        "the bill of 2025-06-01 was not read"
+    )

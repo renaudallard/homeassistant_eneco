@@ -698,6 +698,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     error = error or got
                     continue
                 seen = got
+            if shared and seen is not None and seen["eans"] is None:
+                # Only the EAN it prints says whose it is: one that cannot
+                # be read may be the other meter's, and end this year.
+                error = error or _not_read(invoice, seen.get("error") or "unread")
+                continue
             if seen is not None and not _ours(seen, ean):
                 continue
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
