@@ -329,10 +329,10 @@ a dashboard or used in an automation in place of the Repairs cards.
   the year, a bill whose PDF cannot be read, that has no PDF yet, or that did
   not download that day, is passed over; if it ends the day the year begins
   and the next bill of this meter does not follow on, it was what closed the
-  year, which stands. An intermediary bill ending as the year begins, or one the invoice
-  list gives no days, may be missing from it: unless a bill of this meter
-  joins the year after it, `last_error` says it may be another meter's. On
-  monthly billing, a bill of another kind is passed over.
+  year, which stands. An intermediary bill ending as the year begins, or one
+  the invoice list gives no days, may be missing from it: unless a bill of
+  this meter joins the year after it, `last_error` says it may be another
+  meter's. On monthly billing, a bill of another kind is passed over.
 - **Private.** The PDF is fetched from eneco.be with the login's own session,
   read inside Home Assistant and sent nowhere else. The `lines` attribute is
   not written to the history.
@@ -468,17 +468,16 @@ those.
 
 Pressing the button reads everything again first, and sends nothing if the
 invoices, the advances page, or a meter's readings or consumption profile
-cannot be read again: nothing is proposed from what was left standing from
-an earlier day, and the proposed advance sensor gives the reason in
-`last_error`. An advance invoice
-whose PDF does not download is split on today's advances instead, which
-`advance_split` shows as `estimated`, or left unsplit, and nothing proposed,
-when those give no share. Then it sets on My Eneco the advance of
-each contract that changes, as the portal's own advances page does, and
-reads again so the sensors show what is billed now. Each change is logged,
-and when one contract is set and the next refused, the error says which was
-set. Eneco may take the change in for the next advance rather than the one
-being invoiced.
+cannot be read again: nothing is proposed from what was left standing from an
+earlier day, and the proposed advance sensor gives the reason in
+`last_error`. An advance invoice whose PDF does not download is split on
+today's advances instead, which `advance_split` shows as `estimated`, or left
+unsplit, and nothing proposed, when those give no share. Then it sets on My
+Eneco the advance of each contract that changes, as the portal's own advances
+page does, and reads again so the sensors show what is billed now. Each
+change is logged, and when one contract is set and the next refused, the
+error says which was set. Eneco may take the change in for the next advance
+rather than the one being invoiced.
 
 An advance invoice for both energies prints each one's share; it is read
 once, and used only when the shares add up to what the invoice list says it
