@@ -320,8 +320,8 @@ a dashboard or used in an automation in place of the Repairs cards.
   twelve monthly ones in a row, the sensor shows nothing and `last_error` says
   why. A refused bill is not fetched again, one that would not download is
   tried again the next day. Where two meters of one energy share the address,
-  only the EAN a bill prints says whose it is; one whose PDF cannot be read
-  is told by the days the invoice list gives it: billing days of the year
+  only the EAN a bill prints says whose it is; one whose PDF cannot be read,
+  or not downloaded that day, is told by the days the invoice list gives it: billing days of the year
   found, it is the other meter's, and ending where that year starts, it
   closes it, unless an intermediary bill ends that day too. One with no such
   days ends the year, and `last_error` says it may be another meter's.

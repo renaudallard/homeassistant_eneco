@@ -1828,3 +1828,65 @@ async def test_an_intermediary_comes_before_a_bill_ending_the_same_day(
         "YearlyBill",
     ]
     assert bill.attributes["last_error"] is None
+
+
+async def test_a_bill_not_downloaded_of_two_meters_still_ends_the_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """With two meters of one energy, whose bill it is waits on its PDF.
+
+    One that would not download was passed over, so the bill of the year
+    before ended nothing, and a year two years old was shown.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    billed(
+                        invoice("CN3", "YearlyBill", "2026-04-26"),
+                        "2025-02-01",
+                        "2026-02-01",
+                    ),
+                    billed(
+                        invoice("CN2", "YearlyBill", "2025-03-01"),
+                        "2024-02-15",
+                        "2025-02-01",
+                    ),
+                    billed(
+                        invoice("IN1", "IntermediaryInvoice", "2024-03-01"),
+                        "2023-06-01",
+                        "2024-02-15",
+                    ),
+                    billed(
+                        invoice("CN1", "YearlyBill", "2023-07-20"),
+                        "2022-06-01",
+                        "2023-06-01",
+                    ),
+                ]
+            }
+        },
+    )
+    mock_advances(aioclient_mock)
+    mock_bill(aioclient_mock, "CN3", ELECTRICITY)
+    aioclient_mock.get(document("CN2"), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+    mock_bill(aioclient_mock, "IN1", year_before("14/02/2024"))
+    mock_bill(aioclient_mock, "CN1", year_before("31/01/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2025-02-01"
+    assert bill.attributes["last_error"].startswith(
+        "the bill of 2025-03-01 was not read"
+    )

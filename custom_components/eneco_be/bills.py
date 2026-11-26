@@ -594,9 +594,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if seen is None and shared:
                 got = await self._async_seen(invoice)
                 if isinstance(got, str):
+                    # Not downloaded, whose it is is not known: as for one
+                    # that would not read, its days say where the year ends.
                     error = error or got
-                    continue
-                seen = got
+                    seen = {"eans": None, "error": got, "bill": None}
+                else:
+                    seen = got
             # Only the EAN it prints says whose it is, so one that cannot be
             # read may be either meter's.
             unsure = shared and seen is not None and seen["eans"] is None
