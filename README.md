@@ -437,8 +437,11 @@ proposes nothing while a contract of the address has no meter set up here or
 no amount yet, while one advance or none is left before the reading, while
 two accounts of the login share the address, or when
 the portal would refuse a change: payments overdue, a vacancy, an advance not
-available, billing other than yearly, or an error the portal reports without
-a name this integration knows.
+available, billing other than yearly, or one of the errors its own advances
+page refuses a change on: `InvoiceOrEndnoteNeedsToBeCreatedFirst`,
+`NoContractorFoundForConnection` or `LastAdvanceDatetimeEqualToBillingDate`.
+An error the portal gives in another form than a name is taken for one of
+those.
 
 Pressing the button reads everything again first, and sends nothing if any
 part of that fails: nothing is proposed from invoices, an advances page or
