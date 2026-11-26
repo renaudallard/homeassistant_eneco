@@ -26,6 +26,8 @@
 
 from collections.abc import Sequence
 from http import HTTPStatus
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -955,3 +957,31 @@ async def test_the_apply_button_stays_after_a_read_that_failed(
 
     assert not bills.last_update_success
     assert state_of(hass, APPLY).state != STATE_UNAVAILABLE
+
+
+async def test_every_entity_has_its_name_in_the_strings(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Most keys are set from constants, which the translations check cannot see.
+
+    A key missing from strings.json shows the entity under the device name
+    alone, and nothing else would notice.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+
+    path = Path(__file__).parent.parent / "custom_components" / DOMAIN / "strings.json"
+    strings = json.loads(path.read_text(encoding="utf-8"))["entity"]
+    entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    assert len(entities) > 10
+    for item in entities:
+        assert item.translation_key in strings.get(item.domain, {}), item.entity_id
