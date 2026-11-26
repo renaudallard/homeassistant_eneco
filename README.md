@@ -323,8 +323,8 @@ a dashboard or used in an automation in place of the Repairs cards.
   only the EAN a bill prints says whose it is; one whose PDF cannot be read
   is told by the days the invoice list gives it: billing days of the year
   found, it is the other meter's, and ending where that year starts, it
-  closes it. One with no such days ends the year, and `last_error` says it
-  may be another meter's.
+  closes it, unless an intermediary bill ends that day too. One with no such
+  days ends the year, and `last_error` says it may be another meter's.
 - **Private.** The PDF is fetched from eneco.be with the login's own session,
   read inside Home Assistant and sent nowhere else. The `lines` attribute is
   not written to the history.

@@ -1758,3 +1758,73 @@ async def test_an_old_bill_with_no_document_is_no_error_for_two_meters(
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["period_start"] == "2025-02-01"
     assert bill.attributes["last_error"] is None
+
+
+async def test_an_intermediary_comes_before_a_bill_ending_the_same_day(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The other meter's unreadable bill ending the day this one's does.
+
+    Issued later, it came first, seemed to close the year where it begins,
+    and the year was the yearly bill without its intermediary, unsaid.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    billed(
+                        invoice("CN2", "YearlyBill", "2026-04-26"),
+                        "2025-03-15",
+                        "2026-02-01",
+                    ),
+                    billed(
+                        invoice("NB1", "ClosingBill", "2025-04-10"),
+                        "2024-06-01",
+                        "2025-03-15",
+                    ),
+                    billed(
+                        invoice("IN1", "IntermediaryInvoice", "2025-03-20"),
+                        "2024-02-15",
+                        "2025-03-15",
+                    ),
+                    billed(
+                        invoice("CN1", "YearlyBill", "2024-02-20"),
+                        "2023-02-15",
+                        "2024-02-15",
+                    ),
+                ]
+            }
+        },
+    )
+    mock_advances(aioclient_mock)
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    url = document("NB1")
+    slashed = url.replace("/NB1?", "/NB1/?")
+    aioclient_mock.get(
+        url,
+        status=HTTPStatus.PERMANENT_REDIRECT,
+        headers={"Location": slashed.removeprefix("https://eneco.be")},
+    )
+    aioclient_mock.get(slashed, content=b"%PDF-1.4\\nbroken\\n")
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN1", DEARER)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == [
+        "IntermediaryInvoice",
+        "YearlyBill",
+    ]
+    assert bill.attributes["last_error"] is None

@@ -579,6 +579,14 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Whether an intermediary bill was passed over for want of a year.
         waiting = False
         ean = meter[CONF_EAN]
+        # Where an intermediary bill ends, a year goes on: an unreadable bill
+        # ending the same day, the other meter's, is no year's end.
+        goes_on = {
+            i.period_end
+            for i in invoices
+            if i.kind == INTERMEDIARY
+            and i.energy_type in (meter[CONF_ENERGY_TYPE], "Both")
+        }
         for invoice in invoices:
             if invoice.energy_type not in (meter[CONF_ENERGY_TYPE], "Both"):
                 continue
@@ -607,6 +615,8 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
             if run and not monthly and invoice.kind != INTERMEDIARY:
                 # The bill of the year before, told from the list unread.
+                if unsure and invoice.period_end == begins in goes_on:
+                    continue
                 if unsure and invoice.period_end != begins:
                     error = error or not_read(
                         invoice,
