@@ -15,7 +15,7 @@
       },
       "reconfigure": {
         "title": "Anmeldung ändern",
-        "description": "Geben Sie die E-Mail-Adresse und das Passwort ein, mit denen sich dieses Login anmeldet. Seine Zähler bleiben, wie sie sind.",
+        "description": "Geben Sie die E-Mail-Adresse und das Passwort ein, mit denen sich dieser Login anmeldet. Seine Zähler bleiben, wie sie sind.",
         "data": {
           "email": "E-Mail-Adresse",
           "password": "Passwort"
