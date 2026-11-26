@@ -174,9 +174,10 @@ def _settled(
 
     An intermediary bill, on a product change, settles its days less their
     advances, so what it asked for, or paid back, is no longer owed at the
-    reading. One for both energies cannot be split, one giving no amount
-    cannot be counted, and with two meters of one energy none is told apart:
-    None is returned then, with the reason.
+    reading. One for both energies cannot be split, and one giving no amount
+    cannot be counted. With two meters of one energy the advances are not
+    told apart, so neither is what these settled. None is returned then,
+    with the reason.
     """
     settling = [
         i

@@ -326,8 +326,8 @@ a dashboard or used in an automation in place of the Repairs cards.
   why. A refused bill is not fetched again, one that would not download is
   tried again the next day. Where two meters of one energy share the address,
   only the EAN a bill prints says whose it is. Once a yearly bill has begun
-  the year, a bill whose PDF cannot be read, or that did not download that
-  day, is passed over; if it ends the day the year begins and the next bill
+  the year, a bill whose PDF cannot be read, that has no PDF yet, or that did
+  not download that day, is passed over; if it ends the day the year begins and the next bill
   of this meter does not follow on, it was what closed the year, which
   stands. An intermediary bill ending as the year begins, or one the invoice
   list gives no days, may be missing from it: unless a bill of this meter
@@ -404,7 +404,7 @@ attributes say what is behind it:
 | `period_end_basis` | `reading_month`, or `anniversary` when the portal gave no reading month |
 | `expected_regularisation` | What the next yearly bill would ask at today's advance, negative for a refund, like `balance` |
 | `advances_billed`, `advances_to_come` | The advances of the period invoiced so far, and those left at `advance_now` |
-| `settled_by_bills` | What intermediary bills within the period, on a product change, already asked for, negative for a refund; taken off what is still owed. One for both energies, or with no amount, gives no advance |
+| `settled_by_bills` | What intermediary bills within the period, on a product change, already asked for, negative for a refund; taken off what is still owed. Unknown, and no advance given, when one is for both energies or gives no amount, or two meters of one energy share the address |
 | `measured_until`, `measured_offtake_kwh`, `measured_injection_kwh` | The last day the meter readings cover, and what they show since the bill |
 | `offtake_kwh`, `injection_kwh`, `net_kwh` | The whole period's volumes, measured and projected |
 | `volume_basis` | `profile`, `days` when the portal's profile was missing and each day counted the same, or `measured` once the period is over and the readings cover all of it |
