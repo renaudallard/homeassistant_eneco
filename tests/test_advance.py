@@ -818,3 +818,26 @@ def test_two_meters_of_one_energy_both_count_at_the_address() -> None:
     assert attributes["electricity"] == 100.0
     assert attributes["after_reading"] == 100.0
     assert attributes["expected_regularisation"] == 20.0
+
+
+@pytest.mark.parametrize(
+    ("provision_error", "portal_error"),
+    [
+        ("the readings were not read: HTTP 500", None),
+        (None, "the advances were not read"),
+    ],
+)
+def test_the_address_total_says_why_it_was_not_read_again(
+    provision_error: str | None, portal_error: str | None
+) -> None:
+    """A meter's advance left standing from an earlier day still adds up.
+
+    The address total showed it with no error, as if read today, while the
+    meter's own sensor said why it was not.
+    """
+    stale = {"monthly_advance": 50.0, "error": provision_error}
+    sensor = address_sensor({EAN: stale}, {"error": portal_error})
+    assert sensor.native_value == 50.0
+    assert sensor.extra_state_attributes["last_error"] == (
+        provision_error or portal_error
+    )

@@ -565,7 +565,11 @@ class AddressAdvanceSensor(AddressSensor):
             "eneco_expected_regularisation": portal.get(
                 "eneco_expected_regularisation"
             ),
-            ATTR_LAST_ERROR: error,
+            # Else why a meter's advance, or the page's, stands from an
+            # earlier day: it is still added up.
+            ATTR_LAST_ERROR: error
+            or next((p["error"] for _, p in meters if p.get("error")), None)
+            or portal.get("error"),
         }
 
 

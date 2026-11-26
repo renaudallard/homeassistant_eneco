@@ -389,7 +389,8 @@ reading, to compare with. The portal's minimum follows its own projection, so
 on a compensated household the amount needed can be below what it accepts. It shows nothing, with
 the reason in `last_error`, while a contract the portal lists at the address
 has no meter set up here or no amount yet: a total missing one would pass for
-the whole. The address sensors sit on an *Eneco advance* device, which goes
+the whole. A meter's amount or the advances page left standing from an earlier
+day is still added up, with the reason in `last_error`. The address sensors sit on an *Eneco advance* device, which goes
 with its sensors once the last meter at the address is removed or bills are
 no longer read.
 
