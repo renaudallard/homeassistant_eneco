@@ -55,7 +55,10 @@ from custom_components.eneco_be.const import (
     DOMAIN,
     SUBENTRY_METER,
 )
-from custom_components.eneco_be.sensor import AddressAdvanceSensor
+from custom_components.eneco_be.sensor import (
+    AddressAdvanceSensor,
+    AddressProposedAdvanceSensor,
+)
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -1126,3 +1129,29 @@ async def test_two_accounts_at_one_address_set_nothing(hass: HomeAssistant) -> N
     ):
         await bills.async_apply_advance(address)
     client.async_set_advance.assert_not_awaited()
+
+
+def test_the_proposal_adds_up_two_contracts_of_one_energy() -> None:
+    """Keyed by energy, the second contract replaced the first.
+
+    And the energy came twice in what would change.
+    """
+    coordinator = SimpleNamespace(
+        addresses={
+            ADDRESS: {
+                "proposal": {
+                    "amounts": {EAN: 100.0, OTHER_EAN: 50.0},
+                    "energies": {EAN: "Electricity", OTHER_EAN: "Electricity"},
+                    "changes": [EAN, OTHER_EAN],
+                    "total": 150.0,
+                    "exact": True,
+                    "error": None,
+                }
+            }
+        }
+    )
+    sensor = AddressProposedAdvanceSensor(coordinator, "entry", ADDRESS, 0)  # type: ignore[arg-type]
+    attributes = sensor.extra_state_attributes
+    assert attributes["electricity"] == 150.0
+    assert attributes["gas"] is None
+    assert attributes["changes"] == ["electricity"]

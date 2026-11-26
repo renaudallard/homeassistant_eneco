@@ -435,8 +435,9 @@ electricity cannot go down, gas is lowered instead and the total still comes
 out exact. Leaving everything as it is is one of the ways weighed, so the
 proposal never takes the total further off than what is paid now.
 
-The sensor's state is the total proposed, with `electricity` and `gas`, each
-contract's proposed advance, `changes`, the energies that would change,
+The sensor's state is the total proposed, with `electricity` and `gas`, what
+the contracts of each energy are proposed together, `changes`, the energies
+that would change,
 `exact`, whether the total is exactly what is needed, and `last_error`. It
 proposes nothing while a contract of the address has no meter set up here or
 no amount yet, while one advance or none is left before the reading, while

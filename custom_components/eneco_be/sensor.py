@@ -481,12 +481,16 @@ class AddressProposedAdvanceSensor(AddressSensor):
         proposal = self._proposal
         energies: dict[str, str] = proposal.get("energies") or {}
         amounts: dict[str, float] = proposal.get("amounts") or {}
-        by_energy = {energies[ean].lower(): amount for ean, amount in amounts.items()}
+        # Summed: an address can have two contracts of one energy.
+        by_energy: dict[str, float] = {}
+        for ean, amount in amounts.items():
+            kind = energies[ean].lower()
+            by_energy[kind] = round(by_energy.get(kind, 0.0) + amount, 2)
         return {
             "electricity": by_energy.get("electricity"),
             "gas": by_energy.get("gas"),
             "changes": sorted(
-                energies[ean].lower() for ean in proposal.get("changes") or []
+                {energies[ean].lower() for ean in proposal.get("changes") or []}
             ),
             "exact": proposal.get("exact"),
             ATTR_LAST_ERROR: proposal.get("error"),
