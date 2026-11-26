@@ -57,6 +57,7 @@ from custom_components.eneco_be.api import (
     EnecoConnectionError,
     EnecoError,
     Register,
+    _endpoint,
 )
 from custom_components.eneco_be.const import (
     ATTR_LAST_ERROR,
@@ -99,6 +100,7 @@ from homeassistant.util import dt as dt_util
 
 from .conftest import (
     ACCOUNT,
+    ADDRESS,
     API,
     EAN,
     EMAIL,
@@ -1811,3 +1813,30 @@ async def test_a_day_left_to_the_catch_up_keeps_its_time_after(
     await hass.async_block_till_done()
 
     assert submissions(mock_portal) == []
+
+
+async def test_the_diagnostics_hold_nothing_personal(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A user is asked to attach them to an issue, in public."""
+    set_sources(hass)
+    await setup_entry(hass, config_entry)
+    await press(hass)
+
+    report = str(await async_get_config_entry_diagnostics(hass, config_entry))
+    for secret in (PASSWORD, EMAIL, ACCOUNT, EAN, ADDRESS, METER_NUMBER):
+        assert secret not in report, secret
+
+
+def test_error_texts_hold_no_id_of_the_portal() -> None:
+    """Every id a REST path or its query carries is taken out."""
+    text = _endpoint(
+        f"Connection timeout to host {API}/accounts/{ACCOUNT}/delivery-addresses/"
+        f"{ADDRESS}/invoices and /accounts/{ACCOUNT}/contracts/1-1000/products"
+        f" and /meter-readings?eans={EAN} done"
+    )
+    for secret in (ACCOUNT, ADDRESS, "1-1000", EAN):
+        assert secret not in text, secret
+    assert text.endswith(" done")
