@@ -35,8 +35,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -52,7 +51,7 @@ from .const import (
     LAST_BILL,
 )
 from .coordinator import EnecoCoordinator, EnecoState
-from .entity import BillEntity, EnecoEntity, address_device
+from .entity import BillEntity, EnecoEntity, address_device, remove_entities
 
 STATUS_PENDING = "pending"
 STATUS_SUCCESS = "success"
@@ -169,7 +168,7 @@ async def async_setup_entry(
             ]
         async_add_entities(entities, config_subentry_id=subentry_id)
     if bills is None:
-        _remove_bill_sensors(hass, entry)
+        remove_entities(hass, entry, ("sensor", "binary_sensor"), BILL_SUFFIXES)
         return
     addresses = sorted(
         {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
@@ -188,26 +187,7 @@ async def async_setup_entry(
             )
     async_add_entities(per_address)
     if not adjust:
-        _remove(hass, entry, (f"_{PROPOSED_ADVANCE}",))
-
-
-@callback
-def _remove_bill_sensors(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
-    """Take the bill sensors away once reading bills is turned off."""
-    _remove(hass, entry, BILL_SUFFIXES)
-
-
-@callback
-def _remove(
-    hass: HomeAssistant, entry: EnecoConfigEntry, suffixes: tuple[str, ...]
-) -> None:
-    """Take away the sensors of the entry whose unique id ends with a suffix."""
-    registry = er.async_get(hass)
-    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if item.domain in ("sensor", "binary_sensor") and item.unique_id.endswith(
-            suffixes
-        ):
-            registry.async_remove(item.entity_id)
+        remove_entities(hass, entry, ("sensor",), (f"_{PROPOSED_ADVANCE}",))
 
 
 # The ends of the unique ids of every entity reading bills adds.

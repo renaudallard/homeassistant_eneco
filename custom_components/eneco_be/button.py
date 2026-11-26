@@ -27,9 +27,8 @@
 from typing import override
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -38,7 +37,7 @@ from .api import EnecoError
 from .bills import BillCoordinator
 from .const import CONF_ADDRESS, CONF_ADJUST_ADVANCE, CONF_EAN
 from .coordinator import EnecoCoordinator
-from .entity import EnecoEntity, address_device
+from .entity import EnecoEntity, address_device, remove_entities
 
 DESCRIPTION = ButtonEntityDescription(key="submit", translation_key="submit")
 APPLY_ADVANCE = "apply_advance"
@@ -56,7 +55,7 @@ async def async_setup_entry(
         )
     bills = entry.runtime_data.bills
     if bills is None or not entry.options.get(CONF_ADJUST_ADVANCE):
-        _remove_advance_buttons(hass, entry)
+        remove_entities(hass, entry, ("button",), (f"_{APPLY_ADVANCE}",))
         return
     addresses = sorted(
         {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
@@ -67,15 +66,6 @@ async def async_setup_entry(
         )
         for n, address in enumerate(addresses)
     )
-
-
-@callback
-def _remove_advance_buttons(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
-    """Take the advance button away once its option is turned off."""
-    registry = er.async_get(hass)
-    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if item.domain == "button" and item.unique_id.endswith(f"_{APPLY_ADVANCE}"):
-            registry.async_remove(item.entity_id)
 
 
 class EnecoSubmitButton(EnecoEntity, ButtonEntity):

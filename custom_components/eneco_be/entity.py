@@ -27,6 +27,9 @@
 from collections.abc import Mapping
 from typing import Any, override
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -71,6 +74,23 @@ def address_device(entry_id: str, address: str, number: int) -> DeviceInfo:
         name="Eneco advance" + (f" {number}" if number else ""),
         configuration_url=f"{WEB_HOST}/my-eneco/usage/",
     )
+
+
+@callback
+def remove_entities(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    domains: tuple[str, ...],
+    suffixes: tuple[str, ...],
+) -> None:
+    """Take away the entities of the entry whose unique id ends with a suffix.
+
+    For those an option added, once it is turned off.
+    """
+    registry = er.async_get(hass)
+    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if item.domain in domains and item.unique_id.endswith(suffixes):
+            registry.async_remove(item.entity_id)
 
 
 class EnecoEntity(CoordinatorEntity[EnecoCoordinator]):
