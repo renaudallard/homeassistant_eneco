@@ -2312,3 +2312,50 @@ async def test_why_a_gas_price_entry_gave_no_rates_is_said(
     )
     with pytest.raises(RatesUnavailableError, match="before the product switch"):
         await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+
+
+@pytest.mark.parametrize("newest", [False, True])
+async def test_a_bill_of_two_meters_with_no_document_is_named(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, newest: bool
+) -> None:
+    """The year's intermediary, or the newest yearly bill, has no PDF.
+
+    With two meters of one energy it was passed over before anything looked
+    at it, and the year short of it went unsaid, where one meter names it.
+    """
+    if newest:
+        listed = [
+            billed(
+                invoice("CN3", "YearlyBill", "2026-11-20"), "2026-02-01", "2026-11-01"
+            )
+            | {"documents": []},
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-02-01", "2026-02-01"
+            ),
+        ]
+        mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    else:
+        listed = [
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-03-15", "2026-02-01"
+            ),
+            billed(
+                invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+                "2024-02-15",
+                "2025-03-15",
+            )
+            | {"documents": []},
+            billed(
+                invoice("CN1", "YearlyBill", "2024-02-20"), "2023-02-15", "2024-02-15"
+            ),
+        ]
+        mock_bill(aioclient_mock, "CN2", SHORT)
+        mock_bill(aioclient_mock, "CN1", DEARER)
+    shared_portal(aioclient_mock, True, listed)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    issued = "2026-11-20" if newest else "2025-04-01"
+    assert bill.attributes["last_error"].startswith(
+        f"the bill of {issued} was not read"
+    )

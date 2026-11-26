@@ -181,15 +181,13 @@ def pass_over(
     """Weigh a bill of two meters of one energy that cannot be read.
 
     Return whether it is passed over, the bill that may close the year and
-    the one that may be missing from it, as they stand after it. With no
-    document, or once a yearly bill has begun the year, it is passed over:
-    whose it is cannot be told. Ending the day the year begins, a yearly or
-    closing bill may be what closes it, and an intermediary may be missing
-    from it; so may one the list gives no days. A monthly run passes over
-    any bill of another kind.
+    the one that may be missing from it, as they stand after it. Once a
+    yearly bill has begun the year, it is passed over: whose it is cannot be
+    told, with no document no more than with one that would not read.
+    Ending the day the year begins, a yearly or closing bill may be what
+    closes it, and an intermediary may be missing from it; so may one the
+    list gives no days. A monthly run passes over any bill of another kind.
     """
-    if not invoice.document_url:
-        return True, closes, missing
     if not run:
         return False, closes, missing
     if run[0]["invoice_type"] == MONTHLY:
