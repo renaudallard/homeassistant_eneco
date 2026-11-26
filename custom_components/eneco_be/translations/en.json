@@ -13,6 +13,18 @@
           "password": "Accounts protected by two-factor authentication cannot be used."
         }
       },
+      "reconfigure": {
+        "title": "Change sign in",
+        "description": "Enter the email and password this login signs in with. Its meters stay as they are.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The email address of your My Eneco account.",
+          "password": "Accounts protected by two-factor authentication cannot be used."
+        }
+      },
       "account": {
         "title": "Account",
         "description": "Choose the account whose meter readings you want to submit.",

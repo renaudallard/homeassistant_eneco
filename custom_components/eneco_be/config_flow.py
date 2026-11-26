@@ -153,7 +153,8 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
             known_email = None
 
         return self.async_show_form(
-            step_id="user",
+            # Its own text: reconfiguring picks no meter.
+            step_id="reconfigure" if self.source == SOURCE_RECONFIGURE else "user",
             data_schema=self.add_suggested_values_to_schema(
                 CREDENTIALS_SCHEMA,
                 {CONF_EMAIL: known_email} if known_email else None,

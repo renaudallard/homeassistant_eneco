@@ -408,7 +408,8 @@ async def test_reconfigure(
     client = coordinator_of(config_entry).client
     result = await config_entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "user"
+    # Its own text: the sign in form's asks to pick a first meter.
+    assert result["step_id"] == "reconfigure"
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: "new-secret"}
@@ -548,7 +549,7 @@ async def test_reconfigure_offers_the_address_already_on_file(
     config_entry.add_to_hass(hass)
     result = await config_entry.start_reconfigure_flow(hass)
 
-    assert result["step_id"] == "user"
+    assert result["step_id"] == "reconfigure"
     field = next(key for key in result["data_schema"].schema if key == CONF_EMAIL)
     assert field.description == {"suggested_value": EMAIL}
 

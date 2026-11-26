@@ -13,6 +13,18 @@
           "password": "Les comptes protégés par une authentification à deux facteurs ne peuvent pas être utilisés."
         }
       },
+      "reconfigure": {
+        "title": "Modifier la connexion",
+        "description": "Saisissez l'adresse e-mail et le mot de passe de cette connexion. Ses compteurs restent tels quels.",
+        "data": {
+          "email": "Adresse e-mail",
+          "password": "Mot de passe"
+        },
+        "data_description": {
+          "email": "L'adresse e-mail de votre compte My Eneco.",
+          "password": "Les comptes protégés par une authentification à deux facteurs ne peuvent pas être utilisés."
+        }
+      },
       "account": {
         "title": "Compte",
         "description": "Choisissez le compte dont vous voulez transmettre les relevés.",

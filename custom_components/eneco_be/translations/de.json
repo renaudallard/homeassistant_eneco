@@ -13,6 +13,18 @@
           "password": "Konten mit Zwei-Faktor-Authentifizierung können nicht verwendet werden."
         }
       },
+      "reconfigure": {
+        "title": "Anmeldung ändern",
+        "description": "Geben Sie die E-Mail-Adresse und das Passwort ein, mit denen sich dieses Login anmeldet. Seine Zähler bleiben, wie sie sind.",
+        "data": {
+          "email": "E-Mail-Adresse",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "email": "Die E-Mail-Adresse deines My Eneco Kontos.",
+          "password": "Konten mit Zwei-Faktor-Authentifizierung können nicht verwendet werden."
+        }
+      },
       "account": {
         "title": "Konto",
         "description": "Wähle das Konto, dessen Zählerstände du übermitteln willst.",

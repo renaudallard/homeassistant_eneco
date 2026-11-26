@@ -13,6 +13,18 @@
           "password": "Accounts met tweestapsverificatie kunnen niet worden gebruikt."
         }
       },
+      "reconfigure": {
+        "title": "Aanmelding wijzigen",
+        "description": "Vul het e-mailadres en wachtwoord in waarmee deze login zich aanmeldt. De meters blijven zoals ze zijn.",
+        "data": {
+          "email": "E-mailadres",
+          "password": "Wachtwoord"
+        },
+        "data_description": {
+          "email": "Het e-mailadres van je My Eneco account.",
+          "password": "Accounts met tweestapsverificatie kunnen niet worden gebruikt."
+        }
+      },
       "account": {
         "title": "Account",
         "description": "Kies het account waarvan je de meterstanden wilt doorgeven.",
