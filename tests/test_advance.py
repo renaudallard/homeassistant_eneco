@@ -1450,13 +1450,15 @@ async def test_an_intermediary_bill_of_the_period_is_counted(
     )
 
 
+@pytest.mark.parametrize("listed", [0, 1])
 async def test_two_meters_of_one_energy_set_up_here_are_shared(
-    hass: HomeAssistant,
+    hass: HomeAssistant, listed: int
 ) -> None:
     """Told only from the portal's meters at the address, which can be none.
 
     Each meter then took both contracts' advances as its own, and the
-    button would have lowered both.
+    button would have lowered both. With one listed, the other one set up
+    here is no meter of the address any more, and does not count.
     """
     address = "f" * 64
 
@@ -1480,8 +1482,9 @@ async def test_two_meters_of_one_energy_set_up_here_are_shared(
     client = SimpleNamespace(refused=False)
     bills = BillCoordinator(hass, entry, client)  # type: ignore[arg-type]
     provision = AsyncMock(return_value={"error": "x"})
+    points = {EAN: ServiceDeliveryPoint(EAN, "Electricity")} if listed else {}
     with (
-        patch.object(bills, "_async_list", AsyncMock(return_value=({}, []))),
+        patch.object(bills, "_async_list", AsyncMock(return_value=(points, []))),
         patch.object(
             bills, "_async_advance_amounts", AsyncMock(return_value="no advances")
         ),
@@ -1501,7 +1504,8 @@ async def test_two_meters_of_one_energy_set_up_here_are_shared(
         patch.object(bills, "_async_provision", provision),
     ):
         await bills.async_refresh()
-    assert [call.kwargs["shared"] for call in provision.await_args_list] == [True, True]
+    shared = [call.kwargs["shared"] for call in provision.await_args_list]
+    assert shared == [not listed, not listed]
 
 
 async def test_an_advance_worked_out_without_the_advances_page_says_so(

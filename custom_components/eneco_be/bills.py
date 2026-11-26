@@ -224,18 +224,14 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     for subentry_id in subentry_ids:
                         meter = meters[subentry_id]
                         kind = meter[CONF_ENERGY_TYPE]
-                        # The portal's meters at the address, or those set
-                        # up here, which a listing that gives none leaves.
-                        shared = (
-                            max(
-                                sum(p.energy_type == kind for p in points.values()),
-                                sum(
-                                    meters[s][CONF_ENERGY_TYPE] == kind
-                                    for s in subentry_ids
-                                ),
-                            )
-                            > 1
+                        # The portal's meters of the energy at the address,
+                        # or, where it lists none, those set up here: one
+                        # set up but not listed is no meter there any more.
+                        on_portal = sum(p.energy_type == kind for p in points.values())
+                        here = sum(
+                            meters[s][CONF_ENERGY_TYPE] == kind for s in subentry_ids
                         )
+                        shared = (on_portal or here) > 1
                         point = points.get(meter[CONF_EAN])
                         before = self.data.get(subentry_id) or {}
                         previous = before.get("provision")
