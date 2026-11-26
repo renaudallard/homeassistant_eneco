@@ -1293,13 +1293,14 @@ async def test_a_start_behind_the_trigger_keeps_the_success(
     config_entry: MockConfigEntry,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """Starting up can take minutes, and the trigger does not wait for it.
+    """The catch-up runs once Home Assistant tells it has started.
 
-    The catch-up runs when Home Assistant finishes starting, which can be well
-    after the trigger has fired. While that submission is still on the wire the
-    date is not recorded yet, so the catch-up ran a second pass behind it,
-    which found the date done and left already_submitted on the status sensor
-    for a day that had in fact just succeeded.
+    That comes after it is running, and the trigger can fire in between.
+    While that submission is still on the wire the date is not recorded yet,
+    so the catch-up ran a second pass behind it, which found the date done
+    and left already_submitted on the status sensor for a day that had in
+    fact just succeeded. A trigger firing while still starting leaves the
+    day to the catch-up instead, so it has to be running here.
     """
     release = asyncio.Event()
 
@@ -1322,16 +1323,22 @@ async def test_a_start_behind_the_trigger_keeps_the_success(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
-    # The trigger fires and its submission is still on the wire.
+    # Running, not yet told it started: the trigger fires, and its
+    # submission is still on the wire.
+    hass.set_state(CoreState.running)
     freezer.move_to(dt_util.now().replace(hour=12, minute=0, second=0))
     async_fire_time_changed(hass, dt_util.now())
-    await asyncio.sleep(0)
+    for _ in range(100):
+        await asyncio.sleep(0)
+    assert len(submissions(aioclient_mock)) == 1
     assert coordinator_of(config_entry).data.submitted_date is None
 
-    # Startup finishes a couple of minutes later, with the date not recorded
+    # Told it started a couple of minutes later, with the date not recorded
     # yet because the call has not come back.
     freezer.move_to(dt_util.now().replace(hour=12, minute=2, second=0))
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    for _ in range(100):
+        await asyncio.sleep(0)
     release.set()
     await hass.async_block_till_done()
 
