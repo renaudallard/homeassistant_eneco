@@ -40,6 +40,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 
 from custom_components.eneco_be import api, api_billing
 from custom_components.eneco_be.api import EnecoClient, EnecoError
+from custom_components.eneco_be.bill_compare import async_energy_rates
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.binary_sensor import threshold
 from custom_components.eneco_be.const import (
@@ -1060,6 +1061,18 @@ async def test_the_year_is_held_against_the_entry_checking_it(
         ),
         ("bill", {"cost": None}, "Power Flex priced nothing for the bill", None),
         ("bill", {"cost": True}, "Power Flex priced nothing for the bill", None),
+        (
+            "bill",
+            {"cost": float("nan"), "covered": True},
+            "Power Flex priced nothing for the bill",
+            None,
+        ),
+        (
+            "bill",
+            {"cost": float("inf"), "covered": True},
+            "Power Flex priced nothing for the bill",
+            None,
+        ),
     ],
 )
 async def test_a_year_not_priced_says_why(
@@ -1089,6 +1102,31 @@ async def test_a_year_not_priced_says_why(
     assert difference.attributes["expected"] == expected
     # The year itself still shows.
     assert state_of(hass, LAST_BILL).state == "1139.28"
+
+
+@pytest.mark.parametrize("rate", [float("nan"), float("inf"), 0.1])
+async def test_a_rate_that_is_no_number_is_not_taken(
+    hass: HomeAssistant, entity_registry: er.EntityRegistry, rate: float
+) -> None:
+    """A gas rate that is not a number would cost the period nothing or all.
+
+    The advance proposed from it would be the contract's minimum or maximum.
+    """
+    unique_id = f"{EAN}_last_bill"
+    sensor = entity_registry.async_get_or_create("sensor", DOMAIN, unique_id)
+    price_entry(hass, checks=sensor.entity_id)
+
+    async def handler(call: ServiceCall) -> Any:
+        return {"months": [{"month": "2026-02", "eur_per_kwh": rate}]}
+
+    hass.services.async_register(
+        "be_electricity_prices",
+        "energy_rate",
+        handler,
+        supports_response=SupportsResponse.ONLY,
+    )
+    got = await async_energy_rates(hass, unique_id, "2026-02-01", "2027-01-31")
+    assert got == ({"2026-02": rate} if rate == 0.1 else None)
 
 
 async def test_the_difference_goes_with_the_other_bill_sensors(

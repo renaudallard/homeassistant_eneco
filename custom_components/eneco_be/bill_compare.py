@@ -33,7 +33,8 @@ sensor, and nothing is set here to link them: the price entry's link is it.
 """
 
 import logging
-from typing import Any, Final
+from math import isfinite
+from typing import Any, Final, TypeIs
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -52,6 +53,19 @@ PRICE_LINKS: Final = {
 SERVICE: Final = "bill_cost"
 # The action giving the energy price of each month, to project a bill with.
 RATES: Final = "energy_rate"
+
+
+def _number(value: Any) -> TypeIs[int | float]:
+    """Return whether another integration's answer is a finite number.
+
+    A bool is an int to Python, and nan or inf would carry through the
+    sums into the advance proposed.
+    """
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and isfinite(value)
+    )
 
 
 def _price_entry(hass: HomeAssistant, entity_id: str) -> ConfigEntry | None:
@@ -96,7 +110,7 @@ async def async_energy_rates(
         rate = row.get("eur_per_kwh")
         if not isinstance(month, str):
             return None
-        if isinstance(rate, bool) or not isinstance(rate, int | float):
+        if not _number(rate):
             return None
         rates[month] = float(rate)
     return rates or None
@@ -154,7 +168,7 @@ async def async_compare(
             entry_id=entry.entry_id,
         )
     cost = answer.get("cost") if answer is not None else None
-    if answer is None or isinstance(cost, bool) or not isinstance(cost, int | float):
+    if answer is None or not _number(cost):
         return _result(
             f"{entry.title} priced nothing for the bill",
             price_entry=entry.title,

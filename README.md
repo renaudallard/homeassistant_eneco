@@ -269,9 +269,10 @@ on your contract, through its `bill_cost` action. The state is what Eneco
 billed above that, negative when it billed less; `expected` is the price
 integration's figure and `price_entry` the entry that gave it. It shows
 nothing, with the reason in `last_error`, when no entry checks the bill, when
-the price integration is too old to have `bill_cost`, or when the meter's
-history in Home Assistant does not reach back over every day of the year: the
-first year it can be compared is the first one Home Assistant recorded whole.
+the price integration is too old to have `bill_cost` or answers something
+other than a number, or when the meter's history in Home Assistant does not
+reach back over every day of the year: the first year it can be compared is
+the first one Home Assistant recorded whole.
 
 `binary_sensor.*_bill_disagrees` puts both checks in one, each held to the
 same threshold: 5 EUR or 1% of the bill, whichever is more. It is on
