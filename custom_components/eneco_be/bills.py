@@ -440,11 +440,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                         kind = meter[CONF_ENERGY_TYPE]
                         shared = sum(p.energy_type == kind for p in points.values()) > 1
                         point = points.get(meter[CONF_EAN])
-                        previous = (self.data.get(subentry_id) or {}).get("provision")
+                        before = self.data.get(subentry_id) or {}
+                        previous = before.get("provision")
                         try:
                             read = await self._async_meter(
                                 account, meter, invoices, point, shared=shared
                             )
+                            if read["card_error"]:
+                                # A card does not change because it was not
+                                # fetched again.
+                                read["card"] = before.get("card")
                             read["provision"] = await self._async_provision(
                                 account,
                                 address,
@@ -518,6 +523,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         provision = previous.get("provision")
         return {
             "card": previous.get("card"),
+            "card_error": error,
             "year": previous.get("year"),
             "provision": None if provision is None else provision | {"error": error},
             "error": error,
@@ -647,8 +653,17 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         says whose it is.
         """
         card = None
+        card_error = None
         if point is not None and point.contract_id:
-            card = await self.client.async_get_tariff_card(account, point.contract_id)
+            try:
+                card = await self.client.async_get_tariff_card(
+                    account, point.contract_id
+                )
+            except EnecoAuthError:
+                raise
+            except EnecoError as err:
+                # Only its own sensor shows it: the bills go on without.
+                card_error = f"the tariff card was not read: {err}"
         # The bills making up the year, newest first.
         run: list[dict[str, Any]] = []
         error = None
@@ -711,6 +726,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 error = error or "no yearly bill closes the intermediary ones yet"
         return {
             "card": card_state(card) if card is not None else None,
+            "card_error": card_error,
             "year": year_state(run) if run else None,
             "error": error,
         }

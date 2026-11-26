@@ -27,6 +27,7 @@
 from datetime import date, timedelta
 from http import HTTPStatus
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import (
@@ -39,7 +40,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import (
 )
 
 from custom_components.eneco_be import api, api_billing
-from custom_components.eneco_be.api import EnecoClient, EnecoError
+from custom_components.eneco_be.api import EnecoClient, EnecoConnectionError, EnecoError
 from custom_components.eneco_be.bill_compare import async_energy_rates
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.binary_sensor import threshold
@@ -1309,3 +1310,34 @@ def test_the_threshold_is_five_euro_or_one_percent() -> None:
     assert threshold(100.0) == 5.0
     assert threshold(500.0) == 5.0
     assert threshold(1139.28) == pytest.approx(11.3928)
+
+
+async def test_a_card_not_read_keeps_the_last_and_the_bills_go_on(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """The card only shows on its own sensor.
+
+    Its call failing cost the meter that day's bills and advance, and kept
+    the cache of bills read from ever being trimmed.
+    """
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    assert state_of(hass, TARIFF_CARD).state == "012210"
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    with patch.object(
+        bills.client,
+        "async_get_tariff_card",
+        side_effect=EnecoConnectionError("the portal returned HTTP 500"),
+    ):
+        await bills.async_refresh()
+        await hass.async_block_till_done()
+
+    card = state_of(hass, TARIFF_CARD)
+    assert card.state == "012210"
+    assert card.attributes["last_error"] == (
+        "the tariff card was not read: the portal returned HTTP 500"
+    )
+    assert state_of(hass, LAST_BILL).attributes["last_error"] is None

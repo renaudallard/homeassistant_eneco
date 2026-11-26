@@ -601,7 +601,8 @@ async def test_nothing_is_set_when_the_portal_cannot_be_read_again(
         ("async_get_invoices", "the invoices were not listed"),
         ("async_get_advance_amounts", "the advances were not read"),
         ("async_get_readings", "the readings were not read"),
-        ("async_get_tariff_card", "the portal returned HTTP 500"),
+        # Any other failure reading one meter.
+        ("_async_meter", "the portal returned HTTP 500"),
     ],
 )
 async def test_nothing_is_set_when_part_of_the_portal_cannot_be_read_again(
@@ -632,7 +633,7 @@ async def test_nothing_is_set_when_part_of_the_portal_cannot_be_read_again(
 
     with (
         patch.object(
-            bills.client,
+            bills if failing.startswith("_") else bills.client,
             failing,
             side_effect=EnecoConnectionError("the portal returned HTTP 500"),
         ),

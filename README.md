@@ -258,6 +258,8 @@ every billed line of them:
 for `012210`), the `product` and `product_type` Eneco reports, and the card's
 `urls` by language. On a variable contract that card can be years older than
 the one Eneco publishes this month, and it is the one the bill is priced on.
+A day the card cannot be read keeps the last one, with the reason in
+`last_error`, and the bills are read all the same.
 
 `sensor.*_bill_difference` holds the year against the
 [electricity](https://github.com/renaudallard/homeassistant_be_electricity_prices)

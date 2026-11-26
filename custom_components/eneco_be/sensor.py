@@ -624,11 +624,12 @@ class TariffCardSensor(BillSensor):
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the month the card is for, the product and the card itself."""
+        """Return the month the card is for, the product, the card, and why not."""
         card = self._read.get("card") or {}
         return {
             "card_month": card.get("month"),
             "product": card.get("product"),
             "product_type": card.get("product_type"),
             "urls": card.get("urls", {}),
+            ATTR_LAST_ERROR: self._read.get("card_error"),
         }
