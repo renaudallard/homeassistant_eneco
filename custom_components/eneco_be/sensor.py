@@ -243,13 +243,18 @@ class BillSensor(BillEntity, SensorEntity):
     """A sensor of what the bill coordinator read for one meter."""
 
 
-class LastBillSensor(BillSensor):
-    """The last full year billed: its total with VAT, and every line."""
+class MoneySensor(BillSensor):
+    """A sensor of one meter's amount in euros, VAT included."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
     # ISO 4217, as a monetary sensor wants it, not the € symbol.
     _attr_native_unit_of_measurement = "EUR"
     _attr_suggested_display_precision = 2
+
+
+class LastBillSensor(MoneySensor):
+    """The last full year billed: its total with VAT, and every line."""
+
     # A year has dozens of lines, the same until the next bill comes.
     _unrecorded_attributes = frozenset({"lines"})
 
@@ -282,16 +287,12 @@ class LastBillSensor(BillSensor):
         }
 
 
-class BillDifferenceSensor(BillSensor):
+class BillDifferenceSensor(MoneySensor):
     """What Eneco billed for the year above what it is priced at.
 
     The price is the one the electricity or gas price entry checking the
     bill gives the meter's own history over the same days, VAT included.
     """
-
-    _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_native_unit_of_measurement = "EUR"
-    _attr_suggested_display_precision = 2
 
     def __init__(
         self, coordinator: BillCoordinator, subentry_id: str, meter: Any
@@ -320,7 +321,7 @@ class BillDifferenceSensor(BillSensor):
         }
 
 
-class MonthlyAdvanceSensor(BillSensor):
+class MonthlyAdvanceSensor(MoneySensor):
     """The monthly advance the meter needs until its next reading.
 
     What brings the coming regularisation to about 0; once one advance or
@@ -329,10 +330,6 @@ class MonthlyAdvanceSensor(BillSensor):
     the period will cost and what the regularisation would come to at
     today's advance, positive still to pay.
     """
-
-    _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_native_unit_of_measurement = "EUR"
-    _attr_suggested_display_precision = 2
 
     def __init__(
         self, coordinator: BillCoordinator, subentry_id: str, meter: Any
@@ -567,12 +564,8 @@ class AddressAdvanceSensor(AddressSensor):
         }
 
 
-class CurrentAdvanceSensor(BillSensor):
+class CurrentAdvanceSensor(MoneySensor):
     """What Eneco bills the meter's contract each month, as its advances page says."""
-
-    _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_native_unit_of_measurement = "EUR"
-    _attr_suggested_display_precision = 2
 
     def __init__(
         self, coordinator: BillCoordinator, subentry_id: str, meter: Any
