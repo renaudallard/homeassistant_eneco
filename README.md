@@ -379,8 +379,9 @@ The attributes say what is behind it:
 | `energy_price` | `price_integration` or `last_bill` |
 | `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be, and the state is then unknown. At an address with two meters of one energy no advance invoice is split, since none names its meter, so `incomplete` once one is invoiced |
 
-The address sensor adds up its meters: `electricity` and `gas` are each
-one's share, `after_reading` the next period's total, `advance_now` what the
+The address sensor adds up its meters, two of one energy included:
+`electricity` and `gas` are what the meters of each need, `after_reading`
+the next period's total, `advance_now` what the
 portal says you pay in all, `portal_min` and `portal_max` the range it lets
 the total be set in, and `eneco_recommended` and
 `eneco_expected_regularisation` Eneco's own advice and what it expects at the

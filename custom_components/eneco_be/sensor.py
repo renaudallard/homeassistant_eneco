@@ -497,46 +497,55 @@ class AddressAdvanceSensor(AddressSensor):
         """Bind the sensor to one delivery address of the login."""
         super().__init__(coordinator, entry_id, address, number, MONTHLY_ADVANCE)
 
-    def _meters(self) -> tuple[dict[str, dict[str, Any]], str | None]:
-        """Return each contract's projection by energy, or why one is missing."""
+    def _meters(self) -> tuple[list[tuple[str, dict[str, Any]]], str | None]:
+        """Return each contract's energy and projection, or why one is missing.
+
+        A list, not keyed by energy: an address can have two meters of one.
+        """
         eans = self._portal.get("eans")
         if not eans:
-            return {}, self._portal.get("error") or "the portal lists no contract"
+            return [], self._portal.get("error") or "the portal lists no contract"
         found = {
             subentry.data[CONF_EAN]: (subentry.data, self.coordinator.data.get(key))
             for key, subentry in self.coordinator.config_entry.subentries.items()
             if CONF_EAN in subentry.data
         }
-        by_energy: dict[str, dict[str, Any]] = {}
+        meters: list[tuple[str, dict[str, Any]]] = []
         for ean in eans:
             meter, read = found.get(ean, (None, None))
             if meter is None:
-                return by_energy, f"the meter ending {ean[-4:]} is not set up here"
+                return meters, f"the meter ending {ean[-4:]} is not set up here"
             provision = (read or {}).get("provision") or {}
             if provision.get("monthly_advance") is None:
-                return by_energy, provision.get("error") or "not worked out yet"
-            by_energy[meter[CONF_ENERGY_TYPE].lower()] = provision
-        return by_energy, None
+                return meters, provision.get("error") or "not worked out yet"
+            meters.append((meter[CONF_ENERGY_TYPE].lower(), provision))
+        return meters, None
+
+    @staticmethod
+    def _energy(meters: list[tuple[str, dict[str, Any]]], energy: str) -> float | None:
+        """Return what the meters of one energy need together, if any is there."""
+        amounts = [float(p["monthly_advance"]) for kind, p in meters if kind == energy]
+        return round(sum(amounts), 2) if amounts else None
 
     @property
     @override
     def native_value(self) -> float | None:
         """Return the advance needed each month at the address, VAT included."""
-        by_energy, error = self._meters()
+        meters, error = self._meters()
         if error is not None:
             return None
-        return round(sum(float(p["monthly_advance"]) for p in by_energy.values()), 2)
+        return round(sum(float(p["monthly_advance"]) for _, p in meters), 2)
 
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return each energy's share, what is paid now, and the portal's advice."""
-        by_energy, error = self._meters()
+        meters, error = self._meters()
         portal = self._portal
         total = self.native_value
         now = portal.get("advance_now")
-        expected = [p.get("expected_regularisation") for p in by_energy.values()]
-        after = [p.get("after_reading") for p in by_energy.values()]
+        expected = [p.get("expected_regularisation") for _, p in meters]
+        after = [p.get("after_reading") for _, p in meters]
         return {
             "advance_now": now,
             "difference": None
@@ -547,8 +556,8 @@ class AddressAdvanceSensor(AddressSensor):
             else round(sum(float(a) for a in after if a is not None), 2),
             "portal_min": portal.get("portal_min"),
             "portal_max": portal.get("portal_max"),
-            "electricity": (by_energy.get("electricity") or {}).get("monthly_advance"),
-            "gas": (by_energy.get("gas") or {}).get("monthly_advance"),
+            "electricity": self._energy(meters, "electricity"),
+            "gas": self._energy(meters, "gas"),
             "expected_regularisation": None
             if error is not None or None in expected
             else round(sum(float(e) for e in expected if e is not None), 2),

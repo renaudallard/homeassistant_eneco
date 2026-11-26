@@ -26,6 +26,7 @@
 
 from collections.abc import Sequence
 from http import HTTPStatus
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -41,6 +42,7 @@ from custom_components.eneco_be.const import (
     CONF_READ_BILLS,
     DOMAIN,
 )
+from custom_components.eneco_be.sensor import AddressAdvanceSensor
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -782,3 +784,37 @@ async def test_two_meters_of_one_energy_do_not_share_their_advances(
     assert got["last_error"] == (
         "the advances invoiced are not told apart between meters of one energy"
     )
+
+
+def address_sensor(
+    provisions: dict[str, dict[str, Any]], portal: dict[str, Any]
+) -> AddressAdvanceSensor:
+    """Return the address total over meters of the given EANs and projections."""
+    subentries = {
+        ean: SimpleNamespace(
+            data={"ean": ean, "energy_type": "Electricity", "address": ADDRESS}
+        )
+        for ean in provisions
+    }
+    coordinator = SimpleNamespace(
+        addresses={ADDRESS: {"eans": sorted(provisions)} | portal},
+        data={ean: {"provision": provision} for ean, provision in provisions.items()},
+        config_entry=SimpleNamespace(subentries=subentries),
+    )
+    return AddressAdvanceSensor(coordinator, "entry", ADDRESS, 0)  # type: ignore[arg-type]
+
+
+def test_two_meters_of_one_energy_both_count_at_the_address() -> None:
+    """The total was keyed by energy, so the second meter replaced the first."""
+    provision = {
+        "monthly_advance": 50.0,
+        "after_reading": 50.0,
+        "expected_regularisation": 10.0,
+        "error": None,
+    }
+    sensor = address_sensor({EAN: provision, OTHER_EAN: provision}, {})
+    attributes = sensor.extra_state_attributes
+    assert sensor.native_value == 100.0
+    assert attributes["electricity"] == 100.0
+    assert attributes["after_reading"] == 100.0
+    assert attributes["expected_regularisation"] == 20.0
