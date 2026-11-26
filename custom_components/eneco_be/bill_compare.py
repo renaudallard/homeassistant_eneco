@@ -33,13 +33,13 @@ sensor, and nothing is set here to link them: the price entry's link is it.
 """
 
 import logging
-from math import isfinite
-from typing import Any, Final, TypeIs
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .api_billing import amount
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,19 +53,6 @@ PRICE_LINKS: Final = {
 SERVICE: Final = "bill_cost"
 # The action giving the energy price of each month, to project a bill with.
 RATES: Final = "energy_rate"
-
-
-def _number(value: Any) -> TypeIs[int | float]:
-    """Return whether another integration's answer is a finite number.
-
-    A bool is an int to Python, and nan or inf would carry through the
-    sums into the advance proposed.
-    """
-    return (
-        isinstance(value, int | float)
-        and not isinstance(value, bool)
-        and isfinite(value)
-    )
 
 
 def _price_entry(hass: HomeAssistant, entity_id: str) -> ConfigEntry | None:
@@ -110,9 +97,10 @@ async def async_energy_rates(
         rate = row.get("eur_per_kwh")
         if not isinstance(month, str):
             return None
-        if not _number(rate):
+        price = amount(rate)
+        if price is None:
             return None
-        rates[month] = float(rate)
+        rates[month] = price
     return rates or None
 
 
@@ -167,14 +155,14 @@ async def async_compare(
             price_entry=entry.title,
             entry_id=entry.entry_id,
         )
-    cost = answer.get("cost") if answer is not None else None
-    if answer is None or not _number(cost):
+    cost = amount(answer.get("cost")) if answer is not None else None
+    if answer is None or cost is None:
         return _result(
             f"{entry.title} priced nothing for the bill",
             price_entry=entry.title,
             entry_id=entry.entry_id,
         )
-    expected = round(float(cost), 2)
+    expected = round(cost, 2)
     if answer.get("covered") is not True:
         return _result(
             "the meter's history does not cover every day of the bill",

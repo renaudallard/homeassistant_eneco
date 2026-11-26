@@ -35,7 +35,6 @@ not make a bill disagree, and a wrong rate on a large volume does.
 """
 
 from collections.abc import Mapping
-import math
 from typing import Any, Final, override
 
 from homeassistant.components.binary_sensor import (
@@ -48,6 +47,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from . import EnecoConfigEntry
+from .api_billing import amount
 from .bills import BillCoordinator
 from .const import ATTR_LAST_ERROR, BILL_DISAGREES
 from .entity import BillEntity
@@ -81,23 +81,17 @@ def threshold(total: float) -> float:
     return max(DIFFERENCE_EUR, abs(total) * DIFFERENCE_SHARE)
 
 
-def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    return float(value) if math.isfinite(value) else None
-
-
 def _gap(billed: float, priced: Any) -> float | None:
     """Return how far a billed unit price is from the one priced.
 
     Where a range is priced, from its nearest end.
     """
     if isinstance(priced, list | tuple) and len(priced) == 2:
-        low, high = (_number(value) for value in priced)
+        low, high = (amount(value) for value in priced)
         if low is None or high is None:
             return None
         return max(low - billed, billed - high, 0.0)
-    price = _number(priced)
+    price = amount(priced)
     return None if price is None else abs(billed - price)
 
 
@@ -108,7 +102,7 @@ def line_amount(line: Mapping[str, Any], billed_lines: list[Any]) -> float | Non
     bill. None when the bill holds no such line or the prices are not
     numbers.
     """
-    billed = _number(line.get("billed"))
+    billed = amount(line.get("billed"))
     if billed is None:
         return None
     gap = _gap(billed, line.get("priced"))
@@ -119,10 +113,10 @@ def line_amount(line: Mapping[str, Any], billed_lines: list[Any]) -> float | Non
         if not isinstance(raw, Mapping):
             continue
         same = (raw.get("label"), raw.get("section"), raw.get("start"), raw.get("end"))
-        if same != key or _number(raw.get("unit_price")) != billed:
+        if same != key or amount(raw.get("unit_price")) != billed:
             continue
-        quantity = _number(raw.get("quantity"))
-        vat = _number(raw.get("vat")) or 0.0
+        quantity = amount(raw.get("quantity"))
+        vat = amount(raw.get("vat")) or 0.0
         if quantity is None:
             return None
         return abs(gap * quantity) * (1 + vat)
