@@ -443,15 +443,17 @@ page refuses a change on: `InvoiceOrEndnoteNeedsToBeCreatedFirst`,
 An error the portal gives in another form than a name is taken for one of
 those.
 
-Pressing the button reads everything again first, and sends nothing if any
-part of that fails: nothing is proposed from invoices, an advances page or
-a meter's readings left standing from an earlier day, and the proposed
-advance sensor gives the reason in `last_error`. Then it sets on My Eneco
-the advance of each contract that changes, as the portal's own advances
-page does, and reads again so the sensors show what is billed now. Each
-change is logged, and when one contract is set and the next refused, the
-error says which was set. Eneco may take the change in for the next advance
-rather than the one being invoiced.
+Pressing the button reads everything again first, and sends nothing if the
+invoices, the advances page or a meter's readings cannot be read again:
+nothing is proposed from what was left standing from an earlier day, and the
+proposed advance sensor gives the reason in `last_error`. An advance invoice
+whose PDF does not download is split on today's advances instead, which
+`advance_split` shows as `estimated`. Then it sets on My Eneco the advance of
+each contract that changes, as the portal's own advances page does, and
+reads again so the sensors show what is billed now. Each change is logged,
+and when one contract is set and the next refused, the error says which was
+set. Eneco may take the change in for the next advance rather than the one
+being invoiced.
 
 An advance invoice for both energies prints each one's share; it is read
 once, and used only when the shares add up to what the invoice list says it
