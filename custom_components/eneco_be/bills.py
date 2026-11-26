@@ -628,7 +628,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if seen is None and shared:
                 seen, failed = await self._async_whose(invoice)
                 error = error or failed
-            if shared and seen is not None and seen["eans"] is None:
+            # Which meter's it is cannot be told: named, it says so.
+            unsure = shared and seen is not None and seen["eans"] is None
+            if unsure and seen is not None:
                 skip, closes, missing = pass_over(
                     invoice, seen.get("error") or "unread", run, closes, missing
                 )
@@ -655,7 +657,10 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if not ours(seen, ean):
                     continue
             if seen.get("error") or seen.get("bill") is None:
-                error = error or not_read(invoice, seen.get("error") or "no lines")
+                why = seen.get("error") or "no lines"
+                error = error or not_read(
+                    invoice, f"{why}, so it may be another meter's" if unsure else why
+                )
                 continue
             bill = seen["bill"]
             if run and not follows(bill, run[-1]) and closes is not None:

@@ -2359,3 +2359,35 @@ async def test_a_bill_of_two_meters_with_no_document_is_named(
     assert bill.attributes["last_error"].startswith(
         f"the bill of {issued} was not read"
     )
+
+
+async def test_an_unread_bill_of_two_meters_says_it_may_be_the_others(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Two meters billed the same days; the other's bill has no PDF yet.
+
+    Named as this meter's, it read as a fault on a meter whose year was
+    whole: which meter it is cannot be told, and the error says so.
+    """
+    shared_portal(
+        aioclient_mock,
+        True,
+        [
+            billed(
+                invoice("CNB", "YearlyBill", "2026-04-27"), "2025-02-01", "2026-02-01"
+            )
+            | {"documents": []},
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-02-01", "2026-02-01"
+            ),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2025-02-01"
+    assert bill.attributes["last_error"] == (
+        "the bill of 2026-04-27 was not read: it has no document,"
+        " so it may be another meter's"
+    )
