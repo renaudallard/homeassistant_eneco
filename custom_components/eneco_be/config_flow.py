@@ -212,14 +212,16 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
         A loaded entry reloads itself from its update listener when its
         credentials change. One that failed to set up has no listener, and
         must be reloaded from here or it stays failed. So must a loaded one
-        given the credentials it already had: its client keeps a refusal of
-        them, and only a new one asks Okta again.
+        given the credentials it already had, whatever else changes: its
+        client keeps a refusal of them, and only a new one asks Okta again.
         """
         if not entry.update_listeners:
             return self.async_update_reload_and_abort(entry, **changes)
         if "data_updates" in changes:
             changes["data"] = {**entry.data, **changes.pop("data_updates")}
-        if not self.hass.config_entries.async_update_entry(entry, **changes):
+        same = dict(changes.get("data", entry.data)) == dict(entry.data)
+        self.hass.config_entries.async_update_entry(entry, **changes)
+        if same:
             self.hass.config_entries.async_schedule_reload(entry.entry_id)
         return self.async_update_and_abort(entry)
 
