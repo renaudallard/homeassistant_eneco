@@ -1539,8 +1539,10 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
 ) -> None:
     """With two meters of one energy, only the EAN a bill prints says whose.
 
-    One whose PDF would not read was taken as this meter's, so the other
-    meter's yearly bill ended this one's year, with no error.
+    One whose PDF would not read may be either meter's. Taken as this one's,
+    the other meter's yearly bill ended this year with no error; passed over,
+    this meter's own bill of the year before let the year run on into older
+    ones. It ends the year, and says it may be another meter's.
     """
     mock_login(
         aioclient_mock,
@@ -1582,13 +1584,11 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 
     bill = state_of(hass, LAST_BILL)
-    assert [b["invoice_type"] for b in bill.attributes["bills"]] == [
-        "IntermediaryInvoice",
-        "YearlyBill",
-    ]
+    assert [b["invoice_type"] for b in bill.attributes["bills"]] == ["YearlyBill"]
     assert bill.attributes["last_error"].startswith(
         "the bill of 2025-06-01 was not read"
     )
+    assert bill.attributes["last_error"].endswith("it may be another meter's")
 
 
 async def test_a_bill_check_of_another_year_is_not_weighed(
@@ -1619,3 +1619,92 @@ def test_an_undated_bill_is_named_as_one() -> None:
     assert _not_read(undated, "it has no document") == (
         "an undated bill was not read: it has no document"
     )
+
+
+async def test_an_unreadable_bill_of_its_own_still_ends_the_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """This meter's bill of the year before, its PDF unreadable, two meters.
+
+    Passed over, the year ran on into older bills and the newest was lost.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    invoice("BAD", "YearlyBill", "2025-04-26"),
+                    invoice("IN0", "IntermediaryInvoice", "2025-03-20"),
+                    invoice("CN0", "YearlyBill", "2024-04-26"),
+                ]
+            }
+        },
+    )
+    mock_advances(aioclient_mock)
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    url = document("BAD")
+    slashed = url.replace("/BAD?", "/BAD/?")
+    aioclient_mock.get(
+        url,
+        status=HTTPStatus.PERMANENT_REDIRECT,
+        headers={"Location": slashed.removeprefix("https://eneco.be")},
+    )
+    aioclient_mock.get(slashed, content=b"%PDF-1.4\\nbroken\\n")
+    mock_bill(aioclient_mock, "IN0", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN0", year_before("31/01/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2025-02-01"
+    assert bill.attributes["last_error"].endswith("it may be another meter's")
+
+
+async def test_an_old_bill_with_no_document_is_no_error_for_two_meters(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Whose it is cannot be told, and it is past the year: nothing to say.
+
+    A meter with no older bill of its own reads on to the end of the list,
+    and each day named an old bill with no PDF.
+    """
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    mock_discovery(
+        aioclient_mock,
+        points=[
+            {"ean": EAN, "type": "Electricity"},
+            {"ean": OTHER_EAN, "type": "Electricity"},
+        ],
+    )
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    invoice("OLD", "YearlyBill", "2019-06-01") | {"documents": []},
+                ]
+            }
+        },
+    )
+    mock_advances(aioclient_mock)
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2025-02-01"
+    assert bill.attributes["last_error"] is None

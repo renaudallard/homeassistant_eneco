@@ -699,16 +699,26 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     error = error or got
                     continue
                 seen = got
-            if shared and seen is not None and seen["eans"] is None:
-                # Only the EAN it prints says whose it is: one that cannot
-                # be read may be the other meter's, and end this year.
-                error = error or _not_read(invoice, seen.get("error") or "unread")
+            # Only the EAN it prints says whose it is, so one that cannot be
+            # read may be either meter's.
+            unsure = shared and seen is not None and seen["eans"] is None
+            if unsure and not invoice.document_url:
+                # As before such bills were listed at all: no year is ended
+                # or named by one nothing can be read of.
                 continue
             if seen is not None and not _ours(seen, ean):
                 continue
             monthly = bool(run) and run[0]["invoice_type"] == MONTHLY
             if run and not monthly and invoice.kind != INTERMEDIARY:
-                # The bill of the year before, told from the list unread.
+                # The bill of the year before, told from the list unread. One
+                # that would not read ends the year as well, and says it may
+                # be another meter's.
+                if unsure:
+                    error = error or _not_read(
+                        invoice,
+                        f"{seen.get('error') if seen else 'unread'},"
+                        " so it may be another meter's",
+                    )
                 break
             if monthly and invoice.kind != MONTHLY:
                 error = error or _too_few(run)
