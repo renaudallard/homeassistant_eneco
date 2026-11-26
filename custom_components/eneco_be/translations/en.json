@@ -141,6 +141,7 @@
         }
       },
       "abort": {
+        "already_configured": "This meter is already set up.",
         "cannot_connect": "Could not reach the Eneco portal: {error}",
         "entry_not_loaded": "The login is not loaded. Fix it or enable it first.",
         "meters_configured": "Every meter at this address is already set up.",

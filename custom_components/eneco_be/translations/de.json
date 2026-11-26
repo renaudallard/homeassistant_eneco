@@ -141,6 +141,7 @@
         }
       },
       "abort": {
+        "already_configured": "Dieser Zähler ist bereits eingerichtet.",
         "cannot_connect": "Das Eneco Portal war nicht erreichbar: {error}",
         "entry_not_loaded": "Der Login ist nicht geladen. Beheben oder aktivieren Sie ihn zuerst.",
         "meters_configured": "Jeder Zähler an dieser Adresse ist bereits eingerichtet.",

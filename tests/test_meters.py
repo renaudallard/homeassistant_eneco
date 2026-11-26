@@ -26,6 +26,8 @@
 
 import asyncio
 from collections.abc import Callable
+import json
+from pathlib import Path
 from typing import Any
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -534,3 +536,36 @@ async def test_a_reload_mid_submission_keeps_the_other_meters_state(
     meters = hass_storage[f"{DOMAIN}.{entry.entry_id}.meters"]["data"]["meters"]
     assert meters[GAS_ID]["submitted_date"] == today
     assert meters[METER_ID]["submitted_date"] == today
+
+
+async def test_a_meter_added_twice_at_once_says_so(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Two Add meter flows open for the same meter, both submitted.
+
+    Home Assistant refuses the second with already_configured, which had no
+    text, so the raw key showed.
+    """
+    mock_address(aioclient_mock, ELECTRICITY_AND_GAS)
+    entry = login_entry()
+    await setup(hass, entry)
+
+    first = await add_meter(hass, entry)
+    second = await add_meter(hass, entry)
+    assert first["step_id"] == second["step_id"] == "sources"
+    done = await hass.config_entries.subentries.async_configure(
+        first["flow_id"], {CONF_SUBMIT_TIME: "22:40:00"}
+    )
+    assert done["type"] is FlowResultType.CREATE_ENTRY
+    late = await hass.config_entries.subentries.async_configure(
+        second["flow_id"], {CONF_SUBMIT_TIME: "22:41:00"}
+    )
+    assert late["type"] is FlowResultType.ABORT
+    assert late["reason"] == "already_configured"
+
+    strings = json.loads(
+        (
+            Path(__file__).parent.parent / "custom_components" / DOMAIN / "strings.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert late["reason"] in strings["config_subentries"]["meter"]["abort"]

@@ -141,6 +141,7 @@
         }
       },
       "abort": {
+        "already_configured": "Ce compteur est déjà configuré.",
         "cannot_connect": "Impossible de joindre le portail Eneco : {error}",
         "entry_not_loaded": "La connexion n'est pas chargée. Réparez-la ou activez-la d'abord.",
         "meters_configured": "Tous les compteurs à cette adresse sont déjà configurés.",

@@ -141,6 +141,7 @@
         }
       },
       "abort": {
+        "already_configured": "Deze meter is al ingesteld.",
         "cannot_connect": "Kan het Eneco-portaal niet bereiken: {error}",
         "entry_not_loaded": "De login is niet geladen. Herstel of activeer die eerst.",
         "meters_configured": "Elke meter op dit adres is al ingesteld.",
