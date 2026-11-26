@@ -62,6 +62,7 @@ from custom_components.eneco_be.api import (
 )
 from custom_components.eneco_be.const import (
     ATTR_LAST_ERROR,
+    CONF_ENERGY_TYPE,
     CONF_SOURCES,
     CONF_SUBMIT_TIME,
     DOMAIN,
@@ -971,9 +972,8 @@ async def test_a_meter_the_portal_will_not_name_reads_as_electricity(
     Electricity, so the two disagreed about the very sensor just chosen.
     """
     config_entry.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        config_entry, data={**config_entry.data, "energy_type": "Both"}
-    )
+    # The meter's own, in its subentry: the entry holds the login only.
+    update_meter(hass, config_entry, **{CONF_ENERGY_TYPE: "Both"})
     set_sources(hass)
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
