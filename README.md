@@ -138,6 +138,8 @@ Every meter creates one device, named after its EAN, with:
 | `sensor.*_tariff_card` | The tariff card the contract is billed on, with [Read bills](#reading-bills) on |
 | `sensor.*_bill_difference` | What the year was billed above what a price integration prices it at, with [Read bills](#reading-bills) on |
 | `binary_sensor.*_bill_disagrees` | On when the bill disagrees with that price integration, with [Read bills](#reading-bills) on |
+| `sensor.*_monthly_advance_needed` | The monthly advance the meter needs, with [Read bills](#reading-bills) on |
+| `sensor.*_current_advance` | What Eneco bills the meter's contract each month now, with [Read bills](#reading-bills) on |
 
 `sensor.*_status` reads `pending` before the first attempt, then `success`,
 `already_submitted` when the date was already done, `nothing_to_submit` when no
