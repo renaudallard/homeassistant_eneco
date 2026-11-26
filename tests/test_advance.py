@@ -366,3 +366,25 @@ async def test_a_period_over_and_not_billed_ends_at_its_reading(
     # No advance left before the reading: the next period's.
     assert got["advances_left"] == 0
     assert float(state_of(hass, METER).state) == got["after_reading"]
+
+
+async def test_with_one_advance_left_the_next_period_shows(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """In the reading month the whole gap would fall on one advance.
+
+    The next period's amount shows instead, whatever the split of the
+    advances invoiced, and the regularisation says what the bill will ask.
+    """
+    freezer.move_to("2027-01-15T09:00:00+00:00")
+    portal(aioclient_mock, [contract(EAN, "Electricity", 56.51, 0.0)], {})
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    got = meter.attributes
+    assert got["advances_left"] == 1
+    assert got["advance_split"] == "incomplete"
+    assert float(meter.state) == got["after_reading"]
+    assert got["last_error"] is None

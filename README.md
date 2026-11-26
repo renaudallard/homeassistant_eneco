@@ -334,12 +334,16 @@ works it out from your own last yearly bill instead:
 
 The state is the advance to pay until the reading for the next regularisation
 to come to about 0: what the period will cost less the advances invoiced so
-far, divided by the advances left before the reading, never below 0. Once no
-advance is left before the reading, it is the next period's: a year like the
-running one at today's prices, divided by twelve, which `after_reading` always
-gives. A period longer or shorter than a year is brought to one on the
-profile, so one holding two Januaries is not taken for a colder year. Near the reading a small gap is divided by one or two months, so the
-amount moves more then. The attributes say what is behind it:
+far, divided by the advances left before the reading, never below 0. Once one
+advance or none is left before the reading, it is the next period's: a year
+like the running one at today's prices, divided by twelve, which
+`after_reading` always gives. The whole gap would otherwise fall on that last
+advance, likely too late to change, and Eneco's own advice is hidden in the
+reading month too; `expected_regularisation` then says what the bill will
+ask. A period longer or shorter than a year is brought to one on the profile,
+so one holding two Januaries is not taken for a colder year. With two
+advances left a gap is shared by two months, so the amount moves more then.
+The attributes say what is behind it:
 
 | Attribute | Meaning |
 | --- | --- |

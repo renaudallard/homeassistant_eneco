@@ -735,15 +735,18 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         expected = None
         if coming is not None and split != "incomplete":
             expected = round(result["period_cost"] - paid - coming, 2)
-        # Until the reading, what brings the regularisation to about 0; with
-        # no advance left before it, a year like this one for the next period.
+        # Until the reading, what brings the regularisation to about 0. With
+        # one advance left the whole gap would fall on it, too late to set and
+        # swinging with each reading, as the portal's own advice does in the
+        # reading month: a year like this one for the next period instead.
         error = None
-        needed = catch_up(result["period_cost"], paid, left)
-        if left and split == "incomplete":
+        if left <= 1:
+            needed = result["after_reading"]
+        elif split == "incomplete":
             needed = None
             error = "the advances invoiced could not all be split by energy"
-        elif not left:
-            needed = result["after_reading"]
+        else:
+            needed = catch_up(result["period_cost"], paid, left)
         difference = None
         if advance_now is not None and needed is not None:
             difference = round(needed - advance_now, 2)

@@ -307,9 +307,9 @@ class BillDifferenceSensor(BillSensor):
 class MonthlyAdvanceSensor(BillSensor):
     """The monthly advance the meter needs until its next reading.
 
-    What brings the coming regularisation to about 0; once no advance is
-    left before the reading, a year like the running one for the next
-    period, which ``after_reading`` always gives. The attributes say what
+    What brings the coming regularisation to about 0; once one advance or
+    none is left before the reading, a year like the running one for the
+    next period, which ``after_reading`` always gives. The attributes say what
     the period will cost and what the regularisation would come to at
     today's advance, positive still to pay.
     """
