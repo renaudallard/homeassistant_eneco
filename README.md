@@ -375,7 +375,7 @@ The attributes say what is behind it:
 | `offtake_kwh`, `injection_kwh`, `net_kwh` | The whole period's volumes, measured and projected |
 | `volume_basis` | `profile`, or `days` when the portal's profile was missing and each day counted the same |
 | `energy_price` | `price_integration` or `last_bill` |
-| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be, and the state is then unknown. Always `incomplete` at an address with two meters of one energy: no advance invoice names its meter |
+| `advance_split` | `invoice` when each advance's share was read off its PDF, `estimated` when some were split on today's advances, `incomplete` when they could not be, and the state is then unknown. At an address with two meters of one energy no advance invoice is split, since none names its meter, so `incomplete` once one is invoiced |
 
 The address sensor adds up its meters: `electricity` and `gas` are each
 one's share, `after_reading` the next period's total, `advance_now` what the
