@@ -202,9 +202,9 @@ Eneco stops accepting the stored password, Home Assistant raises a
 reauthentication prompt by itself; that one asks for the password alone,
 because it is there to re-establish the login the entry already belongs to.
 Until it is entered there, or in *Reconfigure*, the refused password is not
-tried again, so the failures do not add up to a locked account on the portal;
-entering the same one again tries it again, for an account that was only
-locked for a while.
+tried again while Home Assistant runs, so the failures do not add up to a
+locked account on the portal; a restart tries it once more. Entering the same
+one again tries it again, for an account that was only locked for a while.
 
 ## Reading bills
 
