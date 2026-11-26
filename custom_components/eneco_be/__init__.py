@@ -114,7 +114,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: EnecoConfigEntry) -> boo
     try:
         await client.async_login()
     except EnecoAuthError as err:
-        raise ConfigEntryAuthFailed(str(err)) from err
+        # Only a refusal of the password needs a new one. Anything failing
+        # once Okta took it is the portal's, and a later try may get through.
+        if client.refused:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        raise ConfigEntryNotReady(str(err)) from err
     except EnecoConnectionError as err:
         raise ConfigEntryNotReady(str(err)) from err
 

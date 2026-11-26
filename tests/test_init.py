@@ -341,6 +341,30 @@ async def test_auth_failure_triggers_reauth(
     assert [flow["context"]["source"] for flow in flows] == ["reauth"]
 
 
+async def test_a_sign_in_failing_past_the_password_is_retried(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Okta took the password, and the portal then gave no access token.
+
+    That is the portal's own trouble, as on a redeploy, yet it failed the
+    setup for good and asked for the password, and nothing was submitted
+    until someone entered the same one again.
+    """
+    aioclient_mock.get("https://eneco.be/api/auth/session/", json={})
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    config_entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.SETUP_RETRY
+    assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+
+
 async def test_unload(
     hass: HomeAssistant,
     mock_portal: AiohttpClientMocker,
