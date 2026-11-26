@@ -154,13 +154,13 @@
     "step": {
       "init": {
         "title": "Opties",
-        "description": "Eén keer per dag de nieuwste afrekening van elke meter van deze login lezen, en de tariefkaart waarop het contract wordt gefactureerd. Standaard uit. De factuur wordt van My Eneco gedownload en hier gelezen; er wordt niets elders naartoe gestuurd.",
+        "description": "Eén keer per dag de facturen van elke meter van deze login over het laatste volledige jaar lezen, de tariefkaart waarop het contract wordt gefactureerd, de voorschotten en de meterstanden. Standaard uit. Alles wordt van My Eneco gedownload en hier gelezen; er wordt niets elders naartoe gestuurd.",
         "data": {
           "read_bills": "Facturen lezen",
           "adjust_advance": "Aanbieden om het voorgestelde voorschot toe te passen"
         },
         "data_description": {
-          "read_bills": "Voegt aan elke meter een sensor Laatste jaarfactuur toe, met elke lijn gefactureerd over het laatste volledige jaar, een sensor Tariefkaart en een sensor Factuurverschil, die het jaar vergelijkt met een item van elektriciteits- of gasprijzen dat de factuur controleert, met een sensor Factuur wijkt af die zegt wanneer ze uiteenlopen.",
+          "read_bills": "Voegt aan elke meter een sensor Laatste jaarfactuur toe, met elke lijn gefactureerd over het laatste volledige jaar, een sensor Tariefkaart, een sensor Factuurverschil, die het jaar vergelijkt met een invoer van elektriciteits- of gasprijzen die de factuur controleert, met een sensor Factuur wijkt af die zegt wanneer ze uiteenlopen, en de sensoren Benodigd maandelijks voorschot en Huidig voorschot. Elk adres krijgt een apparaat Eneco advance met dezelfde twee voor al zijn meters samen.",
           "adjust_advance": "Voegt aan het adres een sensor Voorgesteld voorschot en een knop Voorgesteld voorschot toepassen toe, met Facturen lezen aan. De knop stelt op My Eneco het voorschot in van elk contract dat wijzigt, zodat hun totaal is wat de meters nodig hebben; zonder hem wordt niets ingesteld."
         }
       }

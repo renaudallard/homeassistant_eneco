@@ -154,13 +154,13 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Once a day, read the newest settlement bill of every meter of this login and the tariff card its contract is billed on. Off by default. The bill is downloaded from My Eneco and read here; nothing is sent anywhere else.",
+        "description": "Once a day, read the bills of every meter of this login over its last full year, the tariff card its contract is billed on, its advances and its meter readings. Off by default. All of it is downloaded from My Eneco and read here; nothing is sent anywhere else.",
         "data": {
           "read_bills": "Read bills",
           "adjust_advance": "Offer to apply the proposed advance"
         },
         "data_description": {
-          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, and a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill, with a Bill disagrees sensor saying when they part.",
+          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill, with a Bill disagrees sensor saying when they part, and Monthly advance needed and Current advance sensors. Each address gets an Eneco advance device with the same two for its meters together.",
           "adjust_advance": "Adds a Proposed advance sensor and an Apply proposed advance button to the address, with Read bills on. Pressing the button sets on My Eneco the advance of each contract that changes, so their total is what the meters need; nothing is set without it."
         }
       }

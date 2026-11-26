@@ -154,13 +154,13 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Une fois par jour, lire la dernière facture de décompte de chaque compteur de ce compte, ainsi que la carte tarifaire sur laquelle son contrat est facturé. Désactivé par défaut. La facture est téléchargée depuis My Eneco et lue ici ; rien n'est envoyé ailleurs.",
+        "description": "Une fois par jour, lire les factures de chaque compteur de cette connexion sur sa dernière année complète, la carte tarifaire sur laquelle son contrat est facturé, ses acomptes et ses relevés. Désactivé par défaut. Tout est téléchargé depuis My Eneco et lu ici ; rien n'est envoyé ailleurs.",
         "data": {
           "read_bills": "Lire les factures",
           "adjust_advance": "Proposer d'appliquer l'acompte proposé"
         },
         "data_description": {
-          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, un capteur Carte tarifaire et un capteur Écart de facture, qui compare l'année à une entrée de prix de l'électricité ou du gaz contrôlant la facture, avec un capteur Facture en désaccord qui signale quand ils divergent.",
+          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, un capteur Carte tarifaire, un capteur Écart de facture, qui compare l'année à une entrée de prix de l'électricité ou du gaz contrôlant la facture, avec un capteur Facture en désaccord qui signale quand ils divergent, ainsi que les capteurs Acompte mensuel nécessaire et Acompte actuel. Chaque adresse reçoit un appareil Eneco advance avec ces deux capteurs pour tous ses compteurs.",
           "adjust_advance": "Ajoute à l'adresse un capteur Acompte proposé et un bouton Appliquer l'acompte proposé, avec Lire les factures activé. Le bouton fixe sur My Eneco l'acompte de chaque contrat qui change, pour que leur total soit ce dont les compteurs ont besoin ; rien n'est fixé sans lui."
         }
       }
