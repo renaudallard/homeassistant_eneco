@@ -149,7 +149,9 @@ attribute. Three failures in a row also raise a repair card under
 EAN. It clears on the next attempt that does not fail, and it survives a
 restart. Disabling the entry takes the cards of its meters down and enabling it
 again brings them back; removing a meter, or the entry, takes them away for
-good.
+good. While the login itself cannot be set up, as when the portal is down at
+start, no submission is attempted and so no card is raised: the entry shows as
+retrying on the integrations page instead.
 
 Press the button from an automation if you want a different schedule than the
 built-in daily one. A press that cannot submit fails the service call with the
