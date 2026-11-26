@@ -385,12 +385,45 @@ advice, and `eneco_months_left`, its count of months to the reading; per
 address, the total with its range and advice. A day the page cannot be read
 keeps the last amount read, with the reason in `last_error`.
 
+### Applying the proposed advance
+
+Off by default, as it changes what Eneco debits. With *Read bills* on, tick
+*Offer to apply the proposed advance* under *Configure* to add to each
+address a `sensor.eneco_advance_proposed_advance` and a
+`button.eneco_advance_apply_proposed_advance`. Nothing is ever changed on the
+portal without the button being pressed, by you or by an automation you set
+up.
+
+Eneco lets each contract's advance be set only within a range drawn from its
+own projection, which on a compensated household can put the electricity
+floor far above what is needed. A contract can also be left as it is, even
+below its floor. The proposal weighs every way of leaving or setting each
+contract, and takes the one whose total comes closest to what the meters need
+together, then the one leaving each contract nearest its own need. So when
+electricity cannot go down, gas is lowered instead and the total still comes
+out exact. Leaving everything as it is is one of the ways weighed, so the
+proposal never takes the total further off than what is paid now.
+
+The sensor's state is the total proposed, with `electricity` and `gas`, each
+contract's proposed advance, `changes`, the energies that would change,
+`exact`, whether the total is exactly what is needed, and `last_error`. It
+proposes nothing while a contract of the address has no meter set up here or
+no amount yet, while one advance or none is left before the reading, or when
+the portal would refuse a change: payments overdue, a vacancy, an advance not
+available, or billing other than yearly.
+
+Pressing the button reads everything again first, sends nothing if that
+fails, then sets on My Eneco the advance of each contract that changes, as the
+portal's own advances page does, and reads again so the sensors show what is
+billed now. Each change is logged. Eneco may take the change in for the next
+advance rather than the one being invoiced.
+
 An advance invoice for both energies prints each one's share; it is read
 once, and used only when the shares add up to what the invoice list says it
 asked for. Only the
 French wording has been seen: on another, the advance is split on today's
-advances and `advance_split` says so. Nothing is ever sent to the advances
-page, which only answers a read.
+advances and `advance_split` says so. Nothing is sent to the advances page
+unless the advance button below is pressed.
 
 Turning the option off removes these sensors and what was read.
 

@@ -42,7 +42,11 @@ from custom_components.eneco_be import api, api_billing
 from custom_components.eneco_be.api import EnecoClient, EnecoError
 from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.binary_sensor import threshold
-from custom_components.eneco_be.const import CONF_READ_BILLS, DOMAIN
+from custom_components.eneco_be.const import (
+    CONF_ADJUST_ADVANCE,
+    CONF_READ_BILLS,
+    DOMAIN,
+)
 from custom_components.eneco_be.diagnostics import async_get_config_entry_diagnostics
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNKNOWN
@@ -78,6 +82,7 @@ BILL_SUFFIXES = (
     "_bill_disagrees",
     "_monthly_advance",
     "_current_advance",
+    "_proposed_advance",
 )
 
 CONTRACT = "1-1000"
@@ -474,12 +479,12 @@ async def test_options_flow_turns_it_on_and_off(
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "init"
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_READ_BILLS: value}
+            result["flow_id"], {CONF_READ_BILLS: value, CONF_ADJUST_ADVANCE: value}
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY
         await hass.async_block_till_done(wait_background_tasks=True)
 
-        assert entry.options == {CONF_READ_BILLS: value}
+        assert entry.options == {CONF_READ_BILLS: value, CONF_ADJUST_ADVANCE: value}
         unique_ids = [
             item.unique_id
             for item in er.async_entries_for_config_entry(
@@ -490,13 +495,19 @@ async def test_options_flow_turns_it_on_and_off(
         if value:
             assert state_of(hass, LAST_BILL).state == "1139.28"
             assert BillCoordinator.key_for(entry.entry_id) in hass_storage
-            # The meter's six and the address's two.
-            assert len(bill_ids) == 8
+            # The meter's six and the address's three.
+            assert len(bill_ids) == 9
+            assert entity_registry.async_get_entity_id(
+                "button", DOMAIN, f"{entry.entry_id}_{ADDRESS}_apply_advance"
+            )
         else:
             assert hass.states.get(LAST_BILL) is None
             assert entity_registry.async_get(LAST_BILL) is None
             assert entity_registry.async_get(TARIFF_CARD) is None
             assert bill_ids == []
+            assert not entity_registry.async_get_entity_id(
+                "button", DOMAIN, f"{entry.entry_id}_{ADDRESS}_apply_advance"
+            )
             # What was read goes with them.
             assert BillCoordinator.key_for(entry.entry_id) not in hass_storage
 

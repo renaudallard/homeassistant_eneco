@@ -143,10 +143,12 @@
         "title": "Optionen",
         "description": "Einmal am Tag die neueste Abrechnung jedes Zählers dieses Logins lesen, sowie die Tarifkarte, nach der sein Vertrag abgerechnet wird. Standardmäßig aus. Die Rechnung wird von My Eneco heruntergeladen und hier gelesen; nichts wird anderswohin gesendet.",
         "data": {
-          "read_bills": "Rechnungen lesen"
+          "read_bills": "Rechnungen lesen",
+          "adjust_advance": "Anbieten, den vorgeschlagenen Abschlag anzuwenden"
         },
         "data_description": {
-          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile, einen Sensor Tarifkarte und einen Sensor Rechnungsabweichung hinzu, der das Jahr mit einem Strom- oder Gaspreis-Eintrag vergleicht, der die Rechnung prüft, mit einem Sensor Rechnung weicht ab, der meldet, wenn beide auseinandergehen."
+          "read_bills": "Fügt jedem Zähler einen Sensor Letzte Jahresrechnung mit jeder über das letzte volle Jahr abgerechneten Zeile, einen Sensor Tarifkarte und einen Sensor Rechnungsabweichung hinzu, der das Jahr mit einem Strom- oder Gaspreis-Eintrag vergleicht, der die Rechnung prüft, mit einem Sensor Rechnung weicht ab, der meldet, wenn beide auseinandergehen.",
+          "adjust_advance": "Fügt der Adresse einen Sensor Vorgeschlagener Abschlag und eine Schaltfläche Vorgeschlagenen Abschlag anwenden hinzu, wenn Rechnungen lesen aktiv ist. Die Schaltfläche setzt auf My Eneco den Abschlag jedes Vertrags, der sich ändert, sodass ihre Summe dem Bedarf der Zähler entspricht; ohne sie wird nichts gesetzt."
         }
       }
     }
@@ -160,6 +162,9 @@
     "button": {
       "submit": {
         "name": "Zählerstände übermitteln"
+      },
+      "apply_advance": {
+        "name": "Vorgeschlagenen Abschlag anwenden"
       }
     },
     "sensor": {
@@ -190,6 +195,9 @@
       },
       "current_advance": {
         "name": "Aktueller Abschlag"
+      },
+      "proposed_advance": {
+        "name": "Vorgeschlagener Abschlag"
       },
       "tariff_card": {
         "name": "Tarifkarte"

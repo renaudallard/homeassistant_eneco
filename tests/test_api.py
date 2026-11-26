@@ -451,6 +451,7 @@ def test_advance_amounts_are_parsed() -> None:
                         "ean": "541449000000000001",
                         "energyType": "Electricity",
                         "meterReadingMonth": 1,
+                        "invoiceFrequency": "Yearly",
                     },
                     "details": {
                         "currentAmount": 56.51,
@@ -499,7 +500,13 @@ def test_advance_amounts_are_parsed() -> None:
                 maximum=2500,
             ),
             api_billing.ContractAdvance(
-                "541449000000000099", "Gas", None, None, None, None
+                "541449000000000099",
+                "Gas",
+                None,
+                None,
+                None,
+                None,
+                blocked="not billed yearly",
             ),
         ),
         minimum=430,
@@ -547,3 +554,47 @@ def test_monthly_volumes_are_parsed() -> None:
         }
     )
     assert got == {"2026-06": api_billing.MonthVolume(194.0, 176.0)}
+
+
+@pytest.mark.parametrize(
+    ("meter", "details", "blocked"),
+    [
+        ({"invoiceFrequency": "Yearly"}, {}, None),
+        ({"invoiceFrequency": "Monthly"}, {}, "not billed yearly"),
+        ({"invoiceFrequency": "Yearly"}, {"isDefaulter": True}, "payments are overdue"),
+        (
+            {"invoiceFrequency": "Yearly"},
+            {"notAvailable": True},
+            "the advance is not available",
+        ),
+        (
+            {"invoiceFrequency": "Yearly"},
+            {"vacancyChangeRequested": True},
+            "a vacancy is being requested",
+        ),
+        (
+            {"invoiceFrequency": "Yearly"},
+            {"recommendedAmountError": "LastAdvanceDatetimeEqualToBillingDate"},
+            "the portal reports LastAdvanceDatetimeEqualToBillingDate",
+        ),
+        ({"invoiceFrequency": "Yearly"}, {"recommendedAmountError": "Other"}, None),
+    ],
+)
+def test_an_advance_the_portal_would_not_change(
+    meter: dict[str, Any], details: dict[str, Any], blocked: str | None
+) -> None:
+    """The conditions of the portal's own edit page, and a vacancy's end."""
+    got = api_billing.advance_amounts(
+        {
+            "advancePayments": [
+                {
+                    "meterDetails": {"ean": "541449000000000001", **meter},
+                    "details": {"vacancyUntil": "2026-12-31T00:00:00+00:00", **details},
+                }
+            ]
+        }
+    )
+    assert got is not None
+    (contract,) = got.contracts
+    assert contract.blocked == blocked
+    assert contract.vacancy_until == date(2026, 12, 31)

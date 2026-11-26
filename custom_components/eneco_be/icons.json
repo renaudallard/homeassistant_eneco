@@ -11,6 +11,9 @@
     "button": {
       "submit": {
         "default": "mdi:upload"
+      },
+      "apply_advance": {
+        "default": "mdi:cash-check"
       }
     },
     "sensor": {
@@ -34,6 +37,9 @@
       },
       "current_advance": {
         "default": "mdi:cash"
+      },
+      "proposed_advance": {
+        "default": "mdi:cash-edit"
       },
       "tariff_card": {
         "default": "mdi:tag-text-outline"

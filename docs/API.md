@@ -283,9 +283,24 @@ regularisation is `currentAmount` times those months less the amount due.
 an electricity meter read on 1 February, and for a gas meter last read on 17
 December. On a
 `CompensatedOfftake` contract the amount due counts offtake without netting
-injection. The same path takes a POST, `{"amount": 0, "type": "Global"}`, that
-sets the advance: this integration never sends it, nor the POSTs of
-`.../advance-amounts/simulate/global`, `.../update-multiple`, `.../vacancy` or
+injection.
+
+The same path takes a POST that sets an advance, read from
+`EditAdvancePayments.tsx`: `{"amount": 287.91, "type": "Granular", "ean": ""}`
+for one contract, or `{"amount": 0, "type": "Global"}` for the address, which
+Eneco splits itself. Tried on 2026-11-26 for one gas contract: it answered with
+no body, and the contract's `currentAmount` read 287.91 at once with
+`changeRequested: true`. Decimals were taken, and neither the address total's
+`minAmount` nor the other contract's, below its own floor, stopped it. The
+portal's edit page allows a change only on yearly invoicing, for a user who is
+not a reader, with no `isDefaulter`, no vacancy (`vacancyUntil` today or later,
+or `vacancyChangeRequested`), no `notAvailable`, and no `recommendedAmountError`
+among `InvoiceOrEndnoteNeedsToBeCreatedFirst`, `NoContractorFoundForConnection`
+and `LastAdvanceDatetimeEqualToBillingDate`. `minAmount` is about half of
+`recommendedAmount` and `maxAmount` five times it, at most 2 500. This
+integration sends the Granular POST only when its advance button is pressed,
+and never the POSTs of `.../advance-amounts/simulate/global`,
+`.../update-multiple`, `.../vacancy` or
 `/accounts/{accountNumber}/advance-amounts/recommended`.
 
 ### `GET /accounts/{accountNumber}/delivery-addresses/{addressIdentifier}/consumption`

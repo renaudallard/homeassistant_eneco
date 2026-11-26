@@ -36,6 +36,14 @@ from typing import Any, Final
 
 # The documents of an invoice that are not the bill itself.
 _NOT_THE_BILL: Final = frozenset({"DynamicBill", "SimplifiedBill"})
+# The errors on the portal's advice that its edit page refuses a change for.
+_BLOCKING_ERRORS: Final = frozenset(
+    {
+        "InvoiceOrEndnoteNeedsToBeCreatedFirst",
+        "NoContractorFoundForConnection",
+        "LastAdvanceDatetimeEqualToBillingDate",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +95,10 @@ class ContractAdvance:
     # The range the portal lets the advance be set in.
     minimum: float | None = None
     maximum: float | None = None
+    # Why the portal would not let the advance be changed, if it would not,
+    # and the last day of a vacancy the advance is suspended for.
+    blocked: str | None = None
+    vacancy_until: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +147,27 @@ def _month_number(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 12:
         return None
     return value
+
+
+def _blocked(meter: dict[str, Any], details: dict[str, Any]) -> str | None:
+    """Return why the portal would not let a contract's advance change.
+
+    The conditions of the portal's own edit page, but for a vacancy, whose
+    end date is told apart, and the account's role, which the portal
+    checks when it is asked.
+    """
+    error = details.get("recommendedAmountError")
+    if meter.get("invoiceFrequency") != "Yearly":
+        return "not billed yearly"
+    if details.get("isDefaulter"):
+        return "payments are overdue"
+    if details.get("notAvailable"):
+        return "the advance is not available"
+    if details.get("vacancyChangeRequested"):
+        return "a vacancy is being requested"
+    if error in _BLOCKING_ERRORS:
+        return f"the portal reports {error}"
+    return None
 
 
 def invoice(entry: dict[str, Any]) -> Invoice:
@@ -230,6 +263,8 @@ def advance_amounts(payload: Any) -> AdvanceAmounts | None:
                 reading_month=_month_number(meter.get("meterReadingMonth")),
                 minimum=amount(details.get("minAmount")),
                 maximum=amount(details.get("maxAmount")),
+                blocked=_blocked(meter, details),
+                vacancy_until=day(details.get("vacancyUntil")),
             )
         )
     return AdvanceAmounts(

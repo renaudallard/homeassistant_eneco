@@ -687,6 +687,19 @@ class EnecoClient:
             )
         )
 
+    async def async_set_advance(
+        self, account: str, address: str, ean: str, amount: float
+    ) -> None:
+        """Set the monthly advance of one contract, as the portal's edit page does.
+
+        It changes what is paid: only the advance button sends it.
+        """
+        await self._async_api(
+            "POST",
+            f"/accounts/{account}/delivery-addresses/{address}/advance-amounts",
+            json={"amount": round(amount, 2), "type": "Granular", "ean": ean},
+        )
+
     async def async_get_monthly_volumes(
         self,
         account: str,

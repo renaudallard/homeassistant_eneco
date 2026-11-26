@@ -143,10 +143,12 @@
         "title": "Options",
         "description": "Once a day, read the newest settlement bill of every meter of this login and the tariff card its contract is billed on. Off by default. The bill is downloaded from My Eneco and read here; nothing is sent anywhere else.",
         "data": {
-          "read_bills": "Read bills"
+          "read_bills": "Read bills",
+          "adjust_advance": "Offer to apply the proposed advance"
         },
         "data_description": {
-          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, and a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill, with a Bill disagrees sensor saying when they part."
+          "read_bills": "Adds to each meter a Last yearly bill sensor, with every line billed over the last full year, a Tariff card sensor, and a Bill difference sensor holding the year against an electricity or gas price entry that checks the bill, with a Bill disagrees sensor saying when they part.",
+          "adjust_advance": "Adds a Proposed advance sensor and an Apply proposed advance button to the address, with Read bills on. Pressing the button sets on My Eneco the advance of each contract that changes, so their total is what the meters need; nothing is set without it."
         }
       }
     }
@@ -160,6 +162,9 @@
     "button": {
       "submit": {
         "name": "Submit readings"
+      },
+      "apply_advance": {
+        "name": "Apply proposed advance"
       }
     },
     "sensor": {
@@ -190,6 +195,9 @@
       },
       "current_advance": {
         "name": "Current advance"
+      },
+      "proposed_advance": {
+        "name": "Proposed advance"
       },
       "tariff_card": {
         "name": "Tariff card"

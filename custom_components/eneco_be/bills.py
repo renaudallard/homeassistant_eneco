@@ -50,6 +50,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .advice import address_proposal
 from .api import EnecoAuthError, EnecoClient, EnecoError, ServiceDeliveryPoint
 from .api_billing import AdvanceAmounts, Invoice, TariffCard
 from .bill import BillFormatError, BillLine, parse_advance, parse_bill, pdf_text
@@ -214,6 +215,10 @@ def _address_state(
                 "months_left": c.months_left,
                 "minimum": c.minimum,
                 "maximum": c.maximum,
+                "blocked": c.blocked,
+                "vacancy_until": c.vacancy_until.isoformat()
+                if c.vacancy_until
+                else None,
             }
             for c in portal.contracts
         },
@@ -448,6 +453,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.addresses[address] = _address_state(
                     portal, self.addresses.get(address)
                 )
+                self.addresses[address]["proposal"] = address_proposal(
+                    self.addresses[address],
+                    {
+                        meters[key][CONF_EAN]: (data[key].get("provision") or {})
+                        | {"energy": meters[key][CONF_ENERGY_TYPE]}
+                        for key in subentry_ids
+                        if key in data
+                    },
+                    today,
+                )
         except EnecoAuthError as err:
             raise UpdateFailed(str(err)) from err
 
@@ -499,6 +514,36 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             for point in await self.client.async_get_delivery_points(account, address)
         }
         return points, await self.client.async_get_invoices(account, address)
+
+    async def async_apply_advance(self, address: str) -> list[str]:
+        """Set on the portal the advances proposed at an address.
+
+        Read again first, so what is set is worked out from today's data, and
+        once more after, so the sensors show what the portal now bills.
+        Returns the energies changed; raises EnecoError when nothing may be.
+        """
+        await self.async_refresh()
+        if not self.last_update_success:
+            raise EnecoError("the portal could not be read again, so nothing was set")
+        proposal = (self.addresses.get(address) or {}).get("proposal") or {}
+        if proposal.get("error"):
+            raise EnecoError(proposal["error"])
+        changes = proposal.get("changes") or []
+        account = next(
+            meter[CONF_ACCOUNT]
+            for meter in self._meters().values()
+            if meter[CONF_ADDRESS] == address
+        )
+        done: list[str] = []
+        for ean in changes:
+            amount = proposal["amounts"][ean]
+            energy = proposal["energies"][ean]
+            await self.client.async_set_advance(account, address, ean, amount)
+            _LOGGER.info("Set the %s advance to %.2f EUR", energy.lower(), amount)
+            done.append(energy)
+        if done:
+            await self.async_refresh()
+        return done
 
     async def _async_advance_amounts(
         self, account: str, address: str

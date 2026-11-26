@@ -143,10 +143,12 @@
         "title": "Options",
         "description": "Une fois par jour, lire la dernière facture de décompte de chaque compteur de ce compte, ainsi que la carte tarifaire sur laquelle son contrat est facturé. Désactivé par défaut. La facture est téléchargée depuis My Eneco et lue ici ; rien n'est envoyé ailleurs.",
         "data": {
-          "read_bills": "Lire les factures"
+          "read_bills": "Lire les factures",
+          "adjust_advance": "Proposer d'appliquer l'acompte proposé"
         },
         "data_description": {
-          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, un capteur Carte tarifaire et un capteur Écart de facture, qui compare l'année à une entrée de prix de l'électricité ou du gaz contrôlant la facture, avec un capteur Facture en désaccord qui signale quand ils divergent."
+          "read_bills": "Ajoute à chaque compteur un capteur Dernière facture annuelle, avec chaque ligne facturée sur la dernière année complète, un capteur Carte tarifaire et un capteur Écart de facture, qui compare l'année à une entrée de prix de l'électricité ou du gaz contrôlant la facture, avec un capteur Facture en désaccord qui signale quand ils divergent.",
+          "adjust_advance": "Ajoute à l'adresse un capteur Acompte proposé et un bouton Appliquer l'acompte proposé, avec Lire les factures activé. Le bouton fixe sur My Eneco l'acompte de chaque contrat qui change, pour que leur total soit ce dont les compteurs ont besoin ; rien n'est fixé sans lui."
         }
       }
     }
@@ -160,6 +162,9 @@
     "button": {
       "submit": {
         "name": "Transmettre les relevés"
+      },
+      "apply_advance": {
+        "name": "Appliquer l'acompte proposé"
       }
     },
     "sensor": {
@@ -190,6 +195,9 @@
       },
       "current_advance": {
         "name": "Acompte actuel"
+      },
+      "proposed_advance": {
+        "name": "Acompte proposé"
       },
       "tariff_card": {
         "name": "Carte tarifaire"

@@ -27,6 +27,7 @@
 from collections.abc import Sequence
 from http import HTTPStatus
 from typing import Any
+from unittest.mock import patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -34,9 +35,11 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
 from custom_components.eneco_be.bills import _address_state
-from custom_components.eneco_be.const import CONF_READ_BILLS
+from custom_components.eneco_be.const import CONF_ADJUST_ADVANCE, CONF_READ_BILLS
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .bill_pdf import ELECTRICITY
 from .conftest import ACCOUNT, EAN, mock_discovery, mock_login
@@ -106,7 +109,12 @@ def split(
 def contract(ean: str, energy: str, current: float, due: float) -> dict[str, Any]:
     """Return a contract of the portal's advances page."""
     return {
-        "meterDetails": {"ean": ean, "energyType": energy, "meterReadingMonth": 1},
+        "meterDetails": {
+            "ean": ean,
+            "energyType": energy,
+            "meterReadingMonth": 1,
+            "invoiceFrequency": "Yearly",
+        },
         "details": {
             "currentAmount": current,
             "minAmount": 20,
@@ -424,3 +432,151 @@ def test_an_advances_page_down_keeps_the_last_read() -> None:
     kept = _address_state("the advances were not read: HTTP 500", read)
     assert kept == read | {"error": "the advances were not read: HTTP 500"}
     assert _address_state("down")["advance_now"] is None
+
+
+APPLY = "button.eneco_advance_apply_proposed_advance"
+PROPOSED = "sensor.eneco_advance_proposed_advance"
+
+
+async def test_the_proposed_advance_is_applied_on_press(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The one contract of the address is set to what its meter needs."""
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    aioclient_mock.post(ADVANCES, status=HTTPStatus.NO_CONTENT)
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+
+    needed = float(state_of(hass, METER).state)
+    proposed = state_of(hass, PROPOSED)
+    assert float(proposed.state) == needed
+    assert proposed.attributes["electricity"] == needed
+    assert proposed.attributes["changes"] == ["electricity"]
+    assert proposed.attributes["exact"] is True
+
+    await hass.services.async_call(
+        "button", "press", {"entity_id": APPLY}, blocking=True
+    )
+    sent = [
+        data
+        for method, url, data, _ in aioclient_mock.mock_calls
+        if method.lower() == "post" and str(url) == ADVANCES
+    ]
+    assert sent == [{"amount": needed, "type": "Granular", "ean": EAN}]
+
+
+async def test_nothing_is_set_when_the_proposal_cannot_be_made(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The gas contract of the address has no meter here: the press says so."""
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [
+            contract(EAN, "Electricity", 56.51, 1663.29),
+            contract(OTHER_EAN, "Gas", 300.0, 920.10),
+        ],
+        {"currentAmount": 356.51},
+    )
+    aioclient_mock.post(ADVANCES, status=HTTPStatus.NO_CONTENT)
+    await setup(
+        hass, bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    )
+
+    assert state_of(hass, PROPOSED).state == STATE_UNKNOWN
+    with pytest.raises(HomeAssistantError, match="ending 0099 is not set up here"):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": APPLY}, blocking=True
+        )
+    assert not [
+        c
+        for c in aioclient_mock.mock_calls
+        if c[0].lower() == "post" and str(c[1]) == ADVANCES
+    ]
+
+
+async def test_the_advance_button_needs_its_option(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Reading bills alone offers no way to change what is paid."""
+    freezer.move_to(TODAY)
+    portal(aioclient_mock, [contract(EAN, "Electricity", 56.51, 1663.29)], {})
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    assert hass.states.get(APPLY) is None
+    assert hass.states.get(PROPOSED) is None
+
+
+async def test_an_advance_already_right_is_not_sent(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A contract the proposal leaves as it is is not set again.
+
+    154.87 is what the meter of the tests needs until the reading.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 154.87, 1663.29)],
+        {"currentAmount": 154.87},
+    )
+    aioclient_mock.post(ADVANCES, status=HTTPStatus.NO_CONTENT)
+    await setup(
+        hass, bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    )
+
+    assert state_of(hass, METER).state == "154.87"
+    assert state_of(hass, PROPOSED).attributes["changes"] == []
+    await hass.services.async_call(
+        "button", "press", {"entity_id": APPLY}, blocking=True
+    )
+    assert not [
+        call
+        for call in aioclient_mock.mock_calls
+        if call[0].lower() == "post" and str(call[1]) == ADVANCES
+    ]
+
+
+async def test_nothing_is_set_when_the_portal_cannot_be_read_again(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The press reads again first: on failure the old proposal is not sent."""
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    aioclient_mock.post(ADVANCES, status=HTTPStatus.NO_CONTENT)
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    with (
+        patch.object(bills, "_async_update_data", side_effect=UpdateFailed("down")),
+        pytest.raises(HomeAssistantError, match="could not be read again"),
+    ):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": APPLY}, blocking=True
+        )
+    assert not [
+        call
+        for call in aioclient_mock.mock_calls
+        if call[0].lower() == "post" and str(call[1]) == ADVANCES
+    ]

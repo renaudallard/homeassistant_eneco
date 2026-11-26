@@ -22,21 +22,26 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-"""Button that submits the meter readings straight away."""
+"""Buttons: submit the meter readings now, and set the proposed advances."""
 
 from typing import override
 
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EnecoConfigEntry
-from .const import CONF_EAN
+from .api import EnecoError
+from .bills import BillCoordinator
+from .const import CONF_ADDRESS, CONF_ADJUST_ADVANCE, CONF_EAN
 from .coordinator import EnecoCoordinator
-from .entity import EnecoEntity
+from .entity import EnecoEntity, address_device
 
 DESCRIPTION = ButtonEntityDescription(key="submit", translation_key="submit")
+APPLY_ADVANCE = "apply_advance"
 
 
 async def async_setup_entry(
@@ -44,11 +49,33 @@ async def async_setup_entry(
     entry: EnecoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up a submit button for every meter."""
+    """Set up a submit button for every meter, and the advance button if asked."""
     for subentry_id, coordinator in entry.runtime_data.coordinators.items():
         async_add_entities(
             [EnecoSubmitButton(coordinator)], config_subentry_id=subentry_id
         )
+    bills = entry.runtime_data.bills
+    if bills is None or not entry.options.get(CONF_ADJUST_ADVANCE):
+        _remove_advance_buttons(hass, entry)
+        return
+    addresses = sorted(
+        {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
+    )
+    async_add_entities(
+        ApplyAdvanceButton(
+            bills, entry.entry_id, address, n + 1 if len(addresses) > 1 else 0
+        )
+        for n, address in enumerate(addresses)
+    )
+
+
+@callback
+def _remove_advance_buttons(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
+    """Take the advance button away once its option is turned off."""
+    registry = er.async_get(hass)
+    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if item.domain == "button" and item.unique_id.endswith(f"_{APPLY_ADVANCE}"):
+            registry.async_remove(item.entity_id)
 
 
 class EnecoSubmitButton(EnecoEntity, ButtonEntity):
@@ -79,3 +106,32 @@ class EnecoSubmitButton(EnecoEntity, ButtonEntity):
         state = self.coordinator.data
         if state is not before and state.error:
             raise HomeAssistantError(state.error)
+
+
+class ApplyAdvanceButton(CoordinatorEntity[BillCoordinator], ButtonEntity):
+    """Set on the portal the advances the proposed advance sensor shows.
+
+    It changes what Eneco debits each month, so it only exists when asked
+    for, and only acts when pressed: Eneco is told the new amount of each
+    contract that changes, as its own advances page would.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = APPLY_ADVANCE
+
+    def __init__(
+        self, coordinator: BillCoordinator, entry_id: str, address: str, number: int
+    ) -> None:
+        """Bind the button to one delivery address of the login."""
+        super().__init__(coordinator)
+        self._address = address
+        self._attr_unique_id = f"{entry_id}_{address}_{APPLY_ADVANCE}"
+        self._attr_device_info = address_device(entry_id, address, number)
+
+    @override
+    async def async_press(self) -> None:
+        """Set the proposed advances, and say why when none may be set."""
+        try:
+            await self.coordinator.async_apply_advance(self._address)
+        except EnecoError as err:
+            raise HomeAssistantError(str(err)) from err

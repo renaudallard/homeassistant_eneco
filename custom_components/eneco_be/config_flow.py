@@ -55,6 +55,7 @@ from .api import EnecoAuthError, EnecoClient, EnecoConnectionError, EnecoError
 from .const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
+    CONF_ADJUST_ADVANCE,
     CONF_EAN,
     CONF_ENERGY_TYPE,
     CONF_READ_BILLS,
@@ -369,7 +370,10 @@ class MeterSubentryFlow(MeterSteps[SubentryFlowResult], ConfigSubentryFlow):
 
 
 OPTIONS_SCHEMA = vol.Schema(
-    {vol.Required(CONF_READ_BILLS, default=False): selector.BooleanSelector()}
+    {
+        vol.Required(CONF_READ_BILLS, default=False): selector.BooleanSelector(),
+        vol.Required(CONF_ADJUST_ADVANCE, default=False): selector.BooleanSelector(),
+    }
 )
 
 

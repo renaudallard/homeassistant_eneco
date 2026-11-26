@@ -46,6 +46,7 @@ from .const import (
     ATTR_LAST_ERROR,
     BILL_DISAGREES,
     CONF_ADDRESS,
+    CONF_ADJUST_ADVANCE,
     CONF_EAN,
     CONF_ENERGY_TYPE,
     LAST_BILL,
@@ -63,6 +64,7 @@ TARIFF_CARD = "tariff_card"
 BILL_DIFFERENCE = "bill_difference"
 MONTHLY_ADVANCE = "monthly_advance"
 CURRENT_ADVANCE = "current_advance"
+PROPOSED_ADVANCE = "proposed_advance"
 # What a meter's advance sensor shows of its projection, besides the amount.
 PROVISION_ATTRIBUTES = (
     "advance_now",
@@ -168,6 +170,7 @@ async def async_setup_entry(
     addresses = sorted(
         {c.meter[CONF_ADDRESS] for c in entry.runtime_data.coordinators.values()}
     )
+    adjust = bool(entry.options.get(CONF_ADJUST_ADVANCE))
     per_address: list[SensorEntity] = []
     for n, address in enumerate(addresses):
         number = n + 1 if len(addresses) > 1 else 0
@@ -175,26 +178,44 @@ async def async_setup_entry(
             AddressAdvanceSensor(bills, entry.entry_id, address, number),
             AddressCurrentAdvanceSensor(bills, entry.entry_id, address, number),
         ]
+        if adjust:
+            per_address.append(
+                AddressProposedAdvanceSensor(bills, entry.entry_id, address, number)
+            )
     async_add_entities(per_address)
+    if not adjust:
+        _remove(hass, entry, (f"_{PROPOSED_ADVANCE}",))
 
 
 @callback
 def _remove_bill_sensors(hass: HomeAssistant, entry: EnecoConfigEntry) -> None:
     """Take the bill sensors away once reading bills is turned off."""
+    _remove(hass, entry, BILL_SUFFIXES)
+
+
+@callback
+def _remove(
+    hass: HomeAssistant, entry: EnecoConfigEntry, suffixes: tuple[str, ...]
+) -> None:
+    """Take away the sensors of the entry whose unique id ends with a suffix."""
     registry = er.async_get(hass)
-    suffixes = (
-        f"_{LAST_BILL}",
-        f"_{TARIFF_CARD}",
-        f"_{BILL_DIFFERENCE}",
-        f"_{BILL_DISAGREES}",
-        f"_{MONTHLY_ADVANCE}",
-        f"_{CURRENT_ADVANCE}",
-    )
     for item in er.async_entries_for_config_entry(registry, entry.entry_id):
         if item.domain in ("sensor", "binary_sensor") and item.unique_id.endswith(
             suffixes
         ):
             registry.async_remove(item.entity_id)
+
+
+# The ends of the unique ids of every entity reading bills adds.
+BILL_SUFFIXES = (
+    f"_{LAST_BILL}",
+    f"_{TARIFF_CARD}",
+    f"_{BILL_DIFFERENCE}",
+    f"_{BILL_DISAGREES}",
+    f"_{MONTHLY_ADVANCE}",
+    f"_{CURRENT_ADVANCE}",
+    f"_{PROPOSED_ADVANCE}",
+)
 
 
 class EnecoSensor(EnecoEntity, SensorEntity):
@@ -415,6 +436,50 @@ class AddressCurrentAdvanceSensor(AddressSensor):
             "portal_max": portal.get("portal_max"),
             "eneco_recommended": portal.get("eneco_recommended"),
             ATTR_LAST_ERROR: portal.get("error"),
+        }
+
+
+class AddressProposedAdvanceSensor(AddressSensor):
+    """What the advance button would set at the address, every energy together.
+
+    The amounts the portal accepts that come closest to what the meters
+    need, leaving a contract as it is where its range cannot help.
+    """
+
+    def __init__(
+        self, coordinator: BillCoordinator, entry_id: str, address: str, number: int
+    ) -> None:
+        """Bind the sensor to one delivery address of the login."""
+        super().__init__(coordinator, entry_id, address, number, PROPOSED_ADVANCE)
+
+    @property
+    def _proposal(self) -> dict[str, Any]:
+        proposal: dict[str, Any] = self._portal.get("proposal") or {}
+        return proposal
+
+    @property
+    @override
+    def native_value(self) -> float | None:
+        """Return the total the proposed advances come to, VAT included."""
+        total: float | None = self._proposal.get("total")
+        return total
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return each energy's proposed advance and which ones would change."""
+        proposal = self._proposal
+        energies: dict[str, str] = proposal.get("energies") or {}
+        amounts: dict[str, float] = proposal.get("amounts") or {}
+        by_energy = {energies[ean].lower(): amount for ean, amount in amounts.items()}
+        return {
+            "electricity": by_energy.get("electricity"),
+            "gas": by_energy.get("gas"),
+            "changes": sorted(
+                energies[ean].lower() for ean in proposal.get("changes") or []
+            ),
+            "exact": proposal.get("exact"),
+            ATTR_LAST_ERROR: proposal.get("error"),
         }
 
 
