@@ -338,8 +338,9 @@ works it out from your own last yearly bill instead:
   say.
 - **What it uses so far** is the meter's newest reading of every register
   less the official reading that closed that bill, the way the bill counts
-  it; a reading of some registers only, from one left unmapped, is passed
-  over.
+  it. A reading of some registers only, from one left unmapped, is passed
+  over; when every reading since the bill is like that, nothing is known
+  used, and the sensor shows nothing, with the reason in `last_error`.
 - **The rest of it** is the last period's volume times the weight its
   remaining days had a year earlier against the last period's: on the
   portal's monthly profile for what is taken, and on a solar profile for

@@ -811,18 +811,20 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # period is over and not billed yet, the days after it are the next
         # period's, and the reading that closes it is the one to use.
         closing = (end + timedelta(days=1)).isoformat()
+        since = [r for r in readings if r.date <= closing]
         # Of every register the bill closed on: a meter with one unmapped
         # sends readings of the others only.
         newest_reading = next(
-            (
-                r
-                for r in readings
-                if r.date <= closing and r.values.keys() == closed.keys()
-            ),
-            None,
+            (r for r in since if r.values.keys() == closed.keys()), None
         )
         if newest_reading is None:
             return {"error": "no reading since the last bill"}
+        # The reading closing the bill names them all. Fallen back on while
+        # newer ones say otherwise, it would count nothing used since.
+        if newest_reading.date == start.isoformat() < since[0].date:
+            return {
+                "error": "the readings since the last bill do not name every register"
+            }
         try:
             read_on = date.fromisoformat(newest_reading.date)
         except ValueError:

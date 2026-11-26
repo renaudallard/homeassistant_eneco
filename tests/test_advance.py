@@ -894,3 +894,35 @@ async def test_an_address_without_meters_sets_nothing_and_says_so(
 
     with pytest.raises(EnecoError, match="no meter is set up at the address"):
         await bills.async_apply_advance("b" * 64)
+
+
+async def test_readings_of_some_registers_only_give_no_advance(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Every reading since the bill misses a register: nothing is known used.
+
+    The one naming them all was the official reading closing the bill, so
+    the advance was shown from none of the readings since, without a word.
+    """
+    freezer.move_to(TODAY)
+    read = [
+        READ[0],
+        READ[1],
+        ("2026-06-30", "CustomerAdded", (8400, 12000, None, None)),
+        ("2026-11-25", "CustomerAdded", (9309, 13299, None, None)),
+    ]
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+        read,
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    assert meter.state == STATE_UNKNOWN
+    assert meter.attributes["last_error"] == (
+        "the readings since the last bill do not name every register"
+    )
