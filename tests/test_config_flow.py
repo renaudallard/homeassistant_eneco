@@ -670,3 +670,28 @@ async def test_a_sign_in_failing_past_the_password_says_so(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "sign_in_failed"}
+
+
+async def test_a_dashboard_that_does_not_render_is_no_account_missing(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Signed in, the dashboard came back without the accounts it renders.
+
+    The form said the login owns no account, when the page was the trouble,
+    as on a maintenance page or a redeploy.
+    """
+    aioclient_mock.get(
+        "https://eneco.be/fr/my-eneco/dashboard/", text="<html>maintenance</html>"
+    )
+    mock_login(
+        aioclient_mock,
+        accounts=[{"crmAccountNumber": ACCOUNT, "alias": "Home", "role": "owner"}],
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], CREDENTIALS
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "sign_in_failed"}

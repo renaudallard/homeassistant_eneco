@@ -51,7 +51,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .api import EnecoAuthError, EnecoClient, EnecoConnectionError, EnecoError
+from .api import (
+    EnecoAuthError,
+    EnecoClient,
+    EnecoConnectionError,
+    EnecoError,
+    EnecoSessionGoneError,
+)
 from .const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
@@ -136,7 +142,13 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
                 # did not render and for a login that owns none. Neither is the
                 # password, and saying it was sends the user round in circles.
                 _LOGGER.debug("Sign in refused: %s", err)
-                errors["base"] = "no_accounts" if signed_in else _sign_in_error(client)
+                # A dashboard that did not render is the portal's trouble,
+                # not an account missing.
+                errors["base"] = (
+                    "no_accounts"
+                    if signed_in and not isinstance(err, EnecoSessionGoneError)
+                    else _sign_in_error(client)
+                )
                 session.detach()
             except EnecoConnectionError as err:
                 _LOGGER.debug("Portal unreachable: %s", err)

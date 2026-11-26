@@ -117,7 +117,7 @@ class EnecoAuthError(EnecoError):
     """The credentials were rejected or the session could not be established."""
 
 
-class _SessionGoneError(EnecoAuthError):
+class EnecoSessionGoneError(EnecoAuthError):
     """The web session behind the dashboard is no longer signed in."""
 
 
@@ -523,7 +523,7 @@ class EnecoClient:
         token = self._token
         try:
             return await self._async_read_accounts()
-        except _SessionGoneError:
+        except EnecoSessionGoneError:
             _LOGGER.debug("Dashboard did not render, signing in again")
         await self._async_renew_token(token)
         return await self._async_read_accounts()
@@ -542,7 +542,7 @@ class EnecoClient:
 
         match = _NEXT_DATA_RE.search(body)
         if match is None:
-            raise _SessionGoneError(
+            raise EnecoSessionGoneError(
                 "the dashboard did not render, the session may be gone"
             )
         try:
@@ -787,12 +787,12 @@ class EnecoClient:
         token = self._token
         try:
             return await self._async_get_document_once(url)
-        except _SessionGoneError:
+        except EnecoSessionGoneError:
             _LOGGER.debug("Bill did not download, signing in again")
         await self._async_renew_token(token)
         try:
             return await self._async_get_document_once(url)
-        except _SessionGoneError as err:
+        except EnecoSessionGoneError as err:
             raise EnecoConnectionError(
                 f"the website did not serve the bill: {err}"
             ) from None
@@ -816,7 +816,7 @@ class EnecoClient:
                             raise EnecoError("the bill moved off the Eneco website")
                         continue
                     if response.status in _SIGNED_OUT:
-                        raise _SessionGoneError(f"HTTP {response.status}")
+                        raise EnecoSessionGoneError(f"HTTP {response.status}")
                     if response.status != HTTPStatus.OK:
                         raise EnecoConnectionError(
                             f"the bill answered HTTP {response.status}"
@@ -827,7 +827,7 @@ class EnecoClient:
                     f"could not download the bill: {type(err).__name__}"
                 ) from err
             if not body.startswith(b"%PDF"):
-                raise _SessionGoneError("the bill is not a PDF")
+                raise EnecoSessionGoneError("the bill is not a PDF")
             return body
         raise EnecoError("the bill redirected too often")
 
