@@ -677,8 +677,8 @@ class EnecoClient:
     ) -> AdvanceAmounts | None:
         """Return the monthly advances of a delivery address.
 
-        A GET only: the same path takes a POST that changes the advance,
-        which this integration never sends.
+        A GET only: the same path takes the POST that changes the advance,
+        which only :meth:`async_set_advance` sends.
         """
         return advance_amounts(
             await self._async_api(
