@@ -206,8 +206,14 @@ class BillDisagreesSensor(BillEntity, BinarySensorEntity):
             int(state.state)
         except ValueError:
             return None
-        lines = state.attributes.get("lines")
         year = self._read.get("year") or {}
+        for key in ("period_start", "period_end"):
+            checked = state.attributes.get(key)
+            if checked is not None and str(checked)[:10] != year.get(key):
+                # A check of another year, until it catches up with this
+                # one: its lines would match none here.
+                return None
+        lines = state.attributes.get("lines")
         billed = year.get("lines") or []
         out: list[dict[str, Any]] = []
         for line in lines if isinstance(lines, list) else []:
@@ -245,7 +251,7 @@ class BillDisagreesSensor(BillEntity, BinarySensorEntity):
         if abs(difference) > limit:
             return True, None
         if lines is None:
-            return None, "the price entry's Bill check counts no lines yet"
+            return None, "the price entry's Bill check has not checked this year yet"
         return False, None
 
     @property

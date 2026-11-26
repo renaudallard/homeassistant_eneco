@@ -299,7 +299,9 @@ beyond it; off (OK) when neither; and unknown, with the reason in
 price times its quantity on the bill, VAT included, so a rate a card prints a
 hair off does not make the bill disagree, and a wrong rate on a large volume
 does; one the bill does not hold cannot be weighed and counts as a
-disagreement. Its attributes give `lines_off`, each line off with the euros
+disagreement. A Bill check still of another year, as when a new bill has
+just been read, is not weighed until it checks the one shown. Its attributes
+give `lines_off`, each line off with the euros
 it moves (`eur`), their sum `lines_off_eur`, the `difference` and the
 `threshold` used. It follows the Bill check as it changes, so it can be put on
 a dashboard or used in an automation in place of the Repairs cards.

@@ -1159,13 +1159,21 @@ def bill_check(
     entry: MockConfigEntry,
     count: str | None,
     lines: list[dict[str, Any]] | None = None,
+    period: tuple[str, str] | None = None,
 ) -> str:
-    """Give the price entry a Bill check sensor counting ``count`` lines off."""
+    """Give the price entry a Bill check sensor counting ``count`` lines off.
+
+    ``period`` is the year the check is of, as the price entries copy it
+    from the bill sensor.
+    """
     check = er.async_get(hass).async_get_or_create(
         "sensor", entry.domain, f"{entry.entry_id}_bill_check", config_entry=entry
     )
+    attributes: dict[str, Any] = {"lines": lines or []}
+    if period is not None:
+        attributes |= {"period_start": period[0], "period_end": period[1]}
     if count is not None:
-        hass.states.async_set(check.entity_id, count, {"lines": lines or []})
+        hass.states.async_set(check.entity_id, count, attributes)
     return check.entity_id
 
 
@@ -1226,7 +1234,7 @@ def off(
             None,
             None,
             STATE_UNKNOWN,
-            "the price entry's Bill check counts no lines yet",
+            "the price entry's Bill check has not checked this year yet",
             None,
         ),
         (1100.0, True, None, None, "on", None, None),
@@ -1236,7 +1244,7 @@ def off(
             "unknown",
             [],
             STATE_UNKNOWN,
-            "the price entry's Bill check counts no lines yet",
+            "the price entry's Bill check has not checked this year yet",
             None,
         ),
     ],
@@ -1580,4 +1588,26 @@ async def test_an_unreadable_bill_of_two_meters_is_no_ones(
     ]
     assert bill.attributes["last_error"].startswith(
         "the bill of 2025-06-01 was not read"
+    )
+
+
+async def test_a_bill_check_of_another_year_is_not_weighed(
+    hass: HomeAssistant, portal: AiohttpClientMocker
+) -> None:
+    """Until the price entry checks the year shown, its lines are of another.
+
+    A line off in that other year matched none of this one, could not be
+    weighed, and made a year priced exactly as billed a problem.
+    """
+    mock_bill(portal, "CN2", ELECTRICITY)
+    entry = price_entry(hass)
+    stale = off(0.1737) | {"start": "2024-02-01", "end": "2024-03-31"}
+    bill_check(hass, entry, "1", [stale], ("2024-02-01", "2025-01-31"))
+    bill_cost(hass, {"cost": 1139.28, "covered": True})
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    disagrees = state_of(hass, BILL_DISAGREES)
+    assert disagrees.state == STATE_UNKNOWN
+    assert disagrees.attributes["last_error"] == (
+        "the price entry's Bill check has not checked this year yet"
     )
