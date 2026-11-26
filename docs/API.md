@@ -198,6 +198,13 @@ The website offers for download the first document whose type is not
 `DynamicBill` or `SimplifiedBill`. No amount other than the totals above is in
 the JSON: what was billed, at what price, is only in the PDF.
 
+On a settlement bill `dueAmount` is the balance the PDF prints, VAT included:
+the cost of the period less the advances it settles, negative for a refund.
+It is not rounded. Checked against eight bills from 2023 to 2026: it matches
+to the cent on the two issued since December 2025, and is 0,01 to 0,05 EUR
+off on the six older ones (919.0354 for 918,99 printed). An `Invoice` seen
+once was a credit note for the federal basic energy allowance of 2023.
+
 ### Bill documents
 
 A document `url` points at the website, not the API:

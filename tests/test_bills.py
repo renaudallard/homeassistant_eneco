@@ -91,7 +91,11 @@ def document(invoice: str) -> str:
 
 
 def invoice(
-    identifier: str, kind: str, issued: str, energy: str = "Electricity"
+    identifier: str,
+    kind: str,
+    issued: str,
+    energy: str = "Electricity",
+    due: Any = -234.09,
 ) -> dict[str, Any]:
     """Return an entry of the invoice list."""
     return {
@@ -101,7 +105,7 @@ def invoice(
         "invoiceDate": f"{issued}T00:00:00+00:00",
         "invoicingPeriodStartDate": "2025-02-01T00:00:00+00:00",
         "invoicingPeriodEndDate": "2026-02-01T00:00:00+00:00",
-        "dueAmount": -234.09,
+        "dueAmount": due,
         "documents": [
             {"documentType": "Invoice", "url": document(identifier)},
             {"documentType": "SimplifiedBill", "url": document(f"{identifier}-S")},
@@ -225,6 +229,7 @@ async def test_bill_and_card_read(
     assert bill.attributes["issued"] == "2026-04-26"
     assert bill.attributes["period_start"] == "2025-02-01"
     assert bill.attributes["period_end"] == "2026-01-31"
+    assert bill.attributes["balance"] == -234.09
     assert bill.attributes["bills"] == [
         {
             "invoice_type": "YearlyBill",
@@ -275,7 +280,10 @@ async def test_a_bill_is_downloaded_once(
     ]
     assert len(listed) == 2
     assert downloads(portal, "CN2") == 1
-    assert state_of(hass, LAST_BILL).state == "1139.28"
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "1139.28"
+    # From the list, as what was kept of the bill does not hold it.
+    assert bill.attributes["balance"] == -234.09
 
 
 async def test_the_last_bill_survives_a_restart_without_portal(
@@ -302,6 +310,7 @@ async def test_the_last_bill_survives_a_restart_without_portal(
 
     bill = state_of(hass, LAST_BILL)
     assert bill.state == "1139.28"
+    assert bill.attributes["balance"] == -234.09
     assert bill.attributes["last_error"] == "the portal returned HTTP 500"
     assert state_of(hass, TARIFF_CARD).state == "012210"
 
@@ -603,8 +612,8 @@ async def test_an_intermediary_bill_is_part_of_the_year(
     mock_invoices(
         aioclient_mock,
         [
-            invoice("CN2", "YearlyBill", "2026-04-26"),
-            invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+            invoice("CN2", "YearlyBill", "2026-04-26", due=803.639),
+            invoice("IN1", "IntermediaryInvoice", "2025-04-01", due=-154.6065),
             invoice("CN1", "YearlyBill", "2024-02-20"),
         ],
     )
@@ -615,6 +624,8 @@ async def test_an_intermediary_bill_is_part_of_the_year(
 
     bill = state_of(hass, LAST_BILL)
     assert bill.state == "2278.56"
+    # Each bill settles the advances of its own days: their balances add up.
+    assert bill.attributes["balance"] == 649.03
     assert bill.attributes["issued"] == "2026-04-26"
     assert bill.attributes["period_start"] == "2024-02-15"
     assert bill.attributes["period_end"] == "2026-01-31"
@@ -626,6 +637,45 @@ async def test_an_intermediary_bill_is_part_of_the_year(
     assert bill.attributes["lines"][0]["start"] == "2024-02-15"
     assert bill.attributes["last_error"] is None
     assert downloads(aioclient_mock, "CN1") == 0
+
+
+@pytest.mark.parametrize(
+    ("due", "read"),
+    [
+        (-154.6065, -154.6065),
+        (803, 803.0),
+        (None, None),
+        ("803.639", None),
+        (True, None),
+        # The portal's JSON is read with json.loads, which takes these.
+        (float("nan"), None),
+        (float("inf"), None),
+    ],
+)
+def test_an_amount_is_a_finite_number(due: Any, read: float | None) -> None:
+    """What an invoice asked for is a number or nothing."""
+    entry = {"invoiceId": "CN2", "dueAmount": due}
+    assert api._invoice(entry).due == read  # noqa: SLF001
+
+
+async def test_a_bill_without_an_amount_leaves_no_balance(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A balance missing one bill of the year would pass for the year's."""
+    mock_invoices(
+        aioclient_mock,
+        [
+            invoice("CN2", "YearlyBill", "2026-04-26", due=None),
+            invoice("IN1", "IntermediaryInvoice", "2025-04-01", due=-154.6065),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.state == "2278.56"
+    assert bill.attributes["balance"] is None
 
 
 async def test_a_bill_of_the_meter_beside_it_does_not_end_the_year(

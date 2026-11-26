@@ -216,13 +216,18 @@ download, and their billing lines become more sensors per meter:
 
 The total is each line with its own VAT rate, added up, so it can be a cent off
 what a bill prints. It is the cost of the year, not what was left to pay on the
-bill: the advances paid during the year are not taken off. A sensor created
-while it was still called *Last bill* keeps its entity ID, `sensor.*_last_bill`.
+bill: the advances paid during the year are not taken off. That is the
+`balance` attribute, what the bills asked for once the advances were taken
+off, in EUR with VAT, negative when Eneco refunded. It comes from the invoice
+list rather than the PDF, and on bills issued before late 2025 can be a few
+cents off what they print. A sensor created while it was still called *Last
+bill* keeps its entity ID, `sensor.*_last_bill`.
 
 `sensor.*_last_yearly_bill` has `period_start` and `period_end`, the first and
-last day billed, `issued`, the day the newest of the bills was issued, `bills`,
-the `invoice_type`, `issued`, `period_start` and `period_end` of each bill
-taken, oldest first, and a `lines` attribute listing every billed line of them:
+last day billed, `issued`, the day the newest of the bills was issued,
+`balance`, `bills`, the `invoice_type`, `issued`, `period_start` and
+`period_end` of each bill taken, oldest first, and a `lines` attribute listing
+every billed line of them:
 
 ```yaml
 - section: energy        # energy, network or taxes, as the bill groups them

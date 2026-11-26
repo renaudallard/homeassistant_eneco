@@ -35,6 +35,7 @@ from datetime import date
 from http import HTTPStatus
 import json
 import logging
+import math
 import re
 from typing import Any, Final
 
@@ -208,7 +209,9 @@ class Invoice:
     """An invoice of a delivery address, without what it billed.
 
     ``document_url`` is the bill itself, the one the website offers for
-    download, and is only fetched with the session's cookies.
+    download, and is only fetched with the session's cookies. ``due`` is
+    what the invoice asked for in EUR, VAT included: on a settlement bill,
+    what it cost less the advances it settles, negative for a refund.
     """
 
     identifier: str
@@ -218,6 +221,7 @@ class Invoice:
     period_start: date | None
     period_end: date | None
     document_url: str | None
+    due: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +266,13 @@ def _day(value: Any) -> date | None:
         return None
 
 
+def _amount(value: Any) -> float | None:
+    """Return an amount the API sends, or None for one it does not."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
 def _invoice(entry: dict[str, Any]) -> Invoice:
     """Return the invoice an entry of the invoice list describes."""
     documents = entry.get("documents")
@@ -283,6 +294,7 @@ def _invoice(entry: dict[str, Any]) -> Invoice:
         period_start=_day(entry.get("invoicingPeriodStartDate")),
         period_end=_day(entry.get("invoicingPeriodEndDate")),
         document_url=url,
+        due=_amount(entry.get("dueAmount")),
     )
 
 

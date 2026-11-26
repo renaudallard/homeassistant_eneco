@@ -212,6 +212,7 @@ class LastBillSensor(BillSensor):
             "issued": year.get("issued"),
             "period_start": year.get("period_start"),
             "period_end": year.get("period_end"),
+            "balance": year.get("balance"),
             "bills": year.get("bills", []),
             "lines": year.get("lines", []),
             ATTR_LAST_ERROR: self._read.get("error"),

@@ -155,7 +155,9 @@ def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
     """Return what a meter's sensor shows of a run of bills, newest first.
 
     The total is what the lines cost with their VAT, worked out line by
-    line, so it can differ by a cent from what a bill prints.
+    line, so it can differ by a cent from what a bill prints. The balance is
+    what the bills asked for once the advances were taken off, added up as
+    the invoice list gives them, or None if one of them gives none.
     """
     run = bills[::-1]
     lines = [line for bill in run for line in bill["lines"]]
@@ -166,11 +168,22 @@ def year_state(bills: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         Decimal(0),
     )
+    dues = [bill.get("due") for bill in run]
+    balance = (
+        None
+        if None in dues
+        else float(
+            sum((Decimal(str(due)) for due in dues), Decimal(0)).quantize(
+                _CENT, ROUND_HALF_UP
+            )
+        )
+    )
     return {
         "issued": bills[0]["issued"],
         "period_start": run[0]["period_start"],
         "period_end": run[-1]["period_end"],
         "total": float(total.quantize(_CENT, ROUND_HALF_UP)),
+        "balance": balance,
         "bills": [
             {
                 key: bill[key]
@@ -418,7 +431,9 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 run = []
                 if invoice.kind == INTERMEDIARY:
                     continue
-            run.append(bill)
+            # What it asked for is taken from today's list, not from what was
+            # read of it, which a bill read before this was known lacks.
+            run.append({**bill, "due": invoice.due})
             if run[0]["invoice_type"] == MONTHLY and len(run) == MONTHS:
                 break
         else:
