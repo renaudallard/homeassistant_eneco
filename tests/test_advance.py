@@ -27,7 +27,7 @@
 from collections.abc import Sequence
 from http import HTTPStatus
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -43,7 +43,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .bill_pdf import ELECTRICITY
-from .conftest import ACCOUNT, EAN, mock_discovery, mock_login
+from .conftest import ACCOUNT, ADDRESS, EAN, mock_discovery, mock_login
 from .test_bills import (
     ADVANCES,
     CONSUMPTION,
@@ -639,3 +639,51 @@ async def test_nothing_is_set_when_part_of_the_portal_cannot_be_read_again(
         for call in aioclient_mock.mock_calls
         if call[0].lower() == "post" and str(call[1]) == ADVANCES
     ]
+
+
+async def test_a_change_half_made_says_so(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The second contract refused once the first was set.
+
+    The press names the one that was set, and the sensors are read again
+    to show what is billed now.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True, CONF_ADJUST_ADVANCE: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+    bills.addresses[ADDRESS]["proposal"] = {
+        "amounts": {EAN: 100.0, OTHER_EAN: 200.0},
+        "energies": {EAN: "Electricity", OTHER_EAN: "Gas"},
+        "changes": [EAN, OTHER_EAN],
+        "error": None,
+    }
+
+    with (
+        patch.object(bills, "async_refresh", AsyncMock()) as refresh,
+        patch.object(
+            bills.client,
+            "async_set_advance",
+            AsyncMock(
+                side_effect=[None, EnecoConnectionError("the portal returned HTTP 500")]
+            ),
+        ) as sent,
+        pytest.raises(
+            HomeAssistantError,
+            match="the electricity advance was set, but not the gas one: .*HTTP 500",
+        ),
+    ):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": APPLY}, blocking=True
+        )
+    assert sent.await_count == 2
+    assert refresh.await_count == 2

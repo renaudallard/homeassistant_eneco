@@ -531,7 +531,8 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         Read again first, so what is set is worked out from today's data, and
         once more after, so the sensors show what the portal now bills.
-        Returns the energies changed; raises EnecoError when nothing may be.
+        Returns the energies changed; raises EnecoError when nothing may be,
+        or when one is refused, naming those set before it.
         """
         await self.async_refresh()
         if not self.last_update_success:
@@ -549,7 +550,16 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for ean in changes:
             amount = proposal["amounts"][ean]
             energy = proposal["energies"][ean]
-            await self.client.async_set_advance(account, address, ean, amount)
+            try:
+                await self.client.async_set_advance(account, address, ean, amount)
+            except EnecoError as err:
+                if not done:
+                    raise
+                await self.async_refresh()
+                raise EnecoError(
+                    f"the {' and '.join(done).lower()} advance was set,"
+                    f" but not the {energy.lower()} one: {err}"
+                ) from err
             _LOGGER.info("Set the %s advance to %.2f EUR", energy.lower(), amount)
             done.append(energy)
         if done:
