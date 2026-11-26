@@ -407,14 +407,15 @@ class EnecoCoordinator(DataUpdateCoordinator[EnecoState]):
             # today and sent again on the next start anyway.
             return
         now = dt_util.now()
+        # Left here by a trigger that fired while starting: this catch-up,
+        # the first once Home Assistant runs, takes it, and no later one.
+        deferred = self._deferred == now.date()
+        self._deferred = None
         # Whole seconds: the trigger fires for the whole of its own second, and
         # landing here in the middle of it would submit twice over, the second
         # of them reporting the day as already done. Unless it left the day
-        # here, having fired while starting.
-        if (
-            now.time().replace(microsecond=0) <= self.submit_time
-            and self._deferred != now.date()
-        ):
+        # here.
+        if now.time().replace(microsecond=0) <= self.submit_time and not deferred:
             return
         # Starting up can take minutes, so the trigger may already have gone
         # off, and its submission may still be on the wire with the date not

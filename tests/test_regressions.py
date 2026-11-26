@@ -1770,3 +1770,37 @@ async def test_the_same_password_confirmed_again_is_tried_again(
 
     await press(hass)
     assert len(submissions(aioclient_mock)) == 1
+
+
+async def test_a_day_left_to_the_catch_up_keeps_its_time_after(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Only the catch-up it was left to may submit within the trigger's second.
+
+    The mark stayed for the whole day, so a time moved later that day, or
+    sources changed, submitted at once, before the time chosen.
+    """
+    hass.set_state(CoreState.starting)
+    await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "12:01:00"}))
+    freezer.tick(timedelta(minutes=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    # Started, but the sources are not there yet: the catch-up fails.
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert state_of(hass, STATUS).state == "failed"
+
+    freezer.tick(timedelta(minutes=1))
+    set_sources(hass)
+    await hass.services.async_call(
+        "time",
+        "set_value",
+        {"entity_id": SUBMIT_TIME, "time": "14:00:00"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert submissions(mock_portal) == []
