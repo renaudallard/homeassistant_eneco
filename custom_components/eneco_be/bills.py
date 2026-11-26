@@ -49,6 +49,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .advance_state import ADVANCE, address_state, advance_months, settled_by
 from .advice import address_proposal, no_proposal
 from .api import EnecoAuthError, EnecoClient, EnecoError, ServiceDeliveryPoint
 from .api_billing import AdvanceAmounts, Invoice
@@ -96,155 +97,11 @@ STORAGE_VERSION: Final = 1
 
 # Bills come once a year, or once a month for a meter billed monthly.
 REFRESH_INTERVAL: Final = timedelta(hours=24)
-ADVANCE: Final = "AdvanceInvoice"
 # How far back an advance invoice for both energies is read to split it: a
 # billing period, and a little more for one billed late.
 ADVANCE_DAYS: Final = 400
 
 _EAN_RE: Final = re.compile(r"(?<!\d)54\d{16}(?!\d)")
-
-
-def _address_state(
-    portal: AdvanceAmounts | str, previous: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    """Return what the address sensors show of the portal's advances.
-
-    The portal's own expected regularisation is turned to this
-    integration's sign: positive is still to pay. A page that could not be
-    read leaves ``previous`` standing, with why: an advance does not change
-    because it was not fetched again.
-    """
-    if isinstance(portal, str):
-        if previous:
-            return previous | {"error": portal}
-        return {
-            "eans": None,
-            "contracts": {},
-            "advance_now": None,
-            "portal_min": None,
-            "portal_max": None,
-            "eneco_recommended": None,
-            "eneco_expected_regularisation": None,
-            "error": portal,
-        }
-    expected = None
-    if (
-        all(
-            c.current is not None and c.months_left is not None and c.due is not None
-            for c in portal.contracts
-        )
-        and portal.contracts
-    ):
-        expected = round(
-            sum(
-                (c.due or 0.0) - (c.current or 0.0) * max(c.months_left or 0, 1)
-                for c in portal.contracts
-            ),
-            2,
-        )
-    return {
-        "eans": sorted(c.ean for c in portal.contracts),
-        "contracts": {
-            c.ean: {
-                "current": c.current,
-                "recommended": c.recommended,
-                "months_left": c.months_left,
-                "minimum": c.minimum,
-                "maximum": c.maximum,
-                "blocked": c.blocked,
-                "vacancy_until": c.vacancy_until.isoformat()
-                if c.vacancy_until
-                else None,
-            }
-            for c in portal.contracts
-        },
-        "advance_now": portal.current,
-        "portal_min": portal.minimum,
-        "portal_max": portal.maximum,
-        "eneco_recommended": portal.recommended,
-        "eneco_expected_regularisation": expected,
-        "error": None,
-    }
-
-
-def _settled(
-    every: list[Invoice], kind: str, start: date, end: date, *, shared: bool
-) -> tuple[float | None, str | None]:
-    """Return what bills within the period already asked for, or why not.
-
-    An intermediary bill, on a product change, settles its days less their
-    advances, so what it asked for, or paid back, is no longer owed at the
-    reading. One for both energies cannot be split, and one giving no amount
-    cannot be counted. With two meters of one energy the advances are not
-    told apart, so neither is what these settled. None is returned then,
-    with the reason.
-    """
-    settling = [
-        i
-        for i in every
-        if i.kind == INTERMEDIARY
-        and i.energy_type in (kind, "Both")
-        and i.period_start is not None
-        and start <= i.period_start <= end
-    ]
-    if any(i.energy_type == "Both" for i in settling):
-        return None, "an intermediary bill for both energies settles part of the period"
-    if any(i.due is None for i in settling):
-        return None, "an intermediary bill of the period gives no amount"
-    if shared and settling:
-        return None, (
-            "an intermediary bill of the period is not told apart between meters"
-            " of one energy"
-        )
-    return sum(i.due or 0.0 for i in settling), None
-
-
-def _advance_months(
-    kind: str,
-    every: list[Invoice],
-    split: Mapping[str, dict[str, float]],
-    share: float | None,
-    *,
-    shared: bool = False,
-) -> tuple[dict[str, float], set[str], set[str]]:
-    """Return this energy's share of each month's advance, "YYYY-MM".
-
-    Also the months whose share was estimated and those it could not be told
-    for.
-
-    An invoice for this energy alone is its own; one for both is split as
-    its PDF prints it, or, where that could not be read, by ``share``, this
-    energy's part of today's advance. Without either it is left out. Where
-    the address has another meter of the same energy (``shared``), none can
-    be told: no invoice names its meter.
-    """
-    months: dict[str, float] = {}
-    estimated: set[str] = set()
-    missing: set[str] = set()
-    for invoice in every:
-        if (
-            invoice.kind != ADVANCE
-            or invoice.period_start is None
-            or invoice.due is None
-            or invoice.energy_type not in (kind, "Both")
-        ):
-            continue
-        month = f"{invoice.period_start:%Y-%m}"
-        if shared:
-            missing.add(month)
-            continue
-        if invoice.energy_type == kind:
-            amount: float | None = invoice.due
-        else:
-            amount = (split.get(invoice.identifier) or {}).get(kind)
-            if amount is None and share is not None:
-                amount = invoice.due * share
-                estimated.add(month)
-            elif amount is None:
-                missing.add(month)
-        if amount is not None:
-            months[month] = months.get(month, 0.0) + amount
-    return months, estimated, missing
 
 
 class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -408,7 +265,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                             complete = False
                             read = self._kept(subentry_id, str(err))
                         data[subentry_id] = read
-                self.addresses[address] = _address_state(
+                self.addresses[address] = address_state(
                     portal, self.addresses.get(address)
                 )
                 self.addresses[address]["proposal"] = (
@@ -857,7 +714,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         share = None
         if not isinstance(portal, str) and advance_now is not None and portal.current:
             share = advance_now / portal.current
-        months, estimated, missing = _advance_months(
+        months, estimated, missing = advance_months(
             kind, every, self._advances, share, shared=shared
         )
         paid, coming, left = advances(
@@ -871,7 +728,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if estimated & in_period
             else "invoice"
         )
-        settled, unsettled = _settled(every, kind, start, end, shared=shared)
+        settled, unsettled = settled_by(every, kind, start, end, shared=shared)
         expected = None
         if coming is not None and split != "incomplete" and settled is not None:
             expected = round(result["period_cost"] - paid - coming - settled, 2)

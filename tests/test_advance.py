@@ -38,6 +38,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.eneco_be.advance_state import address_state
 from custom_components.eneco_be.api import (
     EnecoConnectionError,
     EnecoError,
@@ -45,7 +46,7 @@ from custom_components.eneco_be.api import (
 )
 from custom_components.eneco_be.api_billing import AdvanceAmounts, ContractAdvance
 from custom_components.eneco_be.bill_compare import RatesUnavailableError
-from custom_components.eneco_be.bills import BillCoordinator, _address_state
+from custom_components.eneco_be.bills import BillCoordinator
 from custom_components.eneco_be.const import (
     CONF_ACCOUNT,
     CONF_ADDRESS,
@@ -465,7 +466,7 @@ async def test_with_one_advance_left_the_next_period_shows(
 
 def test_an_advances_page_down_keeps_the_last_read() -> None:
     """An advance does not change because it was not fetched again."""
-    read = _address_state(
+    read = address_state(
         AdvanceAmounts(
             356.51,
             861.13,
@@ -474,9 +475,9 @@ def test_an_advances_page_down_keeps_the_last_read() -> None:
     )
     assert read["advance_now"] == 356.51
     assert read["contracts"][EAN]["current"] == 56.51
-    kept = _address_state("the advances were not read: HTTP 500", read)
+    kept = address_state("the advances were not read: HTTP 500", read)
     assert kept == read | {"error": "the advances were not read: HTTP 500"}
-    assert _address_state("down")["advance_now"] is None
+    assert address_state("down")["advance_now"] is None
 
 
 APPLY = "button.eneco_advance_apply_proposed_advance"
