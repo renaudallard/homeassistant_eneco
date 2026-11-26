@@ -1525,3 +1525,36 @@ async def test_an_advance_worked_out_without_the_advances_page_says_so(
     meter = state_of(hass, METER)
     assert meter.attributes["period_end_basis"] == "anniversary"
     assert meter.attributes["last_error"].startswith("the advances were not read")
+
+
+async def test_a_consumption_profile_not_read_is_named_as_such(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The readings were read, the consumption profile was not.
+
+    It was reported as the readings not read, pointing at the wrong call.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+    )
+    entry = bills_entry(hass, **{CONF_READ_BILLS: True})
+    await setup(hass, entry)
+    bills = entry.runtime_data.bills
+    assert bills is not None
+
+    with patch.object(
+        bills.client,
+        "async_get_monthly_volumes",
+        side_effect=EnecoConnectionError("the portal returned HTTP 400"),
+    ):
+        await bills.async_refresh()
+        await hass.async_block_till_done()
+
+    assert state_of(hass, METER).attributes["last_error"] == (
+        "the consumption profile was not read: the portal returned HTTP 400"
+    )

@@ -327,9 +327,9 @@ a dashboard or used in an automation in place of the Repairs cards.
   tried again the next day. Where two meters of one energy share the address,
   only the EAN a bill prints says whose it is. Once a yearly bill has begun
   the year, a bill whose PDF cannot be read, that has no PDF yet, or that did
-  not download that day, is passed over; if it ends the day the year begins and the next bill
-  of this meter does not follow on, it was what closed the year, which
-  stands. An intermediary bill ending as the year begins, or one the invoice
+  not download that day, is passed over; if it ends the day the year begins
+  and the next bill of this meter does not follow on, it was what closed the
+  year, which stands. An intermediary bill ending as the year begins, or one the invoice
   list gives no days, may be missing from it: unless a bill of this meter
   joins the year after it, `last_error` says it may be another meter's. On
   monthly billing, a bill of another kind is passed over.
@@ -404,7 +404,7 @@ attributes say what is behind it:
 | `period_end_basis` | `reading_month`, or `anniversary` when the portal gave no reading month |
 | `expected_regularisation` | What the next yearly bill would ask at today's advance, negative for a refund, like `balance` |
 | `advances_billed`, `advances_to_come` | The advances of the period invoiced so far, and those left at `advance_now` |
-| `settled_by_bills` | What intermediary bills within the period, on a product change, already asked for, negative for a refund; taken off what is still owed. Unknown, and no advance given, when one is for both energies or gives no amount, or two meters of one energy share the address |
+| `settled_by_bills` | What intermediary bills within the period, on a product change, already asked for, negative for a refund; taken off what is still owed. Unknown, and no advance given, when one is for both energies or gives no amount, or when one falls in the period of two meters of one energy |
 | `measured_until`, `measured_offtake_kwh`, `measured_injection_kwh` | The last day the meter readings cover, and what they show since the bill |
 | `offtake_kwh`, `injection_kwh`, `net_kwh` | The whole period's volumes, measured and projected |
 | `volume_basis` | `profile`, `days` when the portal's profile was missing and each day counted the same, or `measured` once the period is over and the readings cover all of it |
@@ -467,9 +467,10 @@ An error the portal gives in another form than a name is taken for one of
 those.
 
 Pressing the button reads everything again first, and sends nothing if the
-invoices, the advances page or a meter's readings cannot be read again:
-nothing is proposed from what was left standing from an earlier day, and the
-proposed advance sensor gives the reason in `last_error`. An advance invoice
+invoices, the advances page, or a meter's readings or consumption profile
+cannot be read again: nothing is proposed from what was left standing from
+an earlier day, and the proposed advance sensor gives the reason in
+`last_error`. An advance invoice
 whose PDF does not download is split on today's advances instead, which
 `advance_split` shows as `estimated`, or left unsplit, and nothing proposed,
 when those give no share. Then it sets on My Eneco the advance of

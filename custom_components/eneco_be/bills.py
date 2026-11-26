@@ -634,8 +634,10 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         lines = [
             line for line in year["lines"] if line["start"] >= newest["period_start"]
         ]
+        what = "the readings were"
         try:
             readings = await self.client.async_get_readings(account, ean)
+            what = "the consumption profile was"
             profile = (
                 {}
                 if point is None
@@ -654,7 +656,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         except EnecoAuthError:
             raise
         except EnecoError as err:
-            return kept | {"error": f"the readings were not read: {err}"}
+            return kept | {"error": f"{what} not read: {err}"}
         official = {r.date: r.values for r in readings if r.reading_type == "Official"}
         opened = official.get(first.isoformat())
         closed = official.get(start.isoformat())
