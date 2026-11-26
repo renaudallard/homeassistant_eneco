@@ -190,6 +190,29 @@ def test_an_address_proposal() -> None:
             "the advance is suspended for a vacancy",
         ),
         ({"contracts": {}, "error": "down"}, NEEDS, "down"),
+        # A vacancy ending today still holds today.
+        (
+            {
+                "contracts": PORTAL["contracts"]
+                | {GAS: PORTAL["contracts"][GAS] | {"vacancy_until": "2026-11-26"}}
+            },
+            NEEDS,
+            "the advance is suspended for a vacancy",
+        ),
+        (
+            PORTAL,
+            NEEDS | {GAS: NEEDS[GAS] | {"monthly_advance": None}},
+            "the advance needed is not known",
+        ),
+        (
+            {
+                "contracts": PORTAL["contracts"]
+                | {GAS: PORTAL["contracts"][GAS] | {"maximum": None}}
+            },
+            NEEDS,
+            "the portal gives no range for the advance",
+        ),
+        ({"contracts": {}}, NEEDS, "the portal lists no contract"),
     ],
 )
 def test_nothing_is_proposed_without_all_it_needs(
