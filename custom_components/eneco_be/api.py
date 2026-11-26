@@ -349,6 +349,15 @@ class EnecoClient:
         """Return whether Okta refused the credentials, so only new ones help."""
         return self._refused is not None
 
+    def _check_session(self) -> None:
+        """Raise a portal error for a session closed by unloading the entry.
+
+        Its tasks can still be running, and aiohttp raises RuntimeError for
+        it, which no caller catches.
+        """
+        if self._session.closed:
+            raise EnecoConnectionError("the session was closed by a reload")
+
     async def async_login(self) -> None:
         """Sign in and obtain a bearer token.
 
@@ -390,6 +399,7 @@ class EnecoClient:
             },
         }
         try:
+            self._check_session()
             async with self._session.post(
                 f"{OKTA_HOST}/api/v1/authn",
                 json=body,
@@ -432,6 +442,7 @@ class EnecoClient:
 
         form = {"csrfToken": token, "callbackUrl": CALLBACK_URL, "json": "true"}
         try:
+            self._check_session()
             async with self._session.post(
                 f"{WEB_HOST}/api/auth/signin/okta/",
                 data=form,
@@ -462,6 +473,7 @@ class EnecoClient:
         the authorize URL, which ends at the NextAuth callback.
         """
         try:
+            self._check_session()
             async with self._session.get(
                 f"{OKTA_HOST}/login/sessionCookieRedirect",
                 params={"token": session_token, "redirectUrl": authorize_url},
@@ -490,6 +502,7 @@ class EnecoClient:
     async def _async_get_json(self, url: str) -> Any:
         """Fetch a JSON document from the web application."""
         try:
+            self._check_session()
             async with self._session.get(url, timeout=REQUEST_TIMEOUT) as response:
                 response.raise_for_status()
                 return await response.json(content_type=None)
@@ -518,6 +531,7 @@ class EnecoClient:
     async def _async_read_accounts(self) -> list[Account]:
         """Read the accounts off the dashboard page."""
         try:
+            self._check_session()
             async with self._session.get(
                 DASHBOARD_URL, timeout=REQUEST_TIMEOUT
             ) as response:
@@ -791,6 +805,7 @@ class EnecoClient:
         """
         for _ in range(_MAX_REDIRECTS + 1):
             try:
+                self._check_session()
                 async with self._session.get(
                     url, timeout=REQUEST_TIMEOUT, allow_redirects=False
                 ) as response:
@@ -881,6 +896,7 @@ class EnecoClient:
     ) -> tuple[Any, int]:
         """Perform a single REST call and return its body and status."""
         try:
+            self._check_session()
             async with self._session.request(
                 method,
                 f"{API_BASE}{path}",

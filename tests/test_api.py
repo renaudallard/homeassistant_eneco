@@ -698,3 +698,21 @@ async def test_readings_whose_indexes_are_not_a_list_have_none(
     await api.async_login()
     readings = await api.async_get_readings(ACCOUNT, EAN)
     assert [reading.values for reading in readings] == [{}]
+
+
+async def test_a_session_closed_by_a_reload_is_a_portal_error() -> None:
+    """Unloading the entry detaches its session before its tasks are done.
+
+    aiohttp then raises RuntimeError, which no caller catches: a submission
+    or an apply between two calls died with a traceback.
+    """
+    session = ClientSession()
+    api = client(session)
+    api._token = "bearer"  # noqa: SLF001
+    session.detach()
+    with pytest.raises(EnecoConnectionError, match="session"):
+        await api.async_get_addresses(ACCOUNT)
+    with pytest.raises(EnecoConnectionError, match="session"):
+        await api.async_login()
+    with pytest.raises(EnecoConnectionError, match="session"):
+        await api.async_get_document("https://eneco.be/api/my-eneco/download/X")
