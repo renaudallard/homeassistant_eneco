@@ -595,8 +595,18 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if unsure and not invoice.document_url:
                 # As before such bills were listed at all.
                 continue
-            if unsure and run:
+            if unsure and run and run[0]["invoice_type"] != MONTHLY:
                 begins = date.fromisoformat(run[-1]["period_start"])
+                # One the list gives no days, or an intermediary ending as
+                # the year begins, may be this meter's, missing from it.
+                if invoice.period_end is None or (
+                    invoice.kind == INTERMEDIARY and invoice.period_end == begins
+                ):
+                    error = error or not_read(
+                        invoice,
+                        f"{seen.get('error') if seen else 'unread'},"
+                        " so it may be another meter's",
+                    )
                 if invoice.kind != INTERMEDIARY and invoice.period_end in (
                     begins,
                     None,
@@ -629,10 +639,6 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             bill = seen["bill"]
             if run and not follows(bill, run[-1]) and closes is not None:
                 # The bill that could not be read closed the year.
-                if closes.period_end is None:
-                    error = error or not_read(
-                        closes, "it could not be read, so it may be another meter's"
-                    )
                 break
             if run and not follows(bill, run[-1]):
                 error = error or not_used(

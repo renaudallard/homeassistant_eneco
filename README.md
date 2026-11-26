@@ -320,11 +320,13 @@ a dashboard or used in an automation in place of the Repairs cards.
   twelve monthly ones in a row, the sensor shows nothing and `last_error` says
   why. A refused bill is not fetched again, one that would not download is
   tried again the next day. Where two meters of one energy share the address,
-  only the EAN a bill prints says whose it is. Once the year has begun, a bill
-  whose PDF cannot be read, or that did not download that day, is passed over;
-  if it ends the day the year begins and the next bill of this meter does not
-  follow on, it was what closed the year, which stands. When the invoice list
-  gives it no days, `last_error` says it may be another meter's.
+  only the EAN a bill prints says whose it is. Once a yearly bill has begun
+  the year, a bill whose PDF cannot be read, or that did not download that
+  day, is passed over; if it ends the day the year begins and the next bill
+  of this meter does not follow on, it was what closed the year, which
+  stands. One the invoice list gives no days, or an intermediary bill ending
+  as the year begins, may be missing from it, and `last_error` says it may
+  be another meter's. Monthly bills are read as for a single meter.
 - **Private.** The PDF is fetched from eneco.be with the login's own session,
   read inside Home Assistant and sent nowhere else. The `lines` attribute is
   not written to the history.
