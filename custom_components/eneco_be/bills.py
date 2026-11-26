@@ -643,7 +643,10 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # read of it, which a bill read before this was known lacks.
             run.append({**bill, "due": invoice.due})
             closes = None
-            missing = None
+            if missing is not None and missing[0].period_end is not None:
+                # Ending where the year then began, it was not this meter's.
+                # One with no days says nothing of where it falls.
+                missing = None
             if run[0]["invoice_type"] == MONTHLY and len(run) == MONTHS:
                 break
         else:

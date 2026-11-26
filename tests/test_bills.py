@@ -2173,3 +2173,38 @@ async def test_an_intermediary_of_the_other_meter_beside_this_ones_is_unsaid(
     bill = state_of(hass, LAST_BILL)
     assert bill.attributes["period_start"] == "2024-02-15"
     assert bill.attributes.get("last_error") is None
+
+
+@pytest.mark.parametrize("shared", [False, True])
+async def test_an_intermediary_of_no_days_stays_named(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, shared: bool
+) -> None:
+    """With no days it can be anywhere in time, so one joining after says nothing.
+
+    A bill of this meter joining the year after it took its name away, and
+    the gap it may leave went unsaid, where one meter names it.
+    """
+    listed = [
+        billed(invoice("CN2", "YearlyBill", "2026-04-26"), "2025-03-15", "2026-02-01"),
+        billed(
+            invoice("OLD", "IntermediaryInvoice", "2025-06-01"),
+            "2024-01-01",
+            "2024-02-15",
+        )
+        | {"invoicingPeriodEndDate": None},
+        billed(
+            invoice("IN1", "IntermediaryInvoice", "2025-04-01"),
+            "2024-02-15",
+            "2025-03-15",
+        ),
+        billed(invoice("CN1", "YearlyBill", "2024-01-05"), "2023-02-15", "2024-01-01"),
+    ]
+    shared_portal(aioclient_mock, shared, listed)
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    unreadable_pdf(aioclient_mock, "OLD")
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN1", older_than_a_year_before("31/12/2023"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["last_error"].startswith("the bill of 2025-06-01")
