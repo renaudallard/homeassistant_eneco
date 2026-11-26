@@ -167,6 +167,31 @@ def _address_state(
     }
 
 
+def _settled(
+    every: list[Invoice], kind: str, start: date, end: date
+) -> tuple[float, str | None]:
+    """Return what bills within the period already asked for, and why not.
+
+    An intermediary bill, on a product change, settles its days less their
+    advances, so what it asked for, or paid back, is no longer owed at the
+    reading. One for both energies cannot be split, and one giving no amount
+    cannot be counted: the reason is returned instead.
+    """
+    settling = [
+        i
+        for i in every
+        if i.kind == INTERMEDIARY
+        and i.energy_type in (kind, "Both")
+        and i.period_start is not None
+        and start <= i.period_start <= end
+    ]
+    if any(i.energy_type == "Both" for i in settling):
+        return 0.0, "an intermediary bill for both energies settles part of the period"
+    if any(i.due is None for i in settling):
+        return 0.0, "an intermediary bill of the period gives no amount"
+    return sum(i.due or 0.0 for i in settling), None
+
+
 def _advance_months(
     kind: str,
     every: list[Invoice],
@@ -826,9 +851,10 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             if estimated & in_period
             else "invoice"
         )
+        settled, unsettled = _settled(every, kind, start, end)
         expected = None
-        if coming is not None and split != "incomplete":
-            expected = round(result["period_cost"] - paid - coming, 2)
+        if coming is not None and split != "incomplete" and unsettled is None:
+            expected = round(result["period_cost"] - paid - coming - settled, 2)
         # Until the reading, what brings the regularisation to about 0. With
         # one advance left the whole gap would fall on it, too late to set and
         # swinging with each reading, as the portal's own advice does in the
@@ -843,8 +869,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 if shared
                 else "the advances invoiced could not all be split by energy"
             )
+        elif unsettled is not None:
+            needed = None
+            error = unsettled
         else:
-            needed = catch_up(result["period_cost"], paid, left)
+            needed = catch_up(result["period_cost"] - settled, paid, left)
         difference = None
         if advance_now is not None and needed is not None:
             difference = round(needed - advance_now, 2)
@@ -854,6 +883,7 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             "advance_now": advance_now,
             "difference": difference,
             "advances_billed": paid,
+            "settled_by_bills": round(settled, 2),
             "advances_to_come": coming,
             "advances_left": left,
             "advance_split": split,

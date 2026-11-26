@@ -1382,3 +1382,66 @@ async def test_no_gas_advance_from_the_bill_price_when_rates_fail(
         )
     assert got.get("monthly_advance") is None
     assert got["error"] == "the gas prices were not read: Gas is not loaded"
+
+
+@pytest.mark.parametrize(
+    ("energy", "due"),
+    [("Electricity", 400.0), ("Electricity", -400.0), ("Both", 400.0)],
+)
+async def test_an_intermediary_bill_of_the_period_is_counted(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    energy: str,
+    due: float,
+) -> None:
+    """A product change in July: a bill settled February to June already.
+
+    What it asked for, or paid back, was left out, so the advance and the
+    regularisation still counted those months as owed. One for both
+    energies cannot be split, and gives no advance.
+    """
+    freezer.move_to(TODAY)
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    billed(
+                        invoice(
+                            "IN3", "IntermediaryInvoice", "2026-07-10", energy, due
+                        ),
+                        "2026-02-01",
+                        "2026-07-01",
+                    ),
+                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    advance("AD1", "2026-02", "Electricity", 100.0),
+                    advance("AD2", "2026-04", "Both", 233.24),
+                    advance("AD3", "2026-10", "Both", 305.71),
+                ]
+            }
+        },
+    )
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+        word="Électricité",
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    got = meter.attributes
+    if energy == "Both":
+        assert meter.state == STATE_UNKNOWN
+        assert got["last_error"] == (
+            "an intermediary bill for both energies settles part of the period"
+        )
+        return
+    assert got["settled_by_bills"] == due
+    assert float(meter.state) == round(
+        (got["period_cost"] - got["advances_billed"] - due) / got["advances_left"], 2
+    )
+    assert got["expected_regularisation"] == round(
+        got["period_cost"] - got["advances_billed"] - got["advances_to_come"] - due, 2
+    )

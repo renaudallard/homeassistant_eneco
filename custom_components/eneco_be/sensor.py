@@ -85,6 +85,7 @@ PROVISION_ATTRIBUTES = (
     "period_cost",
     "expected_regularisation",
     "advances_billed",
+    "settled_by_bills",
     "advances_to_come",
     "measured_until",
     "offtake_kwh",
