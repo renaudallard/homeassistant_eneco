@@ -9,7 +9,7 @@
           "password": "Passwort"
         },
         "data_description": {
-          "email": "Die E-Mail-Adresse deines My Eneco Kontos.",
+          "email": "Die E-Mail-Adresse Ihres My Eneco Kontos.",
           "password": "Konten mit Zwei-Faktor-Authentifizierung können nicht verwendet werden."
         }
       },
@@ -21,34 +21,34 @@
           "password": "Passwort"
         },
         "data_description": {
-          "email": "Die E-Mail-Adresse deines My Eneco Kontos.",
+          "email": "Die E-Mail-Adresse Ihres My Eneco Kontos.",
           "password": "Konten mit Zwei-Faktor-Authentifizierung können nicht verwendet werden."
         }
       },
       "account": {
         "title": "Konto",
-        "description": "Wähle das Konto, dessen Zählerstände du übermitteln willst.",
+        "description": "Wählen Sie das Konto, dessen Zählerstände Sie übermitteln möchten.",
         "data": {
           "account": "Konto"
         }
       },
       "address": {
         "title": "Adresse",
-        "description": "Wähle die Lieferadresse des Zählers.",
+        "description": "Wählen Sie die Lieferadresse des Zählers.",
         "data": {
           "address": "Adresse"
         }
       },
       "meter": {
         "title": "Zähler",
-        "description": "Wähle den Zähler, dessen Stände übermittelt werden sollen.",
+        "description": "Wählen Sie den Zähler, dessen Stände übermittelt werden sollen.",
         "data": {
           "ean": "EAN"
         }
       },
       "sources": {
         "title": "Zählerstände",
-        "description": "Wähle den Sensor mit dem Zählerstand für jedes Register der EAN {ean}. Jeder Sensor muss einen Gesamtstand liefern, keinen Momentanwert. Lässt du ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den du noch von Hand abliest.",
+        "description": "Wählen Sie den Sensor mit dem Zählerstand für jedes Register der EAN {ean}. Jeder Sensor muss einen Gesamtstand liefern, keinen Momentanwert. Lassen Sie ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den Sie noch von Hand ablesen.",
         "data": {
           "offtake_single": "Bezug",
           "offtake_day": "Bezug, Tag",
@@ -100,28 +100,28 @@
       "step": {
         "account": {
           "title": "Konto",
-          "description": "Wähle das Konto, dessen Zählerstände du übermitteln willst.",
+          "description": "Wählen Sie das Konto, dessen Zählerstände Sie übermitteln möchten.",
           "data": {
             "account": "Konto"
           }
         },
         "address": {
           "title": "Adresse",
-          "description": "Wähle die Lieferadresse des Zählers.",
+          "description": "Wählen Sie die Lieferadresse des Zählers.",
           "data": {
             "address": "Adresse"
           }
         },
         "meter": {
           "title": "Zähler",
-          "description": "Wähle den Zähler, dessen Stände übermittelt werden sollen.",
+          "description": "Wählen Sie den Zähler, dessen Stände übermittelt werden sollen.",
           "data": {
             "ean": "EAN"
           }
         },
         "sources": {
           "title": "Zählerstände",
-          "description": "Wähle den Sensor mit dem Zählerstand für jedes Register der EAN {ean}. Jeder Sensor muss einen Gesamtstand liefern, keinen Momentanwert. Lässt du ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den du noch von Hand abliest.",
+          "description": "Wählen Sie den Sensor mit dem Zählerstand für jedes Register der EAN {ean}. Jeder Sensor muss einen Gesamtstand liefern, keinen Momentanwert. Lassen Sie ein Register leer, wird es einfach nicht übermittelt, was ein Zähler braucht, den Sie noch von Hand ablesen.",
           "data": {
             "offtake_single": "Bezug",
             "offtake_day": "Bezug, Tag",
@@ -224,7 +224,7 @@
   "issues": {
     "submission_failed": {
       "title": "Zählerstände erreichen Eneco nicht",
-      "description": "Der Eneco-Zähler, dessen EAN auf {ean_end} endet, konnte die Zählerstände {count} Mal hintereinander nicht übermitteln. Letzter Grund: {error}\n\nÖffne die Integration und prüfe den Status-Sensor, die als Quelle gewählten Sensoren und ob Eneco deine Anmeldung noch akzeptiert."
+      "description": "Der Eneco-Zähler, dessen EAN auf {ean_end} endet, konnte die Zählerstände {count} Mal hintereinander nicht übermitteln. Letzter Grund: {error}\n\nÖffnen Sie die Integration und prüfen Sie den Status-Sensor, die als Quelle gewählten Sensoren und ob Eneco Ihre Anmeldung noch akzeptiert."
     }
   }
 }
