@@ -197,11 +197,14 @@ class EnecoConfigFlow(MeterSteps[ConfigFlowResult], ConfigFlow, domain=DOMAIN):
             for subentry in entry.subentries.values()
         ):
             return self.async_abort(reason="accounts_missing")
+        # A name the user gave the entry stays, unless it is another login.
+        renamed = (
+            {"title": login_title(self._credentials[CONF_EMAIL])}
+            if self.unique_id != entry.unique_id
+            else {}
+        )
         return self._async_update_and_finish(
-            entry,
-            unique_id=self.unique_id,
-            title=login_title(self._credentials[CONF_EMAIL]),
-            data=self._credentials,
+            entry, unique_id=self.unique_id, data=self._credentials, **renamed
         )
 
     def _async_update_and_finish(

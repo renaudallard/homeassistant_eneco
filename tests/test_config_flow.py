@@ -629,3 +629,21 @@ async def test_changing_the_sources_keeps_the_time_in_use(
 
     result = await reconfigure_meter(hass, config_entry)
     assert _offered_time(result) == time(23, 50)
+
+
+async def test_reconfigure_keeps_a_name_given_to_the_entry(
+    hass: HomeAssistant,
+    mock_portal: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Only a new email is a new login, with the title that goes with it."""
+    await setup(hass, config_entry)
+    hass.config_entries.async_update_entry(config_entry, title="Home")
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_EMAIL: EMAIL, CONF_PASSWORD: "new-secret"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert config_entry.title == "Home"
