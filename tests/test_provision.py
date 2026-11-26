@@ -33,6 +33,7 @@ from custom_components.eneco_be.api_billing import MonthVolume
 from custom_components.eneco_be.provision import (
     ProvisionError,
     Volumes,
+    _spread,
     advances,
     catch_up,
     cost,
@@ -685,3 +686,22 @@ def test_a_year_from_a_long_period_is_scaled_by_its_months() -> None:
     assert got["period_cost"] == 380.0
     assert got["year_cost"] == pytest.approx(300.0, abs=0.01)
     assert got["after_reading"] == 25.0
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        # March known, February not: February took 1 against March's 10 a day.
+        {"2025-03": MonthVolume(310.0, 0.0)},
+        # Nothing taken a year back: the kWh went nowhere and cost nothing.
+        {"2025-02": MonthVolume(0.0, 0.0), "2025-03": MonthVolume(0.0, 0.0)},
+    ],
+)
+def test_gas_is_spread_by_days_where_the_profile_cannot_say(
+    profile: dict[str, MonthVolume],
+) -> None:
+    """Each month is priced at its own rate, so it must get its own share."""
+    got = _spread(date(2026, 2, 1), date(2026, 3, 31), 590.0, profile)
+    assert got == pytest.approx(
+        {"2026-02": 590.0 * 28 / 59, "2026-03": 590.0 * 31 / 59}
+    )

@@ -344,29 +344,33 @@ def _spread(
 ) -> dict[str, float]:
     """Spread ``kwh`` over the months of the days ``first`` to ``last``.
 
-    Each day weighs what the profile has for the same day a year earlier,
-    and counts flat where it has nothing.
+    Each day weighs what the profile has for the same day a year earlier.
+    Where it misses one of those months, or has nothing taken in any, every
+    day counts the same: a weight of 1 a day beside a known month's kWh a
+    day would leave the missing month next to nothing.
     """
     if last < first or kwh <= 0:
         return {}
-    weights: dict[str, float] = {}
+    days: list[date] = []
     day = first
     while day <= last:
+        days.append(day)
+        day += timedelta(days=1)
+    weights: dict[str, float] = {}
+    for day in days:
         back = year_before(day)
         known = profile.get(_month(back))
-        weight = (
-            known.offtake / monthrange(back.year, back.month)[1]
-            if known is not None
-            else 1.0
-        )
-        weights[_month(day)] = weights.get(_month(day), 0.0) + weight
-        day += timedelta(days=1)
+        if known is None:
+            weights = {}
+            break
+        share = known.offtake / monthrange(back.year, back.month)[1]
+        weights[_month(day)] = weights.get(_month(day), 0.0) + share
+    if not sum(weights.values()):
+        weights = {}
+        for day in days:
+            weights[_month(day)] = weights.get(_month(day), 0.0) + 1.0
     whole = sum(weights.values())
-    return (
-        {month: kwh * weight / whole for month, weight in weights.items()}
-        if whole
-        else {}
-    )
+    return {month: kwh * weight / whole for month, weight in weights.items()}
 
 
 def project(
