@@ -705,10 +705,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             and i.energy_type in (kind, "Both")
             and i.period_start is not None
             and i.period_start >= start
+            and ours(self._seen.get(i.identifier) or {"eans": None}, ean)
             for i in every
         ):
-            # The year shown is not the newest billed, one was refused or
-            # not downloaded: the period after it is over.
+            # The year shown is not this meter's newest billed, one was
+            # refused or not downloaded: the period after it is over. One
+            # read and printing another EAN is another meter's.
             return {"error": "a newer bill than the year shown was not read"}
         kept_period = (previous or {}).get("period_start")
         if (

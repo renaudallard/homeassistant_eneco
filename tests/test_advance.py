@@ -1296,3 +1296,48 @@ async def test_no_advance_is_worked_out_from_a_year_already_billed(
     assert meter.attributes["last_error"] == (
         "a newer bill than the year shown was not read"
     )
+
+
+async def test_a_closing_bill_of_another_meter_is_no_newer_year(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A meter of the address removed, its contract ended with a closing bill.
+
+    That bill starts after this meter's year and prints the other EAN, yet
+    it was taken for a newer bill of this meter not read, and the advance
+    was blank until this meter's next yearly bill.
+    """
+    freezer.move_to(TODAY)
+    aioclient_mock.get(
+        INVOICES,
+        json={
+            "data": {
+                "invoices": [
+                    billed(
+                        invoice("BCL", "ClosingBill", "2026-07-01"),
+                        "2026-02-01",
+                        "2026-06-15",
+                    ),
+                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    advance("AD1", "2026-02", "Electricity", 100.0),
+                    advance("AD2", "2026-04", "Both", 233.24),
+                    advance("AD3", "2026-10", "Both", 305.71),
+                ]
+            }
+        },
+    )
+    mock_bill(
+        aioclient_mock, "BCL", [row.replace(EAN, OTHER_EAN) for row in ELECTRICITY]
+    )
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51, "recommendedAmount": 554.43},
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    assert meter.attributes["last_error"] is None
+    assert meter.state != STATE_UNKNOWN
