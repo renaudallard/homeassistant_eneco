@@ -214,8 +214,10 @@ last full year billed for each meter. The year is the one Eneco billed, never
 a count of days, as the meter is read whenever Eneco gets to it: the newest
 yearly or closing bill, however many days it covers, together with the
 intermediary bills of that year (one comes with a product change, for
-instance). An intermediary bill newer than the last yearly one waits for the
-yearly bill that closes its year. On monthly billing the year is the last
+instance). Newest means by the days a bill covers, as the invoice list gives
+them, not by when it was issued, so a bill issued late takes its own place.
+An intermediary bill newer than the last yearly one waits for the yearly
+bill that closes its year. On monthly billing the year is the last
 twelve monthly bills. Each bill has to start the day after the one before it
 ends, and no line is ever cut or spread over days, so every line shown is one
 a bill prints. Each is the same PDF *My Eneco > Factures* offers for

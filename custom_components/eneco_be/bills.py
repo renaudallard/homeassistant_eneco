@@ -162,9 +162,17 @@ def _too_few(run: list[dict[str, Any]]) -> str:
 
 
 def _settlement(every: list[Invoice], today: date) -> list[Invoice]:
-    """Return the settlement bills among the invoices, newest first."""
+    """Return the settlement bills among the invoices, newest first.
+
+    Newest by the days billed, then by when issued: a bill issued late, or
+    with no date, would otherwise come before the bills it precedes and
+    break the year they make.
+    """
     invoices = [i for i in every if i.kind in SETTLEMENT and i.document_url]
-    invoices.sort(key=lambda i: i.issued or today, reverse=True)
+    invoices.sort(
+        key=lambda i: (i.period_end or i.issued or today, i.issued or today),
+        reverse=True,
+    )
     return invoices
 
 

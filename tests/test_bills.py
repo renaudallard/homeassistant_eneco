@@ -1378,3 +1378,114 @@ async def test_a_refused_sign_in_on_the_bills_asks_for_the_password(
 
     assert not bills.last_update_success
     assert bool(list(entry.async_get_active_flows(hass, {SOURCE_REAUTH}))) is refused
+
+
+def billed(entry: dict[str, Any], start: str, end: str) -> dict[str, Any]:
+    """Return an entry of the invoice list billing ``start`` to the day before ``end``."""
+    return entry | {
+        "invoicingPeriodStartDate": f"{start}T00:00:00+00:00",
+        "invoicingPeriodEndDate": f"{end}T00:00:00+00:00",
+    }
+
+
+NEXT_YEAR = [
+    row.replace("31/01/2026", "31/01/2027")
+    .replace("01/02/2025", "01/02/2026")
+    .replace("31/03/2025", "31/03/2026")
+    .replace("01/04/2025", "01/04/2026")
+    for row in ELECTRICITY
+]
+
+
+@pytest.mark.parametrize("issued", ["2026-05-10", None])
+async def test_bills_are_ordered_by_the_days_they_bill(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, issued: str | None
+) -> None:
+    """An intermediary bill issued after its yearly one, or with no date.
+
+    Ordered by when they were issued, it came first, was set aside as part
+    of a year not billed yet, and the year shown was the yearly bill's own
+    days, with no error.
+    """
+    late = billed(
+        invoice("IN1", "IntermediaryInvoice", issued or "2000-01-01"),
+        "2024-02-15",
+        "2025-03-15",
+    )
+    if issued is None:
+        late["invoiceDate"] = None
+    mock_invoices(
+        aioclient_mock,
+        [
+            late,
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-03-15", "2026-02-01"
+            ),
+            billed(
+                invoice("CN1", "YearlyBill", "2024-02-20"), "2023-02-15", "2024-02-15"
+            ),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2024-02-15"
+    assert bill.attributes["period_end"] == "2026-01-31"
+    assert bill.attributes["last_error"] is None
+
+
+async def test_a_bill_issued_late_does_not_hide_the_newest_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The intermediary of the year before came first and broke the newest one."""
+    mock_invoices(
+        aioclient_mock,
+        [
+            billed(
+                invoice("CN3", "YearlyBill", "2027-04-20"), "2026-02-01", "2027-02-01"
+            ),
+            billed(
+                invoice("IN1", "IntermediaryInvoice", "2026-05-10"),
+                "2024-02-15",
+                "2025-03-15",
+            ),
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-03-15", "2026-02-01"
+            ),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN3", NEXT_YEAR)
+    mock_bill(aioclient_mock, "IN1", year_before("14/03/2025"))
+    mock_bill(aioclient_mock, "CN2", SHORT)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_start"] == "2026-02-01"
+    assert bill.attributes["period_end"] == "2027-01-31"
+    assert bill.attributes["last_error"] is None
+
+
+async def test_an_older_year_issued_late_is_not_the_year(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A bill of the year before, issued after the newest one, was shown."""
+    mock_invoices(
+        aioclient_mock,
+        [
+            billed(
+                invoice("CN1B", "YearlyBill", "2026-06-01"), "2024-02-15", "2025-02-01"
+            ),
+            billed(
+                invoice("CN2", "YearlyBill", "2026-04-26"), "2025-02-01", "2026-02-01"
+            ),
+        ],
+    )
+    mock_bill(aioclient_mock, "CN1B", year_before("31/01/2025"))
+    mock_bill(aioclient_mock, "CN2", ELECTRICITY)
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    bill = state_of(hass, LAST_BILL)
+    assert bill.attributes["period_end"] == "2026-01-31"
+    assert bill.attributes["last_error"] is None
