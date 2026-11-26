@@ -190,7 +190,9 @@ moving the time signs in again.
 
 Either change submits straight away when the time has already gone by today
 and today's readings have not gone through, so a source fixed after a failed
-attempt, or a time moved before now, does not wait for tomorrow.
+attempt, or a time moved before now, does not wait for tomorrow. Setting the
+time it already has is no change, and a change made while a submission is
+running leaves that one to finish.
 
 *Reconfigure*, on the entry, changes the credentials, which is what you want if
 the email address you sign in to Eneco with has changed. The meters stay as

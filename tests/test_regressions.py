@@ -1573,3 +1573,26 @@ def test_the_portal_check_hides_names_and_addresses() -> None:
     assert tool.mask("Rue de la Loi 16, 1000 Bruxelles", 0) == "…"
     assert tool.mask("1234567890", 4) == "…7890"
     assert tool.plain("Home", 0) == "Home"
+
+
+async def test_setting_the_time_it_has_tries_the_day_once(
+    hass: HomeAssistant, mock_portal: AiohttpClientMocker
+) -> None:
+    """Only a change catches up: setting the same time again is none.
+
+    An automation setting the time every minute while a source was down
+    tried the day each time, and raised the repair within minutes. One set
+    also tried twice, the update listener taking the change first.
+    """
+    entry = await setup_entry(hass, login_entry(**{CONF_SUBMIT_TIME: "13:00:00"}))
+    for _ in range(3):
+        await hass.services.async_call(
+            "time",
+            "set_value",
+            {"entity_id": SUBMIT_TIME, "time": "11:00:00"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert state_of(hass, STATUS).state == "failed"
+    assert coordinator_of(entry).data.failures == 1
