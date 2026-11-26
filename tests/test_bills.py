@@ -1348,13 +1348,15 @@ async def test_a_card_not_read_keeps_the_last_and_the_bills_go_on(
     assert state_of(hass, LAST_BILL).attributes["last_error"] is None
 
 
+@pytest.mark.parametrize("refused", [True, False])
 async def test_a_refused_sign_in_on_the_bills_asks_for_the_password(
-    hass: HomeAssistant, portal: AiohttpClientMocker
+    hass: HomeAssistant, portal: AiohttpClientMocker, refused: bool
 ) -> None:
     """A login whose meters submit nothing only signs in for its bills.
 
     The refusal then reached nobody who could ask for a new password, and
-    the bills failed every day without a word.
+    the bills failed every day without a word. Any other sign in failure
+    passes by itself, as it did before, without asking for the password.
     """
     mock_bill(portal, "CN2", ELECTRICITY)
     entry = bills_entry(hass, **{CONF_READ_BILLS: True})
@@ -1362,13 +1364,17 @@ async def test_a_refused_sign_in_on_the_bills_asks_for_the_password(
     bills = entry.runtime_data.bills
     assert bills is not None
 
-    with patch.object(
-        bills.client,
-        "async_get_invoices",
-        side_effect=EnecoAuthError("Okta requires an interactive sign in"),
-    ):
+    async def lapsed(*args: Any) -> None:
+        # The token lapsed: the next call signs in again.
+        bills.client._token = None  # noqa: SLF001
+        if refused:
+            raise api._RefusedError("Authentication failed")  # noqa: SLF001
+        raise EnecoAuthError("the portal returned no access token")
+
+    with patch.object(bills.client, "_async_okta_session_token", lapsed):
+        bills.client._token = None  # noqa: SLF001
         await bills.async_refresh()
         await hass.async_block_till_done()
 
     assert not bills.last_update_success
-    assert list(entry.async_get_active_flows(hass, {SOURCE_REAUTH}))
+    assert bool(list(entry.async_get_active_flows(hass, {SOURCE_REAUTH}))) is refused

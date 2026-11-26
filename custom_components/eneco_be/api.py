@@ -344,6 +344,11 @@ class EnecoClient:
         # so none is made until new ones come with a new client.
         self._refused: str | None = None
 
+    @property
+    def refused(self) -> bool:
+        """Return whether Okta refused the credentials, so only new ones help."""
+        return self._refused is not None
+
     async def async_login(self) -> None:
         """Sign in and obtain a bearer token.
 

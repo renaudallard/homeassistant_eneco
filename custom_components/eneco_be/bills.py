@@ -482,9 +482,11 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     today,
                 )
         except EnecoAuthError as err:
-            # As a submission does: a login whose meters submit nothing only
-            # signs in here, and nothing else would ask for a new password.
-            self.config_entry.async_start_reauth(self.hass)
+            # A login whose meters submit nothing only signs in here, and
+            # nothing else would ask for a new password. Only for a refusal
+            # of the password: any other failure passes by the next read.
+            if self.client.refused:
+                self.config_entry.async_start_reauth(self.hass)
             raise UpdateFailed(str(err)) from err
 
         # What the price integration checking each meter's bill prices the
