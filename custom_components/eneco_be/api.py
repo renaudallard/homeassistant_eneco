@@ -647,8 +647,9 @@ class EnecoClient:
     async def async_get_readings(self, account: str, ean: str) -> list[Reading]:
         """Return the readings the portal holds for a meter, newest first.
 
-        The integration does not need this, but it is how a portal that has
-        changed underneath us gets noticed. See tools/check-portal.py.
+        The monthly advance works from the official readings that opened and
+        closed the last bill, and the newest since. It is also how a portal
+        that has changed underneath us gets noticed: see tools/check-portal.py.
         """
         payload = await self._async_api(
             "GET",
