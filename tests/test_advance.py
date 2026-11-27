@@ -1633,7 +1633,8 @@ async def test_a_meter_closed_by_its_last_bill_needs_no_advance(
 
     meter = state_of(hass, METER)
     if listed:
-        assert meter.state != STATE_UNKNOWN
+        assert float(meter.state) > 0
+        assert meter.attributes["last_error"] is None
     else:
         assert meter.state == STATE_UNKNOWN
         assert meter.attributes["last_error"] == (
