@@ -172,12 +172,13 @@ def portal(
     word: str = "Elektriciteit",
     others: Sequence[dict[str, Any]] = (),
     extra: Sequence[dict[str, Any]] = (),
+    kind: str = "YearlyBill",
 ) -> None:
     """Register the bill of 2025-2026, three advances, readings and volumes.
 
     The October advance prints its split with ``word``, which is only read
     in French. ``others`` are more meters at the address, ``extra`` more
-    invoices listed.
+    invoices listed, and ``kind`` the kind of the bill.
     """
     mock_login(
         mocker,
@@ -201,7 +202,7 @@ def portal(
         json={
             "data": {
                 "invoices": [
-                    invoice("CN2", "YearlyBill", "2026-04-26"),
+                    invoice("CN2", kind, "2026-04-26"),
                     advance("AD1", "2026-02", "Electricity", 100.0),
                     advance("AD2", "2026-04", "Both", 233.24),
                     advance("AD3", "2026-10", "Both", 305.71),
@@ -1605,3 +1606,36 @@ async def test_a_meter_billed_monthly_since_the_year_needs_no_advance(
     assert meter.state == "unknown"
     assert meter.attributes["last_error"] == "billed monthly, with no advance"
     assert state_of(hass, ADDRESS_TOTAL).state == "unknown"
+
+
+@pytest.mark.parametrize("listed", [False, True])
+async def test_a_meter_closed_by_its_last_bill_needs_no_advance(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    listed: bool,
+) -> None:
+    """Moved out: a closing bill, and no contract of the meter on the page.
+
+    A whole year was worked out after it, as if the meter still ran. A
+    contract still listed is still advanced for.
+    """
+    freezer.move_to(TODAY)
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)] if listed else [],
+        {"currentAmount": 56.51} if listed else {},
+        read=READ[:2],
+        word="Électricité",
+        kind="ClosingBill",
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    if listed:
+        assert meter.state != STATE_UNKNOWN
+    else:
+        assert meter.state == STATE_UNKNOWN
+        assert meter.attributes["last_error"] == (
+            "closed by its last bill, with no advance"
+        )

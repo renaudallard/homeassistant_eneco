@@ -391,7 +391,9 @@ closing bill newer than the one shown, and not known to be another meter's,
 is refused or not read, the period after the one shown is over, and the
 sensor shows nothing, with the reason in `last_error`. So it does when
 monthly bills of this meter follow the one shown, fewer than the twelve of a
-year: there is no advance to work out. The attributes say what is behind it:
+year: there is no advance to work out. Nor is there after a closing bill, on
+a move out, once the advances page lists no contract of the meter. The
+attributes say what is behind it:
 
 | Attribute | Meaning |
 | --- | --- |

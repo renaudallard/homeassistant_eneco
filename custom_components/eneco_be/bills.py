@@ -630,6 +630,13 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # Billed month by month since, fewer than the twelve of a year.
             # Not read, one may be the other meter's of two of one energy.
             return {"error": "billed monthly, with no advance"}
+        if (
+            newest["invoice_type"] == "ClosingBill"
+            and not isinstance(portal, str)
+            and contract is None
+        ):
+            # Moved out: the advances page has no contract of the meter left.
+            return {"error": "closed by its last bill, with no advance"}
         # What stands of this period on a day part of it cannot be read; an
         # amount of the period before, a new bill read today, is over.
         kept = (
