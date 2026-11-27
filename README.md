@@ -378,19 +378,20 @@ works it out from your own last yearly bill instead:
 The state is the advance to pay until the reading for the next regularisation
 to come to about 0: what the period will cost less the advances invoiced so
 far and what bills of the period settled already, divided by the advances
-left before the reading, never below 0. Once one
-advance or none is left before the reading, it is the next period's: a year
-like the running one at today's prices, divided by twelve, which
-`after_reading` always gives. The whole gap would otherwise fall on that last
-advance, likely too late to change, and Eneco's own advice is hidden in the
-reading month too; `expected_regularisation` then says what the bill will
-ask. A period longer or shorter than a year is brought to one on the profile,
-so one holding two Januaries is not taken for a colder year. With two
-advances left a gap is shared by two months, so the amount moves more then.
-While a yearly or closing bill newer than the one shown, and not known to be
-another meter's, is refused or not read, the period after the one shown is
-over, and the sensor shows nothing, with the reason in `last_error`. The
-attributes say what is behind it:
+left before the reading, never below 0. Once one advance or none is left
+before the reading, it is the next period's: a year like the running one at
+today's prices, divided by twelve, which `after_reading` always gives. The
+whole gap would otherwise fall on that last advance, likely too late to
+change, and Eneco's own advice is hidden in the reading month too;
+`expected_regularisation` then says what the bill will ask. A period longer
+or shorter than a year is brought to one on the profile, so one holding two
+Januaries is not taken for a colder year. With two advances left a gap is
+shared by two months, so the amount moves more then. While a yearly or
+closing bill newer than the one shown, and not known to be another meter's,
+is refused or not read, the period after the one shown is over, and the
+sensor shows nothing, with the reason in `last_error`. So it does when
+monthly bills of this meter follow the one shown, fewer than the twelve of a
+year: there is no advance to work out. The attributes say what is behind it:
 
 | Attribute | Meaning |
 | --- | --- |

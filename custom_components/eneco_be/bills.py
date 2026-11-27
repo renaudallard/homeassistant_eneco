@@ -608,18 +608,24 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         first = date.fromisoformat(newest["period_start"])
         last = date.fromisoformat(newest["period_end"])
         start = last + timedelta(days=1)
-        if any(
-            i.kind in SETTLEMENT - {INTERMEDIARY, MONTHLY}
+        # This meter's bills of the period after the year shown. One read
+        # and printing another EAN is another meter's.
+        after = [
+            i
+            for i in every
+            if i.kind in SETTLEMENT - {INTERMEDIARY}
             and i.energy_type in (kind, "Both")
             and i.period_start is not None
             and i.period_start >= start
             and ours(self._seen.get(i.identifier) or {"eans": None}, ean)
-            for i in every
-        ):
+        ]
+        if any(i.kind != MONTHLY for i in after):
             # The year shown is not this meter's newest billed, one was
-            # refused or not downloaded: the period after it is over. One
-            # read and printing another EAN is another meter's.
+            # refused or not downloaded: the period after it is over.
             return {"error": "a newer bill than the year shown was not read"}
+        if after:
+            # Billed month by month since, fewer than the twelve of a year.
+            return {"error": "billed monthly, with no advance"}
         # What stands of this period on a day part of it cannot be read; an
         # amount of the period before, a new bill read today, is over.
         kept = (

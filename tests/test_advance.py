@@ -25,7 +25,7 @@
 """Tests for the monthly advance sensors, from the portal to the states."""
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from http import HTTPStatus
 import json
 from pathlib import Path
@@ -91,6 +91,7 @@ from .test_bills import (
     bills_entry,
     invoice,
     mock_bill,
+    month_bill,
     setup,
     state_of,
 )
@@ -170,11 +171,13 @@ def portal(
     read: Sequence[tuple[str, str, tuple[int | None, ...]]] = READ,
     word: str = "Elektriciteit",
     others: Sequence[dict[str, Any]] = (),
+    extra: Sequence[dict[str, Any]] = (),
 ) -> None:
     """Register the bill of 2025-2026, three advances, readings and volumes.
 
     The October advance prints its split with ``word``, which is only read
-    in French. ``others`` are more meters at the address.
+    in French. ``others`` are more meters at the address, ``extra`` more
+    invoices listed.
     """
     mock_login(
         mocker,
@@ -202,6 +205,7 @@ def portal(
                     advance("AD1", "2026-02", "Electricity", 100.0),
                     advance("AD2", "2026-04", "Both", 233.24),
                     advance("AD3", "2026-10", "Both", 305.71),
+                    *extra,
                 ]
             }
         },
@@ -1561,3 +1565,36 @@ async def test_a_consumption_profile_not_read_is_named_as_such(
     assert state_of(hass, METER).attributes["last_error"] == (
         "the consumption profile was not read: the portal returned HTTP 400"
     )
+
+
+async def test_a_meter_billed_monthly_since_the_year_needs_no_advance(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Monthly bills follow the yearly one, fewer than the twelve of a year.
+
+    The yearly bill stays the year shown, and the period after it was worked
+    out as if advances paid for it, counting again what they billed.
+    """
+    freezer.move_to(TODAY)
+    months = []
+    for n, (start, end) in enumerate(
+        [("2026-02-01", "2026-03-01"), ("2026-03-01", "2026-04-01")]
+    ):
+        ident = f"M{n}"
+        last = date.fromisoformat(end) - timedelta(days=1)
+        mock_bill(aioclient_mock, ident, month_bill(date.fromisoformat(start), last))
+        months.append(billed(invoice(ident, "MonthlyBill", end), start, end))
+    portal(
+        aioclient_mock,
+        [contract(EAN, "Electricity", 56.51, 1663.29)],
+        {"currentAmount": 56.51},
+        extra=months,
+    )
+    await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
+
+    meter = state_of(hass, METER)
+    assert meter.state == "unknown"
+    assert meter.attributes["last_error"] == "billed monthly, with no advance"
+    assert state_of(hass, ADDRESS_TOTAL).state == "unknown"
