@@ -792,17 +792,23 @@ async def test_the_address_goes_when_bills_are_no_longer_read(
     assert device_registry.async_get_device(identifiers=identifiers) is None
 
 
+@pytest.mark.parametrize("unread", [False, True])
 async def test_two_meters_of_one_energy_do_not_share_their_advances(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
     freezer: FrozenDateTimeFactory,
+    unread: bool,
 ) -> None:
     """No advance invoice names its meter, so neither may count them all.
 
     Each meter would take the other's advances as its own, need far less,
-    and the advance button would lower both.
+    and the advance button would lower both. A monthly bill with no PDF yet
+    may be the other meter's, and does not make this one billed monthly.
     """
     freezer.move_to(TODAY)
+    month = billed(
+        invoice("M9", "MonthlyBill", "2026-03-05"), "2026-02-01", "2026-03-01"
+    )
     portal(
         aioclient_mock,
         [
@@ -812,6 +818,7 @@ async def test_two_meters_of_one_energy_do_not_share_their_advances(
         {"currentAmount": 113.02},
         word="Électricité",
         others=[{"ean": OTHER_EAN, "type": "Electricity", "meterNumber": "M2"}],
+        extra=[month | {"documents": []}] if unread else [],
     )
     await setup(hass, bills_entry(hass, **{CONF_READ_BILLS: True}))
 

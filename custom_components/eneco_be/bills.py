@@ -623,8 +623,12 @@ class BillCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             # The year shown is not this meter's newest billed, one was
             # refused or not downloaded: the period after it is over.
             return {"error": "a newer bill than the year shown was not read"}
-        if after:
+        if any(
+            not shared or self._seen.get(i.identifier, {}).get("eans") is not None
+            for i in after
+        ):
             # Billed month by month since, fewer than the twelve of a year.
+            # Not read, one may be the other meter's of two of one energy.
             return {"error": "billed monthly, with no advance"}
         # What stands of this period on a day part of it cannot be read; an
         # amount of the period before, a new bill read today, is over.
